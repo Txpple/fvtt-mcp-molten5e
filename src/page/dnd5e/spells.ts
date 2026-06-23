@@ -121,23 +121,27 @@ const WARLOCK_PACT_TABLE: Array<{ max: number; level: number }> = [
 ];
 
 // ---------------------------------------------------------------------------
-// setActorSpellcasting — configure spell slots + casting ability.
+// planSpellcasting — PURE SRD slot resolution (no Foundry globals).
+//
+// Extracted from setActorSpellcasting so the slot tables + class rules are unit-
+// testable offline (see spells.test.ts). Produces both the flat actor.update()
+// payload (system.attributes.spellcasting + system.spells.*) and the response
+// `slots` shape, plus any soft warnings.
 // ---------------------------------------------------------------------------
 
-export async function setActorSpellcasting(data: any): Promise<unknown> {
-  if (game.system.id !== 'dnd5e') {
-    throw new Error('setActorSpellcasting requires the dnd5e game system');
-  }
+export interface SpellcastingPlan {
+  /** Flat `actor.update()` payload: the casting ability + every system.spells.* slot field. */
+  updates: Record<string, unknown>;
+  /**
+   * Response slot shape: `spell1..spell9` for regular casters, or `pact` for warlocks. NOTE:
+   * keyed to mirror dnd5e's own system.spells shape; the READ side (actors.ts
+   * extractDnd5eSpellSlots) uses `level1..level9` — the two output contracts intentionally differ.
+   */
+  slots: Record<string, unknown>;
+  warnings: string[];
+}
 
-  // 1. Resolve actor
-  const actor = findActorByIdentifier(data.actorIdentifier);
-  if (!actor) {
-    throw new Error(`Actor not found: "${data.actorIdentifier}"`);
-  }
-
-  const cls = data.spellcastingClass as string;
-  const lvl = data.spellcastingLevel as number;
-  const ability = data.effectiveAbility as string;
+export function planSpellcasting(cls: string, lvl: number, ability: string): SpellcastingPlan {
   // The slot tables have exactly 20 rows; an out-of-range/non-integer level would index past
   // the end and throw an opaque "cannot read max of undefined". Fail with a clear message instead.
   if (!Number.isInteger(lvl) || lvl < 1 || lvl > 20) {
@@ -145,9 +149,8 @@ export async function setActorSpellcasting(data: any): Promise<unknown> {
   }
   const idx = lvl - 1; // 0-based index into slot tables
   const warnings: string[] = [];
-
-  // 2. Build flat updates object for a single actor.update() call
   const updates: Record<string, unknown> = {};
+  const slots: Record<string, unknown> = {};
 
   // Spellcasting ability
   updates['system.attributes.spellcasting'] = ability;
@@ -163,6 +166,7 @@ export async function setActorSpellcasting(data: any): Promise<unknown> {
     updates['system.spells.pact.max'] = pact.max;
     updates['system.spells.pact.value'] = pact.max;
     updates['system.spells.pact.level'] = pact.level;
+    slots.pact = { max: pact.max, level: pact.level };
   } else {
     // ── Regular spell slots ───────────────────────────────────────────────
     let slotRow: number[];
@@ -183,31 +187,38 @@ export async function setActorSpellcasting(data: any): Promise<unknown> {
       const n = slotRow[i - 1];
       updates[`system.spells.spell${i}.max`] = n;
       updates[`system.spells.spell${i}.value`] = n;
+      (slots as Record<string, number>)[`spell${i}`] = n;
     }
   }
+
+  return { updates, slots, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// setActorSpellcasting — configure spell slots + casting ability.
+// ---------------------------------------------------------------------------
+
+export async function setActorSpellcasting(data: any): Promise<unknown> {
+  if (game.system.id !== 'dnd5e') {
+    throw new Error('setActorSpellcasting requires the dnd5e game system');
+  }
+
+  // 1. Resolve actor
+  const actor = findActorByIdentifier(data.actorIdentifier);
+  if (!actor) {
+    throw new Error(`Actor not found: "${data.actorIdentifier}"`);
+  }
+
+  // 2. Resolve slots from the (pure) SRD tables
+  const ability = data.effectiveAbility as string;
+  const { updates, slots, warnings } = planSpellcasting(
+    data.spellcastingClass as string,
+    data.spellcastingLevel as number,
+    ability
+  );
 
   // 3. Single update call
   await actor.update(updates);
-
-  // 4. Build response. NOTE: keyed `spell1..spell9` (+ `pact`) to mirror dnd5e's own
-  // system.spells shape; the READ side (actors.ts extractDnd5eSpellSlots) uses `level1..level9`.
-  // The two output contracts are intentionally different — see the note there.
-  const slots: Record<string, unknown> = {};
-  if (cls === 'warlock') {
-    const pact = WARLOCK_PACT_TABLE[idx];
-    slots.pact = { max: pact.max, level: pact.level };
-  } else {
-    const slotRow =
-      cls === 'artificer'
-        ? ARTIFICER_SLOTS[idx]
-        : cls === 'paladin' || cls === 'ranger'
-          ? HALF_CASTER_SLOTS[idx]
-          : FULL_CASTER_SLOTS[idx];
-
-    for (let i = 1; i <= 9; i++) {
-      (slots as Record<string, number>)[`spell${i}`] = slotRow[i - 1];
-    }
-  }
 
   return {
     actor: { id: actor.id, name: actor.name },

@@ -38,6 +38,51 @@ const ATTACK_PROPERTY_CANONICAL = new Set([
 ]);
 
 // =============================================================================
+// Pure activity-assembly helpers (no Foundry globals) — unit-tested offline in
+// attacks.test.ts. These encode the two subtle dnd5e shape rules: the first
+// damage part is the weapon BASE (system.damage.base), so only parts[1..] become
+// activity parts; and melee vs ranged choose reach vs normal/long range.
+// =============================================================================
+
+export interface DamagePart {
+  number: number;
+  denomination: number;
+  type: string;
+}
+
+/**
+ * Build the dnd5e activity `damage.parts` array. The FIRST authoring part is the weapon's base
+ * damage (it lives in system.damage.base), so only parts[1..] are emitted as activity parts.
+ */
+export function buildActivityDamageParts(
+  damageParts: DamagePart[]
+): Array<Record<string, unknown>> {
+  return damageParts.slice(1).map(p => ({
+    types: [p.type],
+    number: p.number,
+    denomination: p.denomination,
+    bonus: '',
+    scaling: { mode: '', number: 1 },
+    custom: { enabled: false },
+  }));
+}
+
+/**
+ * Build the system-level range/reach object for an attack: melee uses reach (default 5 ft),
+ * ranged uses normal/long range.
+ */
+export function buildAttackRange(data: {
+  attackType: string;
+  reachFt?: number;
+  rangeFt?: number;
+  longRangeFt?: number;
+}): { value: number | undefined; long: number | null; units: string } {
+  return data.attackType === 'melee'
+    ? { value: data.reachFt ?? 5, long: null, units: 'ft' }
+    : { value: data.rangeFt, long: data.longRangeFt ?? null, units: 'ft' };
+}
+
+// =============================================================================
 // addAttackToActor — weapon Item with a single "attack" activity
 // (add-feature, featureType: attack). Oracle ~5534-5769.
 // =============================================================================
@@ -90,24 +135,10 @@ export async function addAttackToActor(data: any): Promise<unknown> {
   const activityId: string = foundry.utils.randomID(16);
 
   // 5. Damage parts for the activity (all except the first — which is system.damage.base)
-  const activityDamageParts = (
-    data.damageParts as Array<{ number: number; denomination: number; type: string }>
-  )
-    .slice(1)
-    .map(p => ({
-      types: [p.type],
-      number: p.number,
-      denomination: p.denomination,
-      bonus: '',
-      scaling: { mode: '', number: 1 },
-      custom: { enabled: false },
-    }));
+  const activityDamageParts = buildActivityDamageParts(data.damageParts as DamagePart[]);
 
   // 6. Range object (system-level — holds the real range/reach)
-  const rangeObj =
-    data.attackType === 'melee'
-      ? { value: data.reachFt ?? 5, long: null, units: 'ft' }
-      : { value: data.rangeFt, long: data.longRangeFt ?? null, units: 'ft' };
+  const rangeObj = buildAttackRange(data);
 
   // 7. Conditional 2024-only fields
   const sourceRules: string = data.sourceRules ?? '2014';

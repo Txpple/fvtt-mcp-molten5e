@@ -77,8 +77,8 @@ tests/              vitest unit tests + gated live integration suites
 
 ## Requirements
 
-- **Node.js 20+** (developed/tested on Node 24; see `.nvmrc`). On Windows, if Node isn't on
-  `PATH`, use the full path to `node.exe` (see wiring below).
+- **Node.js 22+** (developed/tested on Node 24; see `.nvmrc`; CI runs 22 + 24). On Windows, if Node
+  isn't on `PATH`, use the full path to `node.exe` (see wiring below).
 - A **Chromium for Playwright** — `npx playwright install chromium` (Playwright is a devDependency;
   the headless bridge drives this browser).
 - **Foundry VTT 14.x** with the **D&D 5e** system, hosted on **Molten**, plus a dedicated

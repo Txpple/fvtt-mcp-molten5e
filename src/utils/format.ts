@@ -16,7 +16,13 @@ export function formatDeletionResult(result: any, noun: string): string {
     result?.notFound && result.notFound.length > 0
       ? `\n  not found: ${result.notFound.join(', ')}`
       : '';
-  return `Deleted ${result?.deletedCount ?? deleted.length} ${noun}:\n${lines.join('\n')}${notFound}`;
+  // Surface partial-progress failures (bulk-delete records, rather than aborting on, a failed
+  // delete) so the user sees exactly what was removed and what couldn't be.
+  const failed =
+    result?.failed && result.failed.length > 0
+      ? `\n  failed: ${result.failed.map((f: any) => `"${f.name}" (${f.error})`).join(', ')}`
+      : '';
+  return `Deleted ${result?.deletedCount ?? deleted.length} ${noun}:\n${lines.join('\n')}${notFound}${failed}`;
 }
 
 /**

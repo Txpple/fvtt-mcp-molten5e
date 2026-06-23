@@ -33,7 +33,16 @@ export interface WebDavClientOptions {
   user: string;
   password: string;
   logger: Logger;
+  /** Per-request timeout in ms (default 30000). Guards against a half-awake box that never replies. */
+  timeoutMs?: number;
 }
+
+/**
+ * Per-request timeout. A Molten box that accepts the TCP socket but never responds (a half-awake
+ * VM) would otherwise hang a tool indefinitely — the same cold-start failure mode the Playwright
+ * bridge is explicitly budgeted against. 30s comfortably covers a real PROPFIND/PUT.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Error carrying the HTTP status of a failed WebDAV request, for friendly handler messages. */
 export class WebDavError extends Error {
@@ -84,11 +93,13 @@ export class WebDavClient {
   private base: string;
   private auth: string;
   private logger: Logger;
+  private timeoutMs: number;
 
   constructor(opts: WebDavClientOptions) {
     this.base = opts.webdavUrl.replace(/\/+$/, '');
     this.auth = `Basic ${Buffer.from(`${opts.user}:${opts.password}`).toString('base64')}`;
     this.logger = opts.logger;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   /** Absolute WebDAV URL for a Data-relative path (collections get a trailing slash). */
@@ -112,11 +123,26 @@ export class WebDavClient {
       // self-referential 301s with an http:// scheme (e.g. a directory without a trailing slash →
       // `http://.../dir/`). The built-in follower would downgrade https→http and STRIP the
       // Authorization header → 401. We re-issue against the Location, forced back to https, with
-      // auth re-attached and the method/body preserved.
-      res = await fetch(url, { ...init, method, headers, redirect: 'manual' });
+      // auth re-attached and the method/body preserved. AbortSignal.timeout bounds each hop so a
+      // half-awake box can't hang the call indefinitely.
+      res = await fetch(url, {
+        ...init,
+        method,
+        headers,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
     } catch (err) {
+      const e = err as Error;
+      if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+        throw new WebDavError(
+          `WebDAV ${method} timed out after ${this.timeoutMs}ms ` +
+            '(the Molten box may be asleep or only half-awake; file management needs the VM live).',
+          0
+        );
+      }
       throw new WebDavError(
-        `WebDAV ${method} ${url} failed to connect: ${(err as Error).message} ` +
+        `WebDAV ${method} ${url} failed to connect: ${e.message} ` +
           '(is the Molten server awake? file management needs the VM live).',
         0
       );

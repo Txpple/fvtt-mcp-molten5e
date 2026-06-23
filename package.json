@@ -1,6 +1,6 @@
 {
   "name": "fvtt-mcp-molten5e",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "D&D 5e–only, Molten-Hosting–optimized Foundry VTT MCP server, driven by Claude Code.",
   "private": true,
   "type": "module",
@@ -40,7 +40,7 @@
     "vitest": "~3.2.6"
   },
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
   "author": "Txpple",

@@ -14,6 +14,4 @@ declare const Roll: any;
 interface Window {
   // The injected domain API. Tools reach it via foundry.call(name, args).
   __fvtt: Record<string, (args?: any) => any>;
-  // Event sink exposed by Playwright (page.exposeFunction) for Hooks -> companion.
-  __pushEvent?: (event: unknown) => void;
 }

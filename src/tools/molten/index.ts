@@ -512,6 +512,8 @@ export class MoltenTools {
     const cleanFrom = toDataRelative(fromPath);
     const cleanTo = toDataRelative(toPath);
 
+    // Guard BOTH ends: a live world's LevelDB must not be read or written over the file channel.
+    if (this.looksLikeWorldDbPath(cleanFrom)) return this.worldDbRefusal(fromPath);
     if (this.looksLikeWorldDbPath(cleanTo)) return this.worldDbRefusal(toPath);
     const dav = this.dav();
     if (!dav) return this.notConfigured('copy-asset');

@@ -86,7 +86,7 @@ async function getOrCreateFolder(folderName: string, type: string): Promise<stri
  * STRICT resolution — no fuzzy matching. Best-effort (no rollback).
  */
 async function deleteByResolver(
-  op: string,
+  _op: string,
   identifiers: string[],
   resolver: (id: string) => any
 ): Promise<{
@@ -94,35 +94,41 @@ async function deleteByResolver(
   deletedCount: number;
   deleted: Array<{ id: string; name: string }>;
   notFound?: string[];
+  failed?: Array<{ id: string; name: string; error: string }>;
 }> {
   if (!Array.isArray(identifiers) || identifiers.length === 0) {
     throw new Error('identifiers array is required and must contain at least one entry');
   }
 
-  try {
-    const deleted: Array<{ id: string; name: string }> = [];
-    const notFound: string[] = [];
+  const deleted: Array<{ id: string; name: string }> = [];
+  const notFound: string[] = [];
+  const failed: Array<{ id: string; name: string; error: string }> = [];
 
-    for (const identifier of identifiers) {
-      const doc = resolver(identifier);
-      if (doc) {
-        const info = { id: doc.id ?? identifier, name: doc.name ?? '' };
-        await doc.delete();
-        deleted.push(info);
-      } else {
-        notFound.push(identifier);
-      }
+  for (const identifier of identifiers) {
+    const doc = resolver(identifier);
+    if (!doc) {
+      notFound.push(identifier);
+      continue;
     }
-
-    return {
-      success: true,
-      deletedCount: deleted.length,
-      deleted,
-      ...(notFound.length > 0 ? { notFound } : {}),
-    };
-  } catch (error) {
-    throw new Error(`Failed to ${op}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const info = { id: doc.id ?? identifier, name: doc.name ?? '' };
+    try {
+      await doc.delete();
+      deleted.push(info);
+    } catch (error) {
+      // Deletes are permanent and best-effort: one failure must NOT discard the documents already
+      // removed (the pre-fix behavior unwound to a single catch and lost all partial progress).
+      // Record it and continue so the caller can report exactly what was and wasn't deleted.
+      failed.push({ ...info, error: error instanceof Error ? error.message : 'Unknown error' });
+    }
   }
+
+  return {
+    success: failed.length === 0,
+    deletedCount: deleted.length,
+    deleted,
+    ...(notFound.length > 0 ? { notFound } : {}),
+    ...(failed.length > 0 ? { failed } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

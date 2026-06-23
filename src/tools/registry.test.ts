@@ -1,82 +1,57 @@
 /**
- * Registration ↔ dispatch drift guard.
+ * Registration ↔ dispatch integrity.
  *
- * index.ts advertises tools via each class's getToolDefinitions() (assembled into `allTools`)
- * and routes them through a hand-maintained `switch (name)`. The two lists are edited
- * separately, so a new/renamed tool can be advertised-but-not-dispatched (or a case can be
- * orphaned) and only surface at runtime via the `default` throw. This test reconstructs the
- * advertised list exactly as index.ts does and asserts every advertised name has a matching
- * `case '<name>':` in the dispatcher source — cheap offline coverage of the glue index.ts
- * itself can't be imported to test (importing it would start the stdio server).
+ * The tool surface is built by buildToolRegistry (src/registry.ts): the `handlers` map is the
+ * single source of truth and the advertised `tools` list is DERIVED from it, so a tool can no
+ * longer be advertised-but-not-dispatched. This test imports the real builder (no source scraping)
+ * and asserts the surface is complete, consistent, and the documented size. buildToolRegistry
+ * itself throws at build time if a handler has no advertised definition, so a successful build is
+ * already part of the guarantee.
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-
+import { buildToolRegistry } from '../registry.js';
 import { makeFoundry, makeLogger } from './test-helpers.js';
 
-import { CharacterTools } from './character.js';
-import { CompendiumTools } from './compendium.js';
-import { SceneTools } from './scene.js';
-import { ActorCreationTools } from './actor-creation.js';
-import { QuestCreationTools } from './quest-creation.js';
-import { OwnershipTools } from './ownership.js';
-import { DnD5eAddFeatureTool } from './dnd5e/add-feature.js';
-import { DnD5eFeaturesFromCompendiumTools } from './dnd5e/features.js';
-import { buildGrantToActorTool } from './dnd5e/grant-to-actor.js';
-import { MoltenTools } from './molten/index.js';
-import { AssetBridgeTools } from './asset-bridge.js';
-import { TableTools } from './tables.js';
-import { CardsTools } from './cards.js';
-import { OrganizationTools } from './organization.js';
-
-function advertisedNames(): string[] {
+function build() {
   const { foundry } = makeFoundry();
-  const logger = makeLogger();
-  const deps = { foundry, logger };
-
-  const addFeature = new DnD5eAddFeatureTool(deps);
-  const featuresFromCompendium = new DnD5eFeaturesFromCompendiumTools(deps);
-  const grantToActorTool = buildGrantToActorTool(
-    addFeature.getInputSchema(),
-    featuresFromCompendium.getInputSchema()
-  );
-
-  const all = [
-    ...new CharacterTools(deps).getToolDefinitions(),
-    ...new CompendiumTools(deps).getToolDefinitions(),
-    ...new SceneTools(deps).getToolDefinitions(),
-    ...new ActorCreationTools(deps).getToolDefinitions(),
-    grantToActorTool,
-    ...new QuestCreationTools(deps).getToolDefinitions(),
-    ...new OwnershipTools(deps).getToolDefinitions(),
-    ...new MoltenTools({ logger, foundry }).getToolDefinitions(),
-    ...new AssetBridgeTools(deps).getToolDefinitions(),
-    ...new TableTools(deps).getToolDefinitions(),
-    ...new CardsTools(deps).getToolDefinitions(),
-    ...new OrganizationTools(deps).getToolDefinitions(),
-  ];
-  return all.map(t => t.name);
+  return buildToolRegistry({ foundry, logger: makeLogger() });
 }
 
-function dispatchCases(): string[] {
-  const indexPath = resolve(dirname(fileURLToPath(import.meta.url)), '../index.ts');
-  const src = readFileSync(indexPath, 'utf8');
-  return [...src.matchAll(/case\s+'([^']+)':/g)].map(m => m[1]);
-}
-
-describe('tool registration ↔ dispatch', () => {
-  it('every advertised tool has a matching dispatch case', () => {
-    const cases = new Set(dispatchCases());
-    const missing = advertisedNames().filter(name => !cases.has(name));
-    expect(missing).toEqual([]);
-  });
-
+describe('tool registry', () => {
   it('advertises 62 uniquely-named tools (matches the documented surface)', () => {
-    const names = advertisedNames();
+    const { tools } = build();
+    const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
     expect(names.length).toBe(62);
+  });
+
+  it('every advertised tool has a handler, and every handler is advertised', () => {
+    const { tools, handlers } = build();
+    const advertised = new Set(tools.map(t => t.name));
+    const handlerNames = new Set(Object.keys(handlers));
+
+    const advertisedWithoutHandler = [...advertised].filter(n => !handlerNames.has(n));
+    const handlerWithoutDefinition = [...handlerNames].filter(n => !advertised.has(n));
+    expect(advertisedWithoutHandler).toEqual([]);
+    expect(handlerWithoutDefinition).toEqual([]);
+  });
+
+  it('every advertised tool carries a name + inputSchema', () => {
+    const { tools } = build();
+    for (const tool of tools) {
+      expect(typeof tool.name).toBe('string');
+      expect(tool.inputSchema).toBeTruthy();
+    }
+  });
+
+  it('dispatch routes a known tool to the bridge and rejects an unknown one', async () => {
+    const { foundry, calls } = makeFoundry({ system: 'dnd5e' });
+    const { dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
+
+    await dispatch('get-world-info', {});
+    expect(calls.some(([op]) => op === 'getWorldInfo')).toBe(true);
+
+    await expect(dispatch('no-such-tool', {})).rejects.toThrow(/Unknown tool/);
   });
 });

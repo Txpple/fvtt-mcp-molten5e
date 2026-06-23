@@ -8,6 +8,19 @@ export interface MCPError {
   recoverable: boolean;
 }
 
+/**
+ * Marks an error message that has ALREADY been curated by ErrorHandler (a tool called
+ * handleToolError). The central dispatch wrapper (index.ts) passes these through verbatim instead
+ * of re-mapping them — re-running the keyword classifier over an already-formatted message
+ * (which now contains suggestion text like "...sufficient permissions") would misclassify it.
+ */
+export class FormattedToolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FormattedToolError';
+  }
+}
+
 export class ErrorHandler {
   private logger: Logger;
 
@@ -207,14 +220,38 @@ export class ErrorHandler {
   }
 
   /**
-   * Handle tool execution error with proper formatting
+   * Handle tool execution error with proper formatting. Throws a FormattedToolError so the central
+   * dispatch wrapper knows the message is already curated and won't re-map it.
    */
   handleToolError(error: any, toolName: string, context: string = ''): never {
     const mcpError = this.mapFoundryError(error, `${toolName} ${context}`.trim());
     this.logError(mcpError, toolName, error);
 
     const formattedMessage = this.formatErrorMessage(mcpError, toolName);
-    throw new Error(formattedMessage);
+    throw new FormattedToolError(formattedMessage);
+  }
+
+  /**
+   * Map + log an arbitrary tool error into a user-facing message — the non-throwing form used by
+   * the central dispatch wrapper for tools that don't curate their own errors. Crucially it does
+   * NOT flatten messages that are already specific: zod validation errors keep their field-level
+   * detail, and the generic catch-all falls back to the raw message rather than the vague
+   * "An unexpected error occurred". So central handling only ADDS value (cold-box / permission /
+   * not-found guidance) and never degrades an already-informative message.
+   */
+  toUserMessage(error: any, toolName: string): string {
+    const raw = error instanceof Error ? error.message : String(error);
+    // zod already produces precise, field-level messages — don't run them through the classifier.
+    if (error?.name === 'ZodError') return raw;
+
+    const mcpError = this.mapFoundryError(error, toolName);
+    this.logError(mcpError, toolName, error);
+
+    // The generic catch-all adds nothing over the real message — prefer the raw text.
+    if (mcpError.type === 'system' && mcpError.message === 'An unexpected error occurred') {
+      return raw;
+    }
+    return this.formatErrorMessage(mcpError, toolName);
   }
 }
 

@@ -108,20 +108,6 @@ export const SystemPaths = {
 } as const;
 
 /**
- * Get system-specific data paths based on detected system.
- *
- * Returns null for unsupported systems ('other'). Callers must branch on
- * `system` for those — falling back to dnd5e paths silently produces wrong
- * values when called against a non-dnd5e actor.
- */
-export function getSystemPaths(system: GameSystem) {
-  if (system === 'dnd5e') {
-    return SystemPaths.dnd5e;
-  }
-  return null;
-}
-
-/**
  * Extract a value from system data using a path string
  * Handles both simple and nested paths (e.g., "system.details.cr")
  */
@@ -182,14 +168,4 @@ export function hasSpellcasting(actorData: any, system: GameSystem): boolean {
   }
 
   return false;
-}
-
-/**
- * Format system-specific error messages
- */
-export function formatSystemError(system: GameSystem, systemId: string | null): string {
-  if (system === 'other') {
-    return `This tool supports D&D 5e only. Your world uses system: "${systemId || 'unknown'}".`;
-  }
-  return 'Unknown system error';
 }

@@ -65,8 +65,6 @@ const consoleLogger: FoundryLogger = {
   error: m => console.error(`[foundry] ${m}`),
 };
 
-export type FoundryEvent = { type: string; [k: string]: unknown };
-
 export class Foundry implements FoundryBridge {
   private browser: Browser | undefined;
   private context: BrowserContext | undefined;
@@ -74,19 +72,12 @@ export class Foundry implements FoundryBridge {
   private ready = false;
   private connecting: Promise<void> | undefined;
   private readonly pageBundle: string;
-  private readonly eventHandlers = new Set<(e: FoundryEvent) => void>();
 
   constructor(
     private readonly cfg: FoundryConfig,
     private readonly log: FoundryLogger = consoleLogger
   ) {
     this.pageBundle = loadPageBundle();
-  }
-
-  /** Register a handler for events pushed from the page (chat, combat, …). */
-  onEvent(handler: (e: FoundryEvent) => void): () => void {
-    this.eventHandlers.add(handler);
-    return () => this.eventHandlers.delete(handler);
   }
 
   isReady(): boolean {
@@ -107,20 +98,6 @@ export class Foundry implements FoundryBridge {
     this.ready = false;
     this.browser ??= await chromium.launch({ headless: this.cfg.headless ?? true });
     this.context ??= await this.browser.newContext({ viewport: { width: 1920, height: 1080 } });
-    // Expose the event sink once per context, before any page runs.
-    await this.context
-      .exposeFunction('__pushEvent', (e: FoundryEvent) => {
-        for (const h of this.eventHandlers) {
-          try {
-            h(e);
-          } catch (err) {
-            this.log.warn(`event handler threw: ${(err as Error).message}`);
-          }
-        }
-      })
-      .catch(() => {
-        /* already exposed on reconnect */
-      });
 
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(this.cfg.readyTimeoutMs ?? 120_000);
@@ -139,7 +116,18 @@ export class Foundry implements FoundryBridge {
     this.log.debug('waking via Magic URL');
     await this.page
       .goto(this.cfg.magicUrl, { waitUntil: 'domcontentloaded' })
-      .catch(e => this.log.warn(`magic-url nav note: ${(e as Error).message}`));
+      .catch(e => this.log.warn(`magic-url nav note: ${this.redact((e as Error).message)}`));
+  }
+
+  /**
+   * Strip the Magic URL (and any `?s=<token>` startup secret) out of a message before it reaches
+   * the logs: a Playwright nav error echoes back the URL it failed to load, which would otherwise
+   * leak the wake token. Errors should name the failing thing, never its secret value.
+   */
+  private redact(msg: string): string {
+    let out = msg;
+    if (this.cfg.magicUrl) out = out.split(this.cfg.magicUrl).join('<MOLTEN_MAGIC_URL>');
+    return out.replace(/([?&]s=)[^\s&"']+/gi, '$1<redacted>');
   }
 
   /**
@@ -384,17 +372,66 @@ export class Foundry implements FoundryBridge {
   async call<T = unknown>(name: string, args?: unknown): Promise<T> {
     await this.ensureReady();
     try {
-      return (await this.page!.evaluate(
-        ({ n, a }) => {
-          const fn = window.__fvtt?.[n];
-          if (typeof fn !== 'function') throw new Error(`Unknown page function: ${n}`);
-          return fn(a);
-        },
-        { n: name, a: args }
-      )) as T;
+      return await this.invoke<T>(name, args);
     } catch (err) {
+      // A world reload / "Return to Setup" can wipe the injected window.__fvtt while the page stays
+      // open. Distinguish that (the bridge is gone) from a genuine tool error: if the bridge has
+      // vanished, recover once (re-inject in place, or full reconnect if the session itself dropped)
+      // and retry — so a mid-session reload self-heals instead of wedging until a process restart.
+      if (!(await this.bridgeAlive())) {
+        this.log.warn(`page bridge missing on '${name}' — recovering and retrying`);
+        await this.recover();
+        try {
+          return await this.invoke<T>(name, args);
+        } catch (err2) {
+          throw new Error(`foundry.call('${name}') failed: ${(err2 as Error).message}`);
+        }
+      }
       throw new Error(`foundry.call('${name}') failed: ${(err as Error).message}`);
     }
+  }
+
+  /** Single page-side dispatch into the injected window.__fvtt bridge. */
+  private async invoke<T>(name: string, args?: unknown): Promise<T> {
+    return (await this.page!.evaluate(
+      ({ n, a }) => {
+        const fn = window.__fvtt?.[n];
+        if (typeof fn !== 'function') throw new Error(`Unknown page function: ${n}`);
+        return fn(a);
+      },
+      { n: name, a: args }
+    )) as T;
+  }
+
+  /** Is the injected page bridge (window.__fvtt) currently present on a live page? */
+  private async bridgeAlive(): Promise<boolean> {
+    if (!this.page || this.page.isClosed()) return false;
+    return this.page
+      .evaluate(() => typeof window.__fvtt === 'object' && window.__fvtt !== null)
+      .catch(() => false);
+  }
+
+  /** Is the Foundry world ready in the current page (game.ready === true)? */
+  private async gameReady(): Promise<boolean> {
+    if (!this.page || this.page.isClosed()) return false;
+    return this.page
+      .evaluate(() => (globalThis as { game?: { ready?: boolean } }).game?.ready === true)
+      .catch(() => false);
+  }
+
+  /**
+   * Recover a lost page bridge. If the page is still alive and the world is ready (a navigation
+   * wiped window.__fvtt but the session survived), re-inject the bundle in place — cheap. Otherwise
+   * the session itself is gone, so do a full reconnect (wake -> join -> game.ready -> inject).
+   */
+  private async recover(): Promise<void> {
+    if (this.page && !this.page.isClosed() && (await this.gameReady())) {
+      await this.injectBundle(this.page).catch(() => {});
+      if (await this.bridgeAlive()) return;
+    }
+    this.ready = false;
+    this.page = undefined;
+    await this.connect();
   }
 
   /** Escape hatch for one-off page logic (used sparingly; prefer named page functions). */

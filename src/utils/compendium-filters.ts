@@ -8,55 +8,8 @@
 import { z } from 'zod';
 import type { GameSystem } from './system-detection.js';
 
-/**
- * D&D 5e creature types
- */
-export const DnD5eCreatureTypes = [
-  'aberration',
-  'beast',
-  'celestial',
-  'construct',
-  'dragon',
-  'elemental',
-  'fey',
-  'fiend',
-  'giant',
-  'humanoid',
-  'monstrosity',
-  'ooze',
-  'plant',
-  'undead',
-] as const;
-
-export type DnD5eCreatureType = (typeof DnD5eCreatureTypes)[number];
-
-/**
- * Common creature sizes
- */
+/** Common creature sizes. */
 export const CreatureSizes = ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan'] as const;
-export type CreatureSize = (typeof CreatureSizes)[number];
-
-/**
- * D&D 5e filter schema
- */
-export const DnD5eFiltersSchema = z.object({
-  challengeRating: z
-    .union([
-      z.number(),
-      z.object({
-        min: z.number().optional(),
-        max: z.number().optional(),
-      }),
-    ])
-    .optional(),
-  creatureType: z.enum(DnD5eCreatureTypes).optional(),
-  size: z.enum(CreatureSizes).optional(),
-  alignment: z.string().optional(),
-  hasLegendaryActions: z.boolean().optional(),
-  spellcaster: z.boolean().optional(),
-});
-
-export type DnD5eFilters = z.infer<typeof DnD5eFiltersSchema>;
 
 /**
  * Generic filter schema (D&D 5e). Kept as the public filter shape used by the
@@ -101,27 +54,6 @@ export const GenericFiltersSchema = z.object({
 });
 
 export type GenericFilters = z.infer<typeof GenericFiltersSchema>;
-
-/**
- * Get appropriate filter schema for a game system
- */
-export function getFilterSchema(system: GameSystem) {
-  if (system === 'dnd5e') {
-    return DnD5eFiltersSchema;
-  }
-  // For unsupported systems, use generic schema (best effort)
-  return GenericFiltersSchema;
-}
-
-/**
- * Validate creature type for a given system
- */
-export function isValidCreatureType(creatureType: string, system: GameSystem): boolean {
-  if (system === 'dnd5e') {
-    return DnD5eCreatureTypes.includes(creatureType as DnD5eCreatureType);
-  }
-  return false;
-}
 
 /**
  * Build human-readable filter description for tool responses
