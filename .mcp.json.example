@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy this to a .mcp.json that Claude Code reads (your project root, or merge into ~/.claude.json mcpServers), then set ABSOLUTE paths. On Windows point command at the full node.exe path if Node is not on PATH. The .mcp.json itself is gitignored.",
+  "mcpServers": {
+    "foundry-molten5e": {
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": ["C:/Users/<you>/path/to/fvtt-mcp-molten5e/dist/index.js"]
+    }
+  }
+}

@@ -1,0 +1,272 @@
+// Page-side shared helpers — runs INSIDE the headless Foundry page.
+//
+// Hoisted from the sibling src/page/** modules to remove cross-file duplication.
+// Every helper here is a byte-for-byte port of the per-file copies it replaces;
+// nothing about the runtime behavior changes. This module is bundled into
+// dist/page.bundle.js by esbuild (it follows the imports from src/page/index.ts),
+// so it must remain browser-only: no Node, no Playwright — only browser + Foundry
+// globals (see foundry-globals.d.ts).
+
+// Foundry's Folder document class isn't declared in foundry-globals.d.ts; reach
+// it off globalThis (the established sibling-page-file pattern).
+const FolderClass: any = (globalThis as any).Folder;
+
+/**
+ * Flag scope for MCP-generated content (e.g. the mcpGenerated marker on auto-created
+ * folders). Uses Foundry's reserved 'world' scope — NOT a module id. The headless
+ * design ships no module, and once the old `foundry-mcp-bridge` module is uninstalled
+ * Foundry rejects that scope ("Flag scope ... is not valid or not currently active").
+ * 'world' is always valid. Written into create-data flags and read via direct
+ * property access (folder.flags?.[MCP_FLAG_SCOPE]) so it never trips scope validation.
+ */
+export const MCP_FLAG_SCOPE = 'world';
+
+/**
+ * Normalize an asset path: strip query/hash, decode percent-encoding, drop a
+ * leading host/protocol, convert backslashes, and remove a leading slash or
+ * `Data/` prefix. Mirrors the old data-access.normalizeAssetPath.
+ */
+export function normalizeAssetPath(src: string): string {
+  if (!src || typeof src !== 'string') return '';
+  let s = src.trim().split('?')[0].split('#')[0];
+  try {
+    s = decodeURI(s);
+  } catch {
+    /* leave as-is if it isn't valid percent-encoding */
+  }
+  const urlMatch = s.match(/^https?:\/\/[^/]+\/(.*)$/i);
+  if (urlMatch) s = urlMatch[1];
+  return s
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^Data\//i, '')
+    .replace(/^\/+/, '');
+}
+
+/** File name (last path segment) of an asset path. */
+export function basename(p: string): string {
+  return p.split('/').filter(Boolean).pop() || p;
+}
+
+/**
+ * Return a Foundry Document's plain SOURCE data (`document.toObject()`), or the value
+ * unchanged if it isn't a Document. Use this before serializing a document's `system`
+ * for inspection: in dnd5e 5.x `system.activities` is a Map/Collection, and
+ * `Object.keys()` on a Map returns `[]` — so serializing the LIVE `system` silently
+ * empties activities (attacks/saves/damage) to `{}`. `toObject()` flattens Maps and
+ * Collections to plain objects, so the inspected shape round-trips.
+ */
+export function toSource(doc: any): any {
+  return typeof doc?.toObject === 'function' ? doc.toObject() : doc;
+}
+
+// --- document sanitizer (single source of truth) ----------------------------
+// Hoisted from the byte-identical copies in actors.ts (`sanitize`) and items.ts
+// (`sanitizeData`/`removeSensitiveFields`). This is the page layer's single
+// credential-stripping / cycle-dropping chokepoint, so one copy beats two that can
+// silently drift (e.g. the activities-Map fix would otherwise need applying twice).
+
+/** Fields dropped from sanitized output (sensitive). */
+const SENSITIVE_FIELDS = new Set([
+  'password',
+  'token',
+  'secret',
+  'key',
+  'auth',
+  'credential',
+  'session',
+  'cookie',
+  'private',
+]);
+/** Cyclic / bloat / dangerous-accessor fields dropped from sanitized output. */
+const PROBLEMATIC_FIELDS = new Set([
+  'parent',
+  '_parent',
+  'collection',
+  'apps',
+  'document',
+  '_document',
+  'constructor',
+  'prototype',
+  '__proto__',
+  'valueOf',
+  'toString',
+  // dnd5e item leveling metadata; full of cycles back to the actor + other items.
+  'advancement',
+]);
+/** Deprecated dnd5e accessors that log a warning when read (filtered before reading). */
+const DEPRECATED_FIELDS = new Set(['save']);
+/** dnd5e 5.3 moved these senses.* keys under senses.ranges.*; the legacy getters warn. */
+const DEPRECATED_DND5E_SENSE_KEYS = ['darkvision', 'blindsight', 'tremorsense', 'truesight'];
+
+function isExcludedField(key: string): boolean {
+  return SENSITIVE_FIELDS.has(key) || PROBLEMATIC_FIELDS.has(key) || DEPRECATED_FIELDS.has(key);
+}
+
+/**
+ * Produce a deep, plain-JSON-safe copy of a Foundry data object: drop sensitive /
+ * problematic / deprecated keys, strip private props (keep only `_id`), guard against
+ * cycles + runaway depth, and skip the deprecated dnd5e legacy sense getters when the
+ * modern `ranges` shape exists. `Object.keys()` never invokes getters, so deprecated
+ * accessors are filtered before their values are read.
+ */
+export function sanitizeDocData(
+  data: any,
+  visited: WeakSet<object> = new WeakSet(),
+  depth = 0
+): any {
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  if (depth > 50) {
+    return '[Max depth reached]';
+  }
+  if (visited.has(data)) {
+    return '[Circular Reference]';
+  }
+  visited.add(data);
+
+  try {
+    if (Array.isArray(data)) {
+      return data.map(item => sanitizeDocData(item, visited, depth + 1));
+    }
+
+    const out: Record<string, any> = {};
+    const keys = Object.keys(data);
+    const isDnd5eSensesShape =
+      keys.includes('ranges') && keys.some(k => DEPRECATED_DND5E_SENSE_KEYS.includes(k));
+
+    for (const key of keys) {
+      if (isExcludedField(key)) continue;
+      if (key.startsWith('_') && key !== '_id') continue; // keep only _id among private props
+      if (isDnd5eSensesShape && DEPRECATED_DND5E_SENSE_KEYS.includes(key)) continue;
+
+      out[key] = sanitizeDocData(data[key], visited, depth + 1);
+    }
+
+    return out;
+  } catch {
+    return '[Sanitization failed]';
+  }
+}
+
+/** Slug identifier for a feat/feature (oracle ~8072). */
+export function slugify(name: string, fallback = 'feature'): string {
+  return (
+    name
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '') || fallback
+  );
+}
+
+/**
+ * Resolve a world Actor from a free-text identifier (read path — fuzzy).
+ * Order: exact id, exact name, then case-insensitive substring on name.
+ * Falls back to a scene-token's (possibly synthetic/delta-backed) actor so an
+ * unlinked token can still be resolved by its token id.
+ * (Oracle: findActorByIdentifier ~4395-4420 / data-access resolveActor.)
+ */
+export function resolveActorFuzzy(identifier: string): any {
+  const worldActor =
+    game.actors?.get(identifier) ||
+    game.actors?.getName?.(identifier) ||
+    Array.from(game.actors ?? []).find((a: any) =>
+      a.name?.toLowerCase().includes(identifier.toLowerCase())
+    );
+  if (worldActor) return worldActor;
+
+  for (const scene of game.scenes ?? []) {
+    const token = scene.tokens?.get(identifier);
+    if (token?.actor) return token.actor;
+  }
+  return undefined;
+}
+
+/** Resolve a JournalEntry by exact id then exact name (STRICT — no fuzzy/substring). */
+export function resolveJournalStrict(identifier: string): any {
+  return (
+    game.journal?.get(identifier) || game.journal?.find((j: any) => j.name === identifier) || null
+  );
+}
+
+/**
+ * Canonical dnd5e damage types. Used for soft validation (warn, never block) in
+ * attack / aura / attack-with-save authoring and NPC creation. Identical across
+ * every former per-file copy (ATTACK_/AURA_/ATTACK_WITH_SAVE_/NPC_DAMAGE_CANONICAL).
+ */
+export const DAMAGE_TYPES = new Set([
+  'acid',
+  'bludgeoning',
+  'cold',
+  'fire',
+  'force',
+  'lightning',
+  'necrotic',
+  'piercing',
+  'poison',
+  'psychic',
+  'radiant',
+  'slashing',
+  'thunder',
+]);
+
+/**
+ * Resolve or create a Folder by name scoped to the given document type. Returns
+ * the folder id, or null when absent and creation fails (so callers create the
+ * document without a folder rather than failing outright).
+ *
+ * Hoisted from the five identical per-file copies (actors / journals / collections
+ * / organization / dnd5e/npc). Color (#4a90e2 for Actor, #f39c12 otherwise),
+ * per-type descriptions, the mcpGenerated flag namespace, and questContext are all
+ * identical across those copies. The ONLY thing that differed was the console.warn
+ * prefix on failure (some sites prefixed `[foundry-mcp-bridge] `, some did not), so
+ * that prefix is parameterized via `warnLabel` to keep each call site byte-identical.
+ */
+export async function getOrCreateFolder(
+  folderName: string,
+  type: string,
+  warnLabel = ''
+): Promise<string | null> {
+  try {
+    const existingFolder = game.folders?.find((f: any) => f.name === folderName && f.type === type);
+    if (existingFolder) {
+      return existingFolder.id;
+    }
+
+    let description = '';
+    if (type === 'Actor') {
+      if (folderName === 'Foundry MCP Creatures') {
+        description = 'Creatures and monsters created via Foundry MCP';
+      } else {
+        description = `NPCs and creatures related to: ${folderName}`;
+      }
+    } else {
+      description = `Quest and content for: ${folderName}`;
+    }
+
+    const folderData = {
+      name: folderName,
+      type,
+      description,
+      color: type === 'Actor' ? '#4a90e2' : '#f39c12', // Blue for actors, orange for journals
+      sort: 0,
+      parent: null,
+      flags: {
+        [MCP_FLAG_SCOPE]: {
+          mcpGenerated: true,
+          createdAt: new Date().toISOString(),
+          questContext: type === 'JournalEntry' ? folderName : undefined,
+        },
+      },
+    };
+
+    const folder = await FolderClass.create(folderData as any);
+    return folder?.id || null;
+  } catch (error) {
+    console.warn(`${warnLabel}Failed to create folder "${folderName}":`, error);
+    return null;
+  }
+}

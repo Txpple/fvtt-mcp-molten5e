@@ -1,0 +1,63 @@
+{
+  "name": "fvtt-mcp-molten5e",
+  "version": "1.0.0",
+  "description": "D&D 5e–only, Molten-Hosting–optimized Foundry VTT MCP server, driven by Claude Code.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && node esbuild.page.mjs",
+    "build:page": "node esbuild.page.mjs",
+    "dev": "npm run build:page && tsc --watch",
+    "dev:page": "node esbuild.page.mjs --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:integration": "npm run build && vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint ./src",
+    "lint:fix": "biome lint --write ./src",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "knip": "knip",
+    "spike": "node scripts/spike-headless.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^16.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
+    "@types/node": "^26.0.0",
+    "esbuild": "~0.25.0",
+    "knip": "^5.64.0",
+    "playwright": "^1.61.0",
+    "typescript": "^6.0.3",
+    "vitest": "~3.2.6"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "author": "Txpple",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Txpple/fvtt-mcp-molten5e.git"
+  },
+  "keywords": [
+    "foundry-vtt",
+    "dnd5e",
+    "mcp",
+    "claude",
+    "claude-code",
+    "molten-hosting",
+    "ai",
+    "tabletop",
+    "rpg"
+  ]
+}

@@ -1,0 +1,36 @@
+name: CI
+
+# Enforces the same gates the project expects locally (build, format+lint, typecheck, unit tests).
+# The live integration suite is intentionally NOT run here — it needs a real Molten box, secrets,
+# and RUN_LIVE; `npm test` is the offline unit suite and is safe in CI.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build (tsc + page bundle)
+        run: npm run build
+
+      - name: Format + lint (biome)
+        run: npm run check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
