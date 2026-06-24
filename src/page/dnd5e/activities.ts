@@ -157,7 +157,9 @@ function buildSaveActivity(opts: BuildActivityOpts): Record<string, any> {
       parts: (opts.damageParts ?? []).map(damagePartToActivity),
     },
     save: {
-      ability: [opts.saveAbility],
+      // Guard against a malformed [undefined] entry if a caller omits the ability (the tool layer
+      // requires it, but keep the page defensive). addAttackWithSaveToActor always supplies it.
+      ability: opts.saveAbility ? [opts.saveAbility] : [],
       dc: { calculation: '', formula: opts.saveDC !== undefined ? String(opts.saveDC) : '' },
     },
   };

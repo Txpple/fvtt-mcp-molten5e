@@ -143,10 +143,25 @@ export class DnD5eManageActivityTool {
 
       // Cross-field guards: throw FormattedToolError so the message surfaces verbatim (the central
       // error mapper would otherwise flatten a plain Error to a generic "unexpected error").
-      if (parsed.action === 'add' && !parsed.type) {
-        throw new FormattedToolError(
-          'action "add" requires `type` (attack/damage/save/heal/check/utility).'
-        );
+      if (parsed.action === 'add') {
+        if (!parsed.type) {
+          throw new FormattedToolError(
+            'action "add" requires `type` (attack/damage/save/heal/check/utility).'
+          );
+        }
+        // Per-type required mechanics — without these the built activity would be malformed
+        // (e.g. a save with no ability writes save.ability:[undefined]) or empty/useless.
+        if (parsed.type === 'save' && (!parsed.saveAbility || parsed.saveDC === undefined)) {
+          throw new FormattedToolError('activity type "save" requires saveAbility and saveDC.');
+        }
+        if (parsed.type === 'heal' && !parsed.healAmount) {
+          throw new FormattedToolError('activity type "heal" requires healAmount.');
+        }
+        if (parsed.type === 'damage' && !parsed.damageParts?.length) {
+          throw new FormattedToolError(
+            'activity type "damage" requires at least one damageParts entry.'
+          );
+        }
       }
       if ((parsed.action === 'edit' || parsed.action === 'remove') && !parsed.activityId) {
         throw new FormattedToolError(`action "${parsed.action}" requires \`activityId\`.`);

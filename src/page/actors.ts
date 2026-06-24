@@ -605,7 +605,10 @@ export function searchCharacterItems(args: {
 
       if (searchCategory) {
         const spellLevel = result.level || 0;
-        const isPrepared = result.prepared !== false;
+        // dnd5e 5.x system.prepared is 0/1/2 (a number); treat >0 as prepared. (Legacy boolean data
+        // still works via the !== false fallback.)
+        const isPrepared =
+          typeof result.prepared === 'number' ? result.prepared > 0 : result.prepared !== false;
         const isCantrip = spellLevel === 0;
 
         if (searchCategory === 'cantrip' && !isCantrip) continue;
@@ -1275,9 +1278,18 @@ export async function updateActor(params: any): Promise<unknown> {
     applied.push('creatureSubtype');
   }
   if (params.swarmSize !== undefined && npcOnly('swarmSize')) {
-    update['system.details.type.swarm'] =
-      params.swarmSize === '' ? '' : (normalizeSize(String(params.swarmSize)) ?? '');
-    applied.push('swarmSize');
+    if (params.swarmSize === '') {
+      update['system.details.type.swarm'] = '';
+      applied.push('swarmSize');
+    } else {
+      const sz = normalizeSize(String(params.swarmSize));
+      if (sz) {
+        update['system.details.type.swarm'] = sz;
+        applied.push('swarmSize');
+      } else {
+        warnings.push(`Unknown swarm size "${params.swarmSize}" — left unchanged`);
+      }
+    }
   }
   if (typeof params.alignment === 'string') {
     update['system.details.alignment'] = params.alignment;
@@ -1487,11 +1499,12 @@ export async function updateActor(params: any): Promise<unknown> {
     applied.push('legendaryResistances');
   }
   if (params.lair && typeof params.lair === 'object' && npcOnly('lair')) {
+    // Providing a lair object marks the creature as having lair actions; initiative is optional.
+    update['system.resources.lair.value'] = true;
     if (typeof params.lair.initiative === 'number') {
-      update['system.resources.lair.value'] = true;
       update['system.resources.lair.initiative'] = params.lair.initiative;
-      applied.push('lair');
     }
+    applied.push('lair');
   }
 
   // --- 2024 fields (NPC) ---

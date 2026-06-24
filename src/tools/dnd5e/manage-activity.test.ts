@@ -102,4 +102,33 @@ describe('manage-activity tool', () => {
       tool.handleManageActivity({ action: 'remove', itemIdentifier: 'X' })
     ).rejects.toThrow(/requires `activityId`/);
   });
+
+  it('requires per-type mechanics (save needs ability+DC, heal needs amount, damage needs parts)', async () => {
+    const { tool } = makeTool();
+    // save without saveAbility/saveDC would write a malformed save.ability:[undefined]
+    await expect(
+      tool.handleManageActivity({ action: 'add', itemIdentifier: 'X', type: 'save' })
+    ).rejects.toThrow(/"save" requires saveAbility and saveDC/);
+    await expect(
+      tool.handleManageActivity({ action: 'add', itemIdentifier: 'X', type: 'heal' })
+    ).rejects.toThrow(/"heal" requires healAmount/);
+    await expect(
+      tool.handleManageActivity({ action: 'add', itemIdentifier: 'X', type: 'damage' })
+    ).rejects.toThrow(/"damage" requires at least one damageParts/);
+    // utility needs nothing beyond type
+    const { tool: tool2, calls } = makeTool({
+      success: true,
+      action: 'add',
+      type: 'utility',
+      activityId: 'U',
+      item: { id: 'i', name: 'X', type: 'feat' },
+    });
+    await tool2.handleManageActivity({
+      action: 'add',
+      itemIdentifier: 'X',
+      type: 'utility',
+      name: 'Multiattack',
+    });
+    expect(calls.some(([n]) => n === 'manageActivity')).toBe(true);
+  });
 });
