@@ -25,6 +25,7 @@ import {
   normalizeSize,
   normalizeSkill,
 } from './dnd5e/actor-fields.js';
+import { buildActivity } from './dnd5e/activities.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
 // declared in foundry-globals.d.ts; reach it off globalThis (loosely typed).
@@ -1587,4 +1588,110 @@ export async function updateActorItem(params: {
     item: { id: updated.id, name: updated.name, type: updated.type },
     appliedKeys,
   };
+}
+
+/** Resolve a world Item by exact id, then exact name, then a case-insensitive substring. */
+function resolveWorldItem(identifier: string): any {
+  const byId = game.items?.get?.(identifier);
+  if (byId) return byId;
+  const idLower = identifier.toLowerCase();
+  return (
+    game.items?.getName?.(identifier) ||
+    game.items?.find?.((i: any) => i.name?.toLowerCase() === idLower) ||
+    game.items?.find?.((i: any) => i.name?.toLowerCase().includes(idLower))
+  );
+}
+
+/**
+ * Add / edit / remove / list dnd5e Activities on an item — embedded on an actor (pass
+ * actorIdentifier) OR a world Item (omit it). Activities live in system.activities keyed by id.
+ *  - list:   return [{ id, type, name }]
+ *  - add:    build the activity via the shared buildActivity(type, opts) and set it under a fresh id
+ *  - edit:   apply a dot-path `patch` (relative to the activity root) and/or rename it
+ *  - remove: delete the activity by id (via the `-=` form)
+ * This is the dnd5e-aware activity authoring keystone (e.g. a Multiattack = a feat with a utility
+ * activity). It edits document data; it does not run combat.
+ */
+export async function manageActivity(params: {
+  action: 'add' | 'edit' | 'remove' | 'list';
+  itemIdentifier: string;
+  actorIdentifier?: string;
+  activityId?: string;
+  activity?: Record<string, any>;
+  patch?: Record<string, any>;
+}): Promise<unknown> {
+  const { action, itemIdentifier } = params ?? ({} as any);
+  if (!itemIdentifier) throw new Error('itemIdentifier is required');
+
+  // Resolve the item (embedded on an actor, or world-level) + the matching write path.
+  let item: any;
+  let actorRef: { id: string; name: string } | null = null;
+  let applyUpdate: (data: Record<string, any>) => Promise<any>;
+  if (params.actorIdentifier) {
+    const actor = resolveActor(params.actorIdentifier);
+    if (!actor) throw new Error(`Actor not found: ${params.actorIdentifier}`);
+    item = resolveActorItem(actor, itemIdentifier);
+    if (!item) throw new Error(`Item "${itemIdentifier}" not found on actor "${actor.name}"`);
+    actorRef = { id: actor.id, name: actor.name };
+    applyUpdate = data => actor.updateEmbeddedDocuments('Item', [{ _id: item.id, ...data }]);
+  } else {
+    item = resolveWorldItem(itemIdentifier);
+    if (!item) throw new Error(`World Item "${itemIdentifier}" not found`);
+    applyUpdate = data => item.update(data);
+  }
+
+  const activities: Record<string, any> = toSource(item).system?.activities ?? {};
+  const itemRef = { id: item.id, name: item.name, type: item.type };
+  const base = { success: true, item: itemRef, ...(actorRef ? { actor: actorRef } : {}) };
+
+  switch (action) {
+    case 'list':
+      return {
+        ...base,
+        activities: Object.values(activities).map((a: any) => ({
+          id: a._id,
+          type: a.type,
+          name: a.name ?? '',
+        })),
+      };
+
+    case 'add': {
+      const type = params.activity?.type;
+      if (!type) throw new Error('activity.type is required to add an activity.');
+      const id = foundry.utils.randomID(16);
+      const { type: _t, ...rest } = params.activity ?? {};
+      const act = buildActivity(type, { id, ...rest });
+      await applyUpdate({ [`system.activities.${id}`]: act });
+      return { ...base, action: 'add', activityId: id, type };
+    }
+
+    case 'edit': {
+      const id = params.activityId;
+      if (!id) throw new Error('activityId is required to edit an activity.');
+      if (!activities[id]) throw new Error(`Activity "${id}" not found on item "${item.name}".`);
+      const data: Record<string, any> = {};
+      if (typeof params.activity?.name === 'string') {
+        data[`system.activities.${id}.name`] = params.activity.name;
+      }
+      for (const [k, v] of Object.entries(params.patch ?? {})) {
+        data[`system.activities.${id}.${k}`] = v;
+      }
+      if (Object.keys(data).length === 0) {
+        throw new Error('Provide a `patch` (and/or activity.name) to edit.');
+      }
+      await applyUpdate(data);
+      return { ...base, action: 'edit', activityId: id, editedKeys: Object.keys(data) };
+    }
+
+    case 'remove': {
+      const id = params.activityId;
+      if (!id) throw new Error('activityId is required to remove an activity.');
+      if (!activities[id]) throw new Error(`Activity "${id}" not found on item "${item.name}".`);
+      await applyUpdate({ [toDeletionKey(`system.activities.${id}`)]: null });
+      return { ...base, action: 'remove', activityId: id };
+    }
+
+    default:
+      throw new Error(`Unknown action "${action}". Use add, edit, remove, or list.`);
+  }
 }

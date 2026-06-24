@@ -23,6 +23,7 @@ import {
   removeActorItems,
   updateActor,
   updateActorItem,
+  manageActivity,
 } from './actors.js';
 import { searchCompendium, getAvailablePacks, getCompendiumDocumentFull } from './compendium.js';
 import {
@@ -103,6 +104,7 @@ const api: Window['__fvtt'] = {
   removeActorItems,
   updateActor,
   updateActorItem,
+  manageActivity,
   // compendium
   searchCompendium,
   getAvailablePacks,

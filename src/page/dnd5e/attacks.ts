@@ -14,6 +14,7 @@
 // shape the tools + tests expect: { success, actor:{id,name}, item:{id,name,type}, warnings }.
 
 import { slugify, resolveActorFuzzy as findActorByIdentifier, DAMAGE_TYPES } from '../_shared.js';
+import { buildActivity } from './activities.js';
 
 // =============================================================================
 // Method-specific constants (ported verbatim from the oracle).
@@ -138,16 +139,12 @@ export async function addAttackToActor(data: any): Promise<unknown> {
   // 4. Generate activity ID
   const activityId: string = foundry.utils.randomID(16);
 
-  // 5. Damage parts for the activity (all except the first — which is system.damage.base)
-  const activityDamageParts = buildActivityDamageParts(data.damageParts as DamagePart[]);
-
-  // 6. Range object (system-level — holds the real range/reach)
+  // 5. Range object (system-level — holds the real range/reach)
   const rangeObj = buildAttackRange(data);
 
   // 7. Conditional 2024-only fields
   const sourceRules: string = data.sourceRules ?? '2014';
   const masteryField = sourceRules === '2024' ? { mastery: '' } : {};
-  const abilityField = sourceRules === '2024' ? { ability: data.effectiveAbility } : {};
   const classification = sourceRules === '2014' ? 'weapon' : '';
 
   // 8. Build item data
@@ -213,61 +210,19 @@ export async function addAttackToActor(data: any): Promise<unknown> {
       proficient: 1,
       magicalBonus: null,
       ...masteryField,
+      // The activity object is produced by the single shared builder (activities.ts). The base
+      // damage part lives in system.damage.base above, so only parts[1..] become activity parts.
       activities: {
-        [activityId]: {
-          _id: activityId,
-          type: 'attack',
-          name: '',
-          img: '',
-          sort: 0,
-          description: {},
-          activation: {
-            type: data.activationType ?? 'action',
-            value: 1,
-            condition: '',
-            override: false,
-          },
-          duration: { units: '', value: '', override: false },
-          target: {
-            template: {
-              count: '',
-              contiguous: false,
-              type: '',
-              size: '',
-              width: '',
-              height: '',
-              units: '',
-            },
-            affects: { count: '', type: '', choice: false, special: '' },
-            prompt: true,
-            override: false,
-          },
-          range: { units: 'self', override: false },
-          uses: { spent: 0, max: '', recovery: [] },
-          consumption: {
-            targets: [],
-            scaling: { allowed: false, max: '' },
-            spellSlot: true,
-          },
-          attack: {
-            ability: '',
-            bonus: data.attackBonus > 0 ? String(data.attackBonus) : '',
-            critical: { threshold: null },
-            flat: false,
-            type: {
-              value: data.attackType ?? 'melee',
-              classification,
-            },
-            ...abilityField,
-          },
-          damage: {
-            critical: { bonus: '' },
-            includeBase: true,
-            parts: activityDamageParts,
-          },
-          effects: [],
-          save: { ability: '', dc: { formula: '', calculation: '' } },
-        },
+        [activityId]: buildActivity('attack', {
+          id: activityId,
+          activationType: data.activationType ?? 'action',
+          attackType: data.attackType ?? 'melee',
+          attackBonus: data.attackBonus,
+          classification,
+          ...(sourceRules === '2024' ? { ability: data.effectiveAbility } : {}),
+          includeBase: true,
+          damageParts: (data.damageParts as DamagePart[]).slice(1),
+        }),
       },
     },
   };
@@ -489,32 +444,6 @@ export async function addAttackWithSaveToActor(data: any): Promise<unknown> {
   const attackActivityId: string = foundry.utils.randomID(16);
   const saveActivityId: string = foundry.utils.randomID(16);
 
-  // 5. Attack activity damage parts: damageParts[1+] (base is in system.damage.base)
-  const activityDamageParts = (
-    data.damageParts as Array<{ number: number; denomination: number; type: string }>
-  )
-    .slice(1)
-    .map(p => ({
-      types: [p.type],
-      number: p.number,
-      denomination: p.denomination,
-      bonus: '',
-      scaling: { mode: '', number: 1 },
-      custom: { enabled: false },
-    }));
-
-  // 6. Save activity damage parts: ALL saveDamageParts (no base — independent)
-  const saveActivityDamageParts = (
-    data.saveDamageParts as Array<{ number: number; denomination: number; type: string }>
-  ).map(p => ({
-    types: [p.type],
-    number: p.number,
-    denomination: p.denomination,
-    bonus: '',
-    scaling: { mode: '', number: 1 },
-    custom: { enabled: false },
-  }));
-
   // 7. System-level range (real reach/range — activity range is always 'self')
   const rangeObj =
     data.attackType === 'melee'
@@ -524,7 +453,6 @@ export async function addAttackWithSaveToActor(data: any): Promise<unknown> {
   // 8. Conditional 2024-only fields (same rules as Tipo A)
   const sourceRules: string = data.sourceRules ?? '2014';
   const masteryField = sourceRules === '2024' ? { mastery: '' } : {};
-  const abilityField = sourceRules === '2024' ? { ability: data.effectiveAbility } : {};
   const classification = sourceRules === '2014' ? 'weapon' : '';
 
   // 9. Build item data
@@ -591,97 +519,34 @@ export async function addAttackWithSaveToActor(data: any): Promise<unknown> {
       magicalBonus: null,
       ...masteryField,
       activities: {
-        // ── Activity 1: attack (sort 0) ───────────────────────────────
-        [attackActivityId]: {
-          _id: attackActivityId,
-          type: 'attack',
-          name: '',
-          img: '',
-          sort: 0,
-          description: {},
-          activation: {
-            type: data.activationType ?? 'action',
-            value: 1,
-            condition: '',
-            override: false,
-          },
-          duration: { units: '', value: '', override: false },
-          target: {
-            template: {
-              count: '',
-              contiguous: false,
-              type: '',
-              size: '',
-              width: '',
-              height: '',
-              units: '',
-            },
-            affects: { count: '', type: '', choice: false, special: '' },
-            prompt: true,
-            override: false,
-          },
-          range: { units: 'self', override: false },
-          uses: { spent: 0, max: '', recovery: [] },
-          consumption: { targets: [], scaling: { allowed: false, max: '' }, spellSlot: true },
-          attack: {
-            ability: '',
-            bonus: data.attackBonus > 0 ? String(data.attackBonus) : '',
-            critical: { threshold: null },
-            flat: false,
-            type: { value: data.attackType ?? 'melee', classification },
-            ...abilityField,
-          },
-          damage: {
-            critical: { bonus: '' },
-            includeBase: true,
-            parts: activityDamageParts,
-          },
-          effects: [],
-          save: { ability: '', dc: { formula: '', calculation: '' } },
-        },
+        // ── Activity 1: attack (sort 0) — shared builder; base damage stays in system.damage.base.
+        [attackActivityId]: buildActivity('attack', {
+          id: attackActivityId,
+          activationType: data.activationType ?? 'action',
+          attackType: data.attackType ?? 'melee',
+          attackBonus: data.attackBonus,
+          classification,
+          ...(sourceRules === '2024' ? { ability: data.effectiveAbility } : {}),
+          includeBase: true,
+          damageParts: (
+            data.damageParts as Array<{ number: number; denomination: number; type: string }>
+          ).slice(1),
+        }),
 
-        // ── Activity 2: save (sort 1) ─────────────────────────────────
-        [saveActivityId]: {
-          _id: saveActivityId,
-          type: 'save',
-          name: '',
+        // ── Activity 2: save (sort 1) — independent save damage (no weapon base).
+        [saveActivityId]: buildActivity('save', {
+          id: saveActivityId,
           sort: 1,
-          description: {}, // {} — not { chatFlavor: '' } (real schema confirmed)
-          activation: {
-            type: data.activationType ?? 'action',
-            value: 1,
-            override: false,
-            // NO condition — per real schema
-          },
-          duration: { units: 'inst', concentration: false, override: false },
-          effects: [],
-          range: { units: 'self', override: false },
-          uses: { spent: 0, recovery: [] }, // NO max
-          consumption: { scaling: { allowed: false }, spellSlot: true, targets: [] },
-          target: {
-            template: {
-              count: '',
-              contiguous: false,
-              type: '',
-              size: '',
-              width: '',
-              height: '',
-              units: '',
-            },
-            affects: { count: '1', type: 'creature', choice: false, special: '' },
-            override: false,
-            prompt: true,
-          },
-          damage: {
-            onSave: data.saveOnSave ?? 'none',
-            parts: saveActivityDamageParts,
-            // NO includeBase — save damage is independent from weapon base damage
-          },
-          save: {
-            ability: [data.saveAbility],
-            dc: { calculation: '', formula: String(data.saveDC) },
-          },
-        },
+          activationType: data.activationType ?? 'action',
+          saveAbility: data.saveAbility,
+          saveDC: data.saveDC,
+          onSave: data.saveOnSave ?? 'none',
+          damageParts: data.saveDamageParts as Array<{
+            number: number;
+            denomination: number;
+            type: string;
+          }>,
+        }),
       },
     },
   };

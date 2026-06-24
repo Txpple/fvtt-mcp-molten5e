@@ -338,6 +338,150 @@ try {
       ? pass('update-actor-item deletePaths', 'activity removed')
       : fail('update-actor-item deletePaths', JSON.stringify(Object.keys(acts)));
   }
+
+  // =========================================================================
+  // PHASE 3 — manage-activity: routed-attack regression + add/edit/remove/list.
+  // =========================================================================
+  {
+    const npc = await makeTempNpc('ZZ-MCP-AT-ACT');
+
+    // (a) Regression: addAttackToActor now routes through buildActivity — still builds a working attack.
+    await foundry.call('addAttackToActor', {
+      actorIdentifier: npc.id,
+      featureName: 'Bite',
+      attackType: 'melee',
+      damageParts: [{ number: 1, denomination: 10, type: 'piercing' }],
+      properties: [],
+      attackBonus: 0,
+      activationType: 'action',
+      weaponClass: 'natural',
+      equipped: true,
+      reachFt: 5,
+      sourceRules: '2024',
+      sourceBook: '',
+      sourcePage: '',
+      effectiveAbility: 'str',
+    });
+    const bite = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Bite',
+    });
+    const biteActs = Object.values(bite?.entity?.system?.activities ?? {});
+    const atk = biteActs.find(a => a.type === 'attack');
+    atk?.attack?.ability === 'str' && atk?.damage?.includeBase === true
+      ? pass('routed addAttackToActor (no drift)', 'attack activity intact')
+      : fail('routed addAttackToActor (no drift)', JSON.stringify(atk?.attack));
+
+    // (b) Create a passive feat, then author a Multiattack (utility) activity on it.
+    await foundry.call('addPassiveFeatureToActor', {
+      actorIdentifier: npc.id,
+      featureName: 'Actions',
+      description: '',
+      sourceRules: '2024',
+      sourceBook: '',
+      sourcePage: '',
+    });
+    const addUtil = await foundry.call('manageActivity', {
+      action: 'add',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+      activity: { type: 'utility', name: 'Multiattack' },
+    });
+    addUtil?.activityId
+      ? pass('manage-activity add utility (Multiattack)', addUtil.activityId)
+      : fail('manage-activity add utility', JSON.stringify(addUtil));
+
+    // (c) Add a heal activity + (d) a save activity.
+    const addHeal = await foundry.call('manageActivity', {
+      action: 'add',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+      activity: {
+        type: 'heal',
+        name: 'Mend',
+        healing: { number: 2, denomination: 8, type: 'healing' },
+      },
+    });
+    const addSave = await foundry.call('manageActivity', {
+      action: 'add',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+      activity: {
+        type: 'save',
+        name: 'Searing Burst',
+        saveAbility: 'dex',
+        saveDC: 15,
+        onSave: 'half',
+        damageParts: [{ number: 3, denomination: 6, type: 'fire' }],
+      },
+    });
+    const list = await foundry.call('manageActivity', {
+      action: 'list',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+    });
+    const types = (list?.activities ?? []).map(a => a.type).sort();
+    JSON.stringify(types) === JSON.stringify(['heal', 'save', 'utility'])
+      ? pass('manage-activity add heal/save + list', types.join(','))
+      : fail('manage-activity add heal/save + list', JSON.stringify(list?.activities));
+
+    // (e) Edit the save DC via a relative patch, then read back.
+    await foundry.call('manageActivity', {
+      action: 'edit',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+      activityId: addSave.activityId,
+      patch: { 'save.dc.formula': '17' },
+    });
+    const entActions = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Actions',
+    });
+    entActions?.entity?.system?.activities?.[addSave.activityId]?.save?.dc?.formula === '17'
+      ? pass('manage-activity edit (relative patch)', 'save DC -> 17')
+      : fail(
+          'manage-activity edit',
+          JSON.stringify(entActions?.entity?.system?.activities?.[addSave.activityId]?.save)
+        );
+
+    // (f) Remove the heal activity; list should drop it.
+    await foundry.call('manageActivity', {
+      action: 'remove',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+      activityId: addHeal.activityId,
+    });
+    const list2 = await foundry.call('manageActivity', {
+      action: 'list',
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Actions',
+    });
+    !(list2?.activities ?? []).some(a => a.id === addHeal.activityId)
+      ? pass('manage-activity remove', 'heal removed')
+      : fail('manage-activity remove', JSON.stringify(list2?.activities));
+  }
+
+  // PHASE 3 — world-item activity path.
+  {
+    const wid = await foundry.call('createWorldItems', {
+      items: [{ name: 'ZZ-MCP-AT World Wand', type: 'weapon' }],
+    });
+    const worldItemId = wid?.created?.[0]?.id;
+    const addOnWorld = await foundry.call('manageActivity', {
+      action: 'add',
+      itemIdentifier: worldItemId,
+      activity: {
+        type: 'damage',
+        name: 'Zap',
+        damageParts: [{ number: 2, denomination: 6, type: 'lightning' }],
+      },
+    });
+    addOnWorld?.activityId
+      ? pass('manage-activity world item', addOnWorld.activityId)
+      : fail('manage-activity world item', JSON.stringify(addOnWorld));
+    // cleanup the world item
+    if (worldItemId) await foundry.call('deleteWorldItems', { identifiers: [worldItemId] });
+  }
 } catch (e) {
   fail('SUITE', e?.message || String(e));
 } finally {
