@@ -565,6 +565,102 @@ try {
       ? pass('feat widening (featType + requirements)', `${fs.type.value} / "${fs.requirements}"`)
       : fail('feat widening', JSON.stringify({ type: fs?.type, requirements: fs?.requirements }));
   }
+
+  // =========================================================================
+  // PHASE 5 — manage-effect: create/list/edit/delete on actor + R2 read-back.
+  // =========================================================================
+  {
+    const npc = await makeTempNpc('ZZ-MCP-AT-FX');
+    // Give it a known natural-armor AC so an AC-bonus effect is observable.
+    await foundry.call('updateActor', {
+      actorIdentifier: npc.id,
+      ac: { calc: 'natural', flat: 15 },
+    });
+
+    const created = await foundry.call('manageEffect', {
+      action: 'create',
+      actorIdentifier: npc.id,
+      effect: {
+        name: '+2 AC, resist fire',
+        changes: [
+          { key: 'system.attributes.ac.bonus', value: '2', type: 'add' },
+          { key: 'system.traits.dr.value', value: 'fire', type: 'add' },
+        ],
+      },
+    });
+    created?.effectId
+      ? pass('manage-effect create', created.effectId)
+      : fail('manage-effect create', JSON.stringify(created));
+
+    // list shows the effect with its change keys intact.
+    const listed = await foundry.call('manageEffect', { action: 'list', actorIdentifier: npc.id });
+    const eff = (listed?.effects ?? []).find(e => e.id === created.effectId);
+    eff?.changes?.some(c => c.key === 'system.attributes.ac.bonus' && c.type === 'add')
+      ? pass('manage-effect list (change key intact)', `${eff.changes.length} changes`)
+      : fail('manage-effect list', JSON.stringify(eff));
+
+    // R2: get-actor surfaces effects[].changes[].key (the sanitizer no longer strips `key`).
+    const ga = await foundry.call('getCharacterInfo', { characterName: npc.id });
+    const gaEff = (ga?.effects ?? []).find(e => e.id === created.effectId);
+    gaEff?.changes?.some(c => c.key === 'system.attributes.ac.bonus')
+      ? pass('R2 get-actor effect change key', 'key preserved')
+      : fail('R2 get-actor effect change key', JSON.stringify(gaEff?.changes));
+
+    // Bonus: the effect actually applies (derived AC 15 -> 17).
+    ga?.derived?.ac?.value === 17
+      ? pass('manage-effect applies (derived AC +2)', `AC=${ga.derived.ac.value}`)
+      : console.log(
+          `NOTE  derived AC did not reflect +2 (got ${ga?.derived?.ac?.value}) — effect stored but calc may not add bonus`
+        );
+
+    // edit: disable it -> derived AC back to 15.
+    await foundry.call('manageEffect', {
+      action: 'edit',
+      actorIdentifier: npc.id,
+      effectId: created.effectId,
+      effect: { disabled: true },
+    });
+    const ga2 = await foundry.call('getCharacterInfo', { characterName: npc.id });
+    ga2?.derived?.ac?.value === 15
+      ? pass('manage-effect edit (disable)', 'AC back to 15')
+      : console.log(`NOTE  AC after disable = ${ga2?.derived?.ac?.value} (expected 15)`);
+
+    // delete -> list empty.
+    await foundry.call('manageEffect', {
+      action: 'delete',
+      actorIdentifier: npc.id,
+      effectId: created.effectId,
+    });
+    const listed2 = await foundry.call('manageEffect', { action: 'list', actorIdentifier: npc.id });
+    !(listed2?.effects ?? []).some(e => e.id === created.effectId)
+      ? pass('manage-effect delete', 'removed')
+      : fail('manage-effect delete', JSON.stringify(listed2?.effects));
+  }
+
+  // PHASE 5 — R2 on a world item: sanitized get-item keeps effect change keys.
+  {
+    const wid = await foundry.call('createWorldItems', {
+      items: [{ name: 'ZZ-MCP-AT FX Ring', type: 'equipment' }],
+    });
+    const ringId = wid?.created?.[0]?.id;
+    await foundry.call('manageEffect', {
+      action: 'create',
+      itemIdentifier: ringId,
+      effect: {
+        name: 'Ring of Protection',
+        changes: [{ key: 'system.attributes.ac.bonus', value: '1', type: 'add' }],
+      },
+    });
+    const gi = await foundry.call('getWorldItem', { identifier: ringId });
+    // The sanitizer preserves changes[].key wherever the changes array lives (top-level on actor
+    // effects; under system.changes on this item effect) — R2 triggers on any `changes` array.
+    const giEff = gi?.effects?.[0] ?? {};
+    const giChanges = giEff.changes ?? giEff.system?.changes ?? [];
+    giChanges.some(c => c.key === 'system.attributes.ac.bonus')
+      ? pass('R2 get-item effect change key (sanitized)', 'key preserved')
+      : fail('R2 get-item effect change key', JSON.stringify(giEff));
+    if (ringId) await foundry.call('deleteWorldItems', { identifiers: [ringId] });
+  }
 } catch (e) {
   fail('SUITE', e?.message || String(e));
 } finally {

@@ -22,6 +22,7 @@ import { DnD5eFeaturesFromCompendiumTools } from './tools/dnd5e/features.js';
 import { DnD5eUpdateActorTool } from './tools/dnd5e/update-actor.js';
 import { DnD5eUpdateActorItemTool } from './tools/dnd5e/update-actor-item.js';
 import { DnD5eManageActivityTool } from './tools/dnd5e/manage-activity.js';
+import { DnD5eManageEffectTool } from './tools/dnd5e/manage-effect.js';
 import { DnD5eConditionTool } from './tools/dnd5e/conditions.js';
 import { buildGrantToActorTool } from './tools/dnd5e/grant-to-actor.js';
 
@@ -69,6 +70,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const dnd5eUpdateActorTool = new DnD5eUpdateActorTool({ foundry, logger });
   const dnd5eUpdateActorItemTool = new DnD5eUpdateActorItemTool({ foundry, logger });
   const dnd5eManageActivityTool = new DnD5eManageActivityTool({ foundry, logger });
+  const dnd5eManageEffectTool = new DnD5eManageEffectTool({ foundry, logger });
   const dnd5eConditionTool = new DnD5eConditionTool({ foundry, logger });
 
   const questCreationTools = new QuestCreationTools({ foundry, logger });
@@ -101,6 +103,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eUpdateActorTool.getToolDefinitions(),
     ...dnd5eUpdateActorItemTool.getToolDefinitions(),
     ...dnd5eManageActivityTool.getToolDefinitions(),
+    ...dnd5eManageEffectTool.getToolDefinitions(),
     ...dnd5eConditionTool.getToolDefinitions(),
     grantToActorTool,
     ...questCreationTools.getToolDefinitions(),
@@ -152,6 +155,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),
     'update-actor-item': args => dnd5eUpdateActorItemTool.handleUpdateActorItem(args),
     'manage-activity': args => dnd5eManageActivityTool.handleManageActivity(args),
+    'manage-effect': args => dnd5eManageEffectTool.handleManageEffect(args),
     'apply-condition': args => dnd5eConditionTool.handleApplyCondition(args),
 
     // Actor authoring — unified grant entry (composes feature / compendium / items modes)

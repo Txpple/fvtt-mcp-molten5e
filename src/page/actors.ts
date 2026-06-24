@@ -386,11 +386,15 @@ export function getCharacterInfo(args: { characterName?: string; characterId?: s
     effects: actor.effects.map((effect: any) => {
       const dur = effect.duration;
       const durRaw = effect._source?.duration;
+      // toObject().changes is plain data ({ key, value, type, ... }); surface it so effects are
+      // inspectable from get-actor (the shared sanitizer also preserves changes[].key — see R2).
+      const changes = toSource(effect).changes;
       return {
         id: effect.id,
         name: effect.name || effect.label || 'Unknown Effect',
         ...(effect.icon ? { icon: effect.icon } : {}),
         disabled: effect.disabled,
+        ...(Array.isArray(changes) && changes.length > 0 ? { changes } : {}),
         ...(dur
           ? {
               duration: {
@@ -1606,7 +1610,7 @@ export async function updateActorItem(params: {
 }
 
 /** Resolve a world Item by exact id, then exact name, then a case-insensitive substring. */
-function resolveWorldItem(identifier: string): any {
+export function resolveWorldItem(identifier: string): any {
   const byId = game.items?.get?.(identifier);
   if (byId) return byId;
   const idLower = identifier.toLowerCase();
