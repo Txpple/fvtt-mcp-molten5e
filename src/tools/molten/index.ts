@@ -5,13 +5,16 @@ import { Logger } from '../../logger.js';
 import { config } from '../../config.js';
 import type { MoltenConfig } from '../../config.js';
 import type { FoundryBridge } from '../../foundry.js';
+import { WebDavClient, guessContentType, toDataRelative, type DavEntry } from './webdav.js';
 import {
-  WebDavClient,
-  WebDavError,
-  guessContentType,
-  toDataRelative,
-  type DavEntry,
-} from './webdav.js';
+  makeDavClient,
+  buildPublicUrl as davPublicUrl,
+  notConfiguredMessage,
+  worldDbRefusal as davWorldDbRefusal,
+  looksLikeWorldDbPath as davLooksLikeWorldDbPath,
+  davErrorMessage as davError,
+  humanSize,
+} from './dav-access.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
@@ -542,40 +545,20 @@ export class MoltenTools {
 
   /** Lazily build the WebDAV client; null when no password is configured. */
   private dav(): WebDavClient | null {
-    if (!this.molten.webdavPassword) return null;
-    if (!this.davClient) {
-      this.davClient = new WebDavClient({
-        webdavUrl: this.molten.webdavUrl,
-        user: this.molten.webdavUser,
-        password: this.molten.webdavPassword,
-        logger: this.logger,
-      });
-    }
+    if (!this.davClient) this.davClient = makeDavClient(this.molten, this.logger);
     return this.davClient;
   }
 
   private notConfigured(tool: string): string {
-    return (
-      `${tool} is not configured: set MOLTEN_WEBDAV_PASSWORD in your .env (the File Manager ` +
-      `password from the Molten panel; user "${this.molten.webdavUser}"). Never commit it.`
-    );
+    return notConfiguredMessage(tool, this.molten.webdavUser);
   }
 
   private worldDbRefusal(remotePath: string): string {
-    return (
-      `Refused: "${remotePath}" points inside a world's live LevelDB (\`.../data/\`). Writing there ` +
-      'over WebDAV corrupts the database. File tools are for assets only; mass DB changes are a ' +
-      'separate offline job (stop → Create Backup → fvtt unpack → edit → pack → start).'
-    );
+    return davWorldDbRefusal(remotePath);
   }
 
   private davErrorMessage(tool: string, err: unknown): string {
-    if (err instanceof WebDavError) {
-      this.logger.warn(`${tool} WebDAV error`, { status: err.status, message: err.message });
-      return `${tool} failed: ${err.message}`;
-    }
-    this.logger.error(`${tool} unexpected error`, { error: (err as Error).message });
-    return `${tool} failed: ${(err as Error).message}`;
+    return davError(tool, err, this.logger);
   }
 
   /** Ask the bridge what references an asset path. `checked:false` = bridge unavailable. */
@@ -606,25 +589,11 @@ export class MoltenTools {
 
   /** Public HTTPS URL for a path relative to `Data/` (DESIGN §6: served at the server root). */
   private buildPublicUrl(dataRelativePath: string): string {
-    return `${this.molten.serverUrl.replace(/\/+$/, '')}/${dataRelativePath}`;
+    return davPublicUrl(this.molten.serverUrl, dataRelativePath);
   }
 
-  /**
-   * Heuristic: is this path inside a world's live LevelDB store (`worlds/<w>/data/...`)?
-   * Matches the `data` directory itself (`worlds/<w>/data`) as well as anything under it, so an
-   * MKCOL/DELETE targeting the store dir is refused too. Paths are canonicalized by toDataRelative
-   * (which rejects `..` and collapses `.`/`//`) before this runs, so the guard can't be evaded by
-   * traversal segments.
-   */
+  /** Heuristic: is this path inside a world's live LevelDB store (`worlds/<w>/data/...`)? */
   private looksLikeWorldDbPath(dataRelativePath: string): boolean {
-    return /^worlds\/[^/]+\/data(\/|$)/i.test(dataRelativePath);
+    return davLooksLikeWorldDbPath(dataRelativePath);
   }
-}
-
-/** Human-readable byte size. */
-function humanSize(n?: number): string {
-  if (n === undefined) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }

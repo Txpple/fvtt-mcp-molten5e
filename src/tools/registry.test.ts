@@ -19,11 +19,26 @@ function build() {
 }
 
 describe('tool registry', () => {
-  it('advertises 62 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 68 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(62);
+    expect(names.length).toBe(68);
+  });
+
+  it('advertises the six chat-log tools by name', () => {
+    const { tools } = build();
+    const names = new Set(tools.map(t => t.name));
+    for (const name of [
+      'send-chat-message',
+      'list-chat-messages',
+      'delete-chat-messages',
+      'export-chat-log',
+      'post-item-card',
+      'request-roll',
+    ]) {
+      expect(names.has(name)).toBe(true);
+    }
   });
 
   it('every advertised tool has a handler, and every handler is advertised', () => {

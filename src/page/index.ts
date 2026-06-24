@@ -62,6 +62,14 @@ import {
   createCards,
   deleteCards,
 } from './collections.js';
+import {
+  postChatMessage,
+  listChatMessages,
+  deleteChatMessages,
+  exportChatLog,
+  postItemCard,
+  requestRoll,
+} from './chat.js';
 import { createFolder, moveDocuments, bulkDelete, deleteFolder } from './organization.js';
 import { findAssetReferences, relinkAsset, setActorArt, addJournalImage } from './assets.js';
 import { getEnhancedCreatureIndex, listCreaturesByCriteria } from './creature-index.js';
@@ -130,6 +138,13 @@ const api: Window['__fvtt'] = {
   deleteRollTables,
   createCards,
   deleteCards,
+  // chat log (post / list / delete / export / dnd5e cards / roll requests)
+  postChatMessage,
+  listChatMessages,
+  deleteChatMessages,
+  exportChatLog,
+  postItemCard,
+  requestRoll,
   // organization (folders / move / bulk-delete)
   createFolder,
   moveDocuments,

@@ -25,6 +25,7 @@ import { MoltenTools } from './tools/molten/index.js';
 import { AssetBridgeTools } from './tools/asset-bridge.js';
 import { TableTools } from './tools/tables.js';
 import { CardsTools } from './tools/cards.js';
+import { ChatTools } from './tools/chat.js';
 import { OrganizationTools } from './tools/organization.js';
 
 export interface ToolRegistry {
@@ -70,6 +71,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const assetBridgeTools = new AssetBridgeTools({ foundry, logger });
   const tableTools = new TableTools({ foundry, logger });
   const cardsTools = new CardsTools({ foundry, logger });
+  const chatTools = new ChatTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
   // Unified actor-granting tool: composes the feature-authoring + compendium-feature mode schemas
@@ -93,6 +95,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...assetBridgeTools.getToolDefinitions(),
     ...tableTools.getToolDefinitions(),
     ...cardsTools.getToolDefinitions(),
+    ...chatTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
   ]) {
     defByName.set(def.name, def);
@@ -207,6 +210,14 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'create-cards': args => cardsTools.handleCreateCards(args),
     'list-cards': args => cardsTools.handleListCards(args),
     'delete-cards': args => cardsTools.handleDeleteCards(args),
+
+    // Chat log
+    'send-chat-message': args => chatTools.handleSendChatMessage(args),
+    'list-chat-messages': args => chatTools.handleListChatMessages(args),
+    'delete-chat-messages': args => chatTools.handleDeleteChatMessages(args),
+    'export-chat-log': args => chatTools.handleExportChatLog(args),
+    'post-item-card': args => chatTools.handlePostItemCard(args),
+    'request-roll': args => chatTools.handleRequestRoll(args),
 
     // Organization & batch
     'create-folder': args => organizationTools.handleCreateFolder(args),
