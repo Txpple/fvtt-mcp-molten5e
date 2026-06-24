@@ -141,12 +141,12 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**62 tools total: 53 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
+**75 tools total: 66 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes, roll tables, cards, ownership, folders/organization, 5e-specific helpers
-(NPC creation, feature/spell granting), **plus the asset-composition + reference-integrity tools**.
-Plane B (Molten WebDAV) is the asset file library.
+(NPC creation, feature/spell granting, structured inventory/loot authoring), **plus the
+asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the asset file library.
 
 **Plane B — Molten file tools (WebDAV):**
 
@@ -175,6 +175,7 @@ Plane B (Molten WebDAV) is the asset file library.
 | `add-journal-image`     | Append an image page to a journal entry                                      |
 
 The remaining Plane A tools cover world CRUD (`create-actor`, `grant-to-actor`, `create-item`,
+`add-item` (structured weapons/armor/consumables/loot/containers),
 `create-journal`/`create-quest-journal`, `create-rolltable`, `create-cards`, …), listing/search
 (`list-actors`, `search-compendium`, `list-journals`, …), and organization (`create-folder`,
 `move-documents`, `bulk-delete`). See [`src/index.ts`](src/index.ts) for the full dispatch table.
