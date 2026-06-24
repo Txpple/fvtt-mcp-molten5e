@@ -73,11 +73,68 @@ const DeletePlaylistSchema = z.object({
     .describe('Exact ids (preferred) or exact names of playlists to delete.'),
 });
 
+// Cross-cutting scene fields shared by create-scene and update-scene. Spread into
+// both schemas so there's one source of truth. Page-side validates `weather`
+// against the live CONFIG.weatherEffects and resolves playlist/journal name→id.
+const sceneCommonFields = {
+  gridDistance: z
+    .number()
+    .positive()
+    .optional()
+    .describe('Real-world distance per grid cell (dnd5e default 5).'),
+  gridUnits: z
+    .string()
+    .optional()
+    .describe('Distance unit label per cell, e.g. "ft" (dnd5e default).'),
+  tokenVision: z
+    .boolean()
+    .optional()
+    .describe(
+      'Require token line-of-sight to see the scene. Turn OFF for overland/illustration maps.'
+    ),
+  fogMode: z
+    .enum(['disabled', 'individual', 'shared'])
+    .optional()
+    .describe('Fog of war: disabled | individual (classic per-player) | shared (party-wide).'),
+  darkness: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Darkness/day-night level: 0 = full daylight, 1 = full night.'),
+  globalLight: z
+    .boolean()
+    .optional()
+    .describe('Globally illuminate the whole scene (turn the lights on).'),
+  weather: z
+    .string()
+    .optional()
+    .describe('Weather effect key (e.g. rain, snow, fog, leaves, rainStorm, blizzard). "" = none.'),
+  playlist: z
+    .string()
+    .optional()
+    .describe('Playlist id or exact name to auto-play on scene activation. "" clears it.'),
+  journal: z
+    .string()
+    .optional()
+    .describe('JournalEntry id or exact name to attach as scene notes. "" clears it.'),
+};
+
 const CreateSceneSchema = z.object({
   name: z.string().min(1).describe('Scene name.'),
   backgroundPath: z.string().min(1).describe('Data-relative path to the background/map image.'),
-  width: z.number().int().positive().optional().describe('Scene width in pixels (optional).'),
-  height: z.number().int().positive().optional().describe('Scene height in pixels (optional).'),
+  width: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Scene width in pixels (optional — auto-detected from the image when omitted).'),
+  height: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Scene height in pixels (optional — auto-detected from the image when omitted).'),
   gridSize: z.number().int().positive().optional().describe('Grid size in pixels (default 100).'),
   gridType: z
     .number()
@@ -87,6 +144,7 @@ const CreateSceneSchema = z.object({
     .describe('Foundry grid type (0 gridless, 1 square, 2+ hex). Default 1.'),
   padding: z.number().min(0).max(0.5).optional().describe('Scene padding fraction (optional).'),
   activate: z.boolean().default(false).describe('Activate the scene after creating it.'),
+  ...sceneCommonFields,
 });
 
 const SetActorArtSchema = z.object({
@@ -133,6 +191,7 @@ const UpdateSceneSchema = z.object({
     .optional()
     .describe('Foundry grid type (0 gridless, 1 square, 2+ hex).'),
   padding: z.number().min(0).max(0.5).optional().describe('Scene padding fraction (0–0.5).'),
+  ...sceneCommonFields,
 });
 
 const DeleteSceneSchema = z.object({
@@ -207,8 +266,9 @@ export class AssetBridgeTools {
         name: 'create-scene',
         description:
           'Bridge (composition). Create a Foundry Scene from a Data-relative background image path ' +
-          '(e.g. an uploaded map). Optionally set grid size/type and dimensions, and activate it. ' +
-          'GM-only.',
+          '(e.g. an uploaded map). Width/height auto-detect from the image when omitted. Optionally ' +
+          'set grid size/type/distance/units, token vision, fog mode, lighting (darkness, global ' +
+          'light), weather, a linked playlist/journal, padding, and activate it. GM-only.',
         inputSchema: toInputSchema(CreateSceneSchema),
       },
       {
@@ -236,9 +296,11 @@ export class AssetBridgeTools {
         name: 'update-scene',
         description:
           'Update an existing Scene document — rename, swap its background image (Data-relative path), ' +
-          'toggle navigation, set the navigation label, or change dimensions/grid/padding. ' +
-          'Supersedes the old set-scene-background tool (pass backgroundPath). Scene-document only: ' +
-          'never touches placeables (walls/lights/tokens) and never activates the scene. GM-only.',
+          'toggle navigation, set the navigation label, change dimensions/grid (size/type/distance/' +
+          'units)/padding, token vision, fog mode, lighting (darkness, global light), weather, or the ' +
+          'linked playlist/journal ("" clears a link). Supersedes the old set-scene-background tool ' +
+          '(pass backgroundPath). Scene-document only: never touches placeables (walls/lights/tokens) ' +
+          'and never activates the scene. GM-only.',
         inputSchema: toInputSchema(UpdateSceneSchema),
       },
       {
@@ -328,9 +390,15 @@ export class AssetBridgeTools {
   async handleCreateScene(args: any): Promise<string> {
     const parsed = CreateSceneSchema.parse(args ?? {});
     const result = await this.foundry.call('createScene', parsed);
+    const dims =
+      result?.width && result?.height
+        ? `\n  dimensions: ${result.width}×${result.height}px${result.autoSized ? ' (auto from image)' : ''}`
+        : '';
     return (
       `Created scene "${result?.sceneName}" (${result?.sceneId})` +
-      `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}`
+      `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}` +
+      dims +
+      formatSceneSettings(result?.settings)
     );
   }
 
@@ -380,7 +448,10 @@ export class AssetBridgeTools {
     if (result?.updated === false) {
       return `Scene not found: "${result?.notFound ?? parsed.sceneIdentifier}". Nothing changed.`;
     }
-    return `Updated scene "${result?.sceneName}" (${result?.sceneId})\n  background: ${result?.background}`;
+    return (
+      `Updated scene "${result?.sceneName}" (${result?.sceneId})\n  background: ${result?.background}` +
+      formatSceneSettings(result?.settings)
+    );
   }
 
   async handleDeleteScene(args: any): Promise<string> {
@@ -388,4 +459,27 @@ export class AssetBridgeTools {
     const result = await this.foundry.call('deleteScenes', { identifiers });
     return formatDeletionResult(result, 'scene(s)');
   }
+}
+
+/**
+ * Compact one-line summary of a scene's effective settings for tool output.
+ * Grid/vision/fog are always shown (always relevant); darkness, global light,
+ * weather, and links appear only when non-default/set, to keep the line short.
+ * Returns '' when there are no settings to report (keeps legacy output stable).
+ */
+function formatSceneSettings(s: any): string {
+  if (!s || typeof s !== 'object') return '';
+  const parts: string[] = [];
+  const g = s.grid ?? {};
+  if (g.size != null || g.distance != null) {
+    parts.push(`grid ${g.size ?? '?'}px = ${g.distance ?? '?'}${g.units ? ` ${g.units}` : ''}`);
+  }
+  if (s.tokenVision != null) parts.push(`vision ${s.tokenVision ? 'on' : 'off'}`);
+  if (s.fogMode) parts.push(`fog ${s.fogMode}`);
+  if (typeof s.darkness === 'number' && s.darkness > 0) parts.push(`darkness ${s.darkness}`);
+  if (s.globalLight === true) parts.push('global light on');
+  if (s.weather) parts.push(`weather ${s.weather}`);
+  if (s.playlist) parts.push(`playlist ${s.playlist}`);
+  if (s.journal) parts.push(`journal ${s.journal}`);
+  return parts.length ? `\n  settings: ${parts.join(', ')}` : '';
 }

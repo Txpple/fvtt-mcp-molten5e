@@ -5,8 +5,21 @@
 // permission/transaction/audit scaffolding — the bridge is always GM. The
 // Node-side tools (src/tools/scene.ts, src/tools/asset-bridge.ts) own all output
 // shaping; these functions return the raw structured values those tools (and
-// their tests) expect. Write shapes match the old data-access.ts oracle
-// (createScene @7255 / updateScene @7434 / deleteScenes @7514) exactly.
+// their tests) expect.
+//
+// v14 schema facts (live-verified against Foundry 14.364 / dnd5e 5.3.3):
+//  - There is NO top-level Scene.background. The map image lives on the scene's
+//    initial Level: levels[<initialLevel>].background.src. Scene.create() auto-
+//    seeds a default Level (id "defaultLevel0000") that already has a background
+//    TextureData, so applySceneBackground's levels[] branch always hits on v14.
+//  - Lighting/darkness live under the `environment` data model
+//    (environment.darknessLevel 0–1, environment.globalLight.enabled). The old
+//    top-level globalLight/darkness fields are gone in v14.
+//  - Fog is a 3-mode enum: fog.mode 0 DISABLED / 1 INDIVIDUAL / 2 SHARED
+//    (fog.exploration boolean and fog.overlay are gone in v14).
+//  - grid is a data model: grid.{type,size,distance,units,...}.
+//  - weather is a top-level StringField keyed into CONFIG.weatherEffects.
+//  - playlist / journal are top-level ForeignDocumentField id strings.
 
 import { normalizeAssetPath } from './_shared.js';
 
@@ -14,6 +27,48 @@ import { normalizeAssetPath } from './_shared.js';
 // not declared in foundry-globals.d.ts; reach them off globalThis (loosely typed).
 const SceneClass: any = (globalThis as any).Scene;
 const CONST_: any = (globalThis as any).CONST;
+const foundryUtils: any = (globalThis as any).foundry?.utils;
+
+// --- pure helpers (unit-tested in scenes.test.ts; no page globals) -----------
+
+/** Fog-of-war mode names ↔ the numeric `fog.mode` the v14 schema stores. */
+export const FOG_MODE_TO_NUMBER: Record<string, number> = {
+  disabled: 0,
+  individual: 1,
+  shared: 2,
+};
+const FOG_NUMBER_TO_NAME: Record<number, string> = { 0: 'disabled', 1: 'individual', 2: 'shared' };
+
+/** Map a fogMode name to the numeric `fog.mode`. Throws on an unknown name. */
+export function fogModeToNumber(mode: string): number {
+  const n = FOG_MODE_TO_NUMBER[mode];
+  if (n === undefined) {
+    throw new Error(`Invalid fogMode "${mode}". Use one of: disabled, individual, shared.`);
+  }
+  return n;
+}
+
+/** Map a numeric `fog.mode` back to its name (for output). Unknown → String(n). */
+export function fogModeToName(n: unknown): string {
+  return typeof n === 'number' && FOG_NUMBER_TO_NAME[n] ? FOG_NUMBER_TO_NAME[n] : String(n ?? '');
+}
+
+/**
+ * Normalize a weather key against the set of registered keys: exact match first,
+ * then case-insensitive (returns the canonical key). Empty/nullish → "" (clear).
+ * Throws a listing error on an unknown key. Pure — the page-side wrapper supplies
+ * `availableKeys` from CONFIG.weatherEffects.
+ */
+export function normalizeWeatherKey(input: unknown, availableKeys: string[]): string {
+  if (input === '' || input === null || input === undefined) return '';
+  const s = String(input);
+  if (availableKeys.includes(s)) return s;
+  const ci = availableKeys.find(k => k.toLowerCase() === s.toLowerCase());
+  if (ci) return ci;
+  throw new Error(
+    `Unknown weather "${s}". Available: ${availableKeys.join(', ') || '(none registered)'}, or "" for none.`
+  );
+}
 
 /**
  * Map a token's disposition to a number. Foundry stores it as a number already;
@@ -26,6 +81,8 @@ function tokenDisposition(disposition: unknown): number {
   }
   return 0; // neutral
 }
+
+// --- reads -------------------------------------------------------------------
 
 /**
  * Information about the currently active scene, including tokens, notes and
@@ -42,7 +99,7 @@ export function getActiveScene(): unknown {
     id: scene.id,
     name: scene.name,
     img: scene.img || undefined,
-    background: scene._source?.background?.src || undefined,
+    background: readSceneBackground(scene),
     width: scene.width,
     height: scene.height,
     padding: scene.padding,
@@ -98,7 +155,7 @@ export function listScenes(args?: { filter?: string; includeActiveOnly?: boolean
       height: scene.dimensions?.height || scene.height || 0,
     },
     gridSize: scene.grid?.size || 100,
-    background: scene._source?.background?.src || scene.img || '',
+    background: readSceneBackground(scene) || '',
     walls: scene.walls?.size || 0,
     tokens: scene.tokens?.size || 0,
     lighting: scene.lights?.size || 0,
@@ -109,22 +166,40 @@ export function listScenes(args?: { filter?: string; includeActiveOnly?: boolean
 
 // --- writes ------------------------------------------------------------------
 
+/** Shape of the optional cross-cutting scene fields shared by create + update. */
+interface SceneFieldArgs {
+  gridDistance?: number;
+  gridUnits?: string;
+  tokenVision?: boolean;
+  fogMode?: string;
+  darkness?: number;
+  globalLight?: boolean;
+  weather?: string;
+  playlist?: string;
+  journal?: string;
+}
+
 /**
  * Create a new Scene from a name + background image path. The renderable
  * background lives on the scene's initial level in v14 (levels[].background.src),
- * so we create the document then set the background there. Optionally activates
- * the new scene. Mirrors the old data-access.createScene shape.
+ * so we create the document then set the background there. When width/height are
+ * omitted, the background image's natural pixel size is probed page-side and used
+ * (the single biggest QOL win — no dimension math in the caller). Applies the
+ * shared scene fields (grid scale, vision, fog, lighting, weather, links) and
+ * optionally activates the new scene.
  */
-export async function createScene(args: {
-  name: string;
-  backgroundPath: string;
-  width?: number;
-  height?: number;
-  gridSize?: number;
-  gridType?: number;
-  padding?: number;
-  activate?: boolean;
-}): Promise<unknown> {
+export async function createScene(
+  args: {
+    name: string;
+    backgroundPath: string;
+    width?: number;
+    height?: number;
+    gridSize?: number;
+    gridType?: number;
+    padding?: number;
+    activate?: boolean;
+  } & SceneFieldArgs
+): Promise<unknown> {
   if (!args.name || !args.backgroundPath) {
     throw new Error('name and backgroundPath are both required');
   }
@@ -133,16 +208,33 @@ export async function createScene(args: {
     const src = normalizeAssetPath(args.backgroundPath);
     const sceneData: any = {
       name: args.name,
-      // Legacy field — harmless on v14 (ignored), correct on Foundry < 14.
-      background: { src },
       grid: {
         size: typeof args.gridSize === 'number' ? args.gridSize : 100,
         type: typeof args.gridType === 'number' ? args.gridType : (CONST_?.GRID_TYPES?.SQUARE ?? 1),
       },
     };
-    if (typeof args.width === 'number') sceneData.width = args.width;
-    if (typeof args.height === 'number') sceneData.height = args.height;
     if (typeof args.padding === 'number') sceneData.padding = args.padding;
+
+    // Auto-size from the image when either dimension is missing.
+    let autoSized = false;
+    let width = args.width;
+    let height = args.height;
+    if (width === undefined || height === undefined) {
+      const dim = await probeImageSize(src);
+      if (dim && dim.width > 0 && dim.height > 0) {
+        if (width === undefined) width = dim.width;
+        if (height === undefined) height = dim.height;
+        autoSized = true;
+      }
+    }
+    if (typeof width === 'number') sceneData.width = width;
+    if (typeof height === 'number') sceneData.height = height;
+
+    // Fold in the shared fields (grid scale / vision / fog / lighting / weather / links).
+    const flat = buildSceneFields(args);
+    if (Object.keys(flat).length > 0 && foundryUtils?.expandObject && foundryUtils?.mergeObject) {
+      foundryUtils.mergeObject(sceneData, foundryUtils.expandObject(flat));
+    }
 
     const scene = await SceneClass.create(sceneData);
     // v14: the renderable background lives on the scene's initial level — set it there.
@@ -155,6 +247,10 @@ export async function createScene(args: {
       sceneName: scene?.name,
       active: scene?.active ?? false,
       background: readSceneBackground(scene),
+      width: scene?.width,
+      height: scene?.height,
+      autoSized,
+      settings: summarizeSceneSettings(scene),
     };
   } catch (error) {
     throw new Error(
@@ -164,25 +260,27 @@ export async function createScene(args: {
 }
 
 /**
- * Update an existing Scene's document fields. Folds in the background swap
- * (set-scene-background) plus the common scene-document properties: name,
- * navigation label/flag, dimensions, grid, padding. STRICT resolution
+ * Update an existing Scene's document fields. Folds in the background swap plus
+ * the common scene-document properties: name, navigation label/flag, dimensions,
+ * grid (size/type/distance/units), token vision, fog mode, lighting (darkness /
+ * global light), weather, and playlist/journal links. STRICT resolution
  * (resolveSceneStrict) — no fuzzy matching. Scene-document only; never touches
- * placeables (walls/lights/tokens) or activates the scene. Mirrors the old
- * data-access.updateScene shape.
+ * placeables (walls/lights/tokens) or activates the scene.
  */
-export async function updateScene(args: {
-  sceneIdentifier: string;
-  name?: string;
-  navName?: string;
-  navigation?: boolean;
-  backgroundPath?: string;
-  width?: number;
-  height?: number;
-  gridSize?: number;
-  gridType?: number;
-  padding?: number;
-}): Promise<unknown> {
+export async function updateScene(
+  args: {
+    sceneIdentifier: string;
+    name?: string;
+    navName?: string;
+    navigation?: boolean;
+    backgroundPath?: string;
+    width?: number;
+    height?: number;
+    gridSize?: number;
+    gridType?: number;
+    padding?: number;
+  } & SceneFieldArgs
+): Promise<unknown> {
   if (!args?.sceneIdentifier) {
     throw new Error('sceneIdentifier is required');
   }
@@ -202,13 +300,18 @@ export async function updateScene(args: {
   if (typeof args.gridSize === 'number') update['grid.size'] = args.gridSize;
   if (typeof args.gridType === 'number') update['grid.type'] = args.gridType;
 
+  // Shared fields (dot-paths apply directly to scene.update()).
+  Object.assign(update, buildSceneFields(args));
+
   const hasDocUpdate = Object.keys(update).length > 0;
   const hasBackground =
     typeof args.backgroundPath === 'string' && args.backgroundPath.trim().length > 0;
 
   if (!hasDocUpdate && !hasBackground) {
     throw new Error(
-      'Provide at least one field to update (name, navName, navigation, backgroundPath, width, height, gridSize, gridType, padding)'
+      'Provide at least one field to update (name, navName, navigation, backgroundPath, width, ' +
+        'height, gridSize, gridType, gridDistance, gridUnits, padding, tokenVision, fogMode, ' +
+        'darkness, globalLight, weather, playlist, journal)'
     );
   }
 
@@ -224,6 +327,7 @@ export async function updateScene(args: {
       sceneId: scene.id,
       sceneName: scene.name,
       background: readSceneBackground(scene),
+      settings: summarizeSceneSettings(scene),
     };
   } catch (error) {
     throw new Error(
@@ -276,13 +380,87 @@ export async function deleteScenes(args: { identifiers: string[] }): Promise<{
   }
 }
 
-// --- local helpers -----------------------------------------------------------
+// --- local helpers (page-coupled) --------------------------------------------
+
+/**
+ * Build the flat dot-path map of the shared scene fields, doing the page-side
+ * validation/resolution that zod can't: weather is normalized against the live
+ * CONFIG.weatherEffects keys, and playlist/journal names are resolved to ids
+ * (strict, ambiguity-erroring). create() expands this; update() applies it as-is.
+ */
+function buildSceneFields(args: SceneFieldArgs): Record<string, unknown> {
+  const flat: Record<string, unknown> = {};
+  if (typeof args.gridDistance === 'number') flat['grid.distance'] = args.gridDistance;
+  if (typeof args.gridUnits === 'string') flat['grid.units'] = args.gridUnits;
+  if (typeof args.tokenVision === 'boolean') flat.tokenVision = args.tokenVision;
+  if (typeof args.fogMode === 'string') flat['fog.mode'] = fogModeToNumber(args.fogMode);
+  if (typeof args.darkness === 'number') {
+    flat['environment.darknessLevel'] = Math.max(0, Math.min(1, args.darkness));
+  }
+  if (typeof args.globalLight === 'boolean')
+    flat['environment.globalLight.enabled'] = args.globalLight;
+  if (typeof args.weather === 'string') flat.weather = validateWeather(args.weather);
+  if (typeof args.playlist === 'string')
+    flat.playlist = resolveSceneLink('playlist', args.playlist);
+  if (typeof args.journal === 'string') flat.journal = resolveSceneLink('journal', args.journal);
+  return flat;
+}
+
+/** Normalize a weather key against the live CONFIG.weatherEffects registry. */
+function validateWeather(key: string): string {
+  const keys = Object.keys((globalThis as any).CONFIG?.weatherEffects ?? {});
+  return normalizeWeatherKey(key, keys);
+}
+
+/**
+ * Resolve a Playlist/JournalEntry reference (id OR exact name) to its id. Empty
+ * string clears the link (returns null). Throws on no match or on an ambiguous
+ * name (multiple docs share it) — never guesses.
+ */
+function resolveSceneLink(kind: 'playlist' | 'journal', idOrName: string): string | null {
+  const trimmed = idOrName.trim();
+  if (trimmed === '') return null; // clear the link
+  const coll: any = kind === 'playlist' ? game.playlists : game.journal;
+  const byId = coll?.get?.(trimmed);
+  if (byId) return byId.id;
+  const matches = Array.from(coll ?? []).filter((d: any) => d?.name === trimmed);
+  if (matches.length === 1) return (matches[0] as any).id;
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous ${kind} name "${trimmed}" (${matches.length} matches). Pass the id instead.`
+    );
+  }
+  throw new Error(`No ${kind} found matching "${trimmed}" (by id or exact name).`);
+}
 
 /** Resolve a scene by exact id, then exact name; null when neither matches. */
 function resolveSceneStrict(identifier: string): any {
   return (
     game.scenes?.get(identifier) || game.scenes?.find((s: any) => s.name === identifier) || null
   );
+}
+
+/**
+ * Probe an image's natural pixel size from inside the authenticated Foundry page
+ * (no separate WebDAV fetch / auth dance — the page can already load any
+ * Data-relative asset). Resolves null on any failure (caller falls back to
+ * Foundry's default dimensions). Images only; a video background won't report a
+ * naturalWidth and yields null.
+ */
+async function probeImageSize(
+  normalizedSrc: string
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const url = new URL(normalizedSrc, (globalThis as any).location?.origin).href;
+    return await new Promise(resolve => {
+      const img = new (globalThis as any).Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -314,4 +492,24 @@ function readSceneBackground(scene: any): string | undefined {
     if (lvl?.background?.src) return lvl.background.src;
   }
   return o.background?.src || undefined;
+}
+
+/**
+ * Compact, output-friendly snapshot of the scene's settable fields so the Node
+ * tool can report what's in effect after a create/update. Reads from toObject()
+ * so nested data models flatten cleanly.
+ */
+function summarizeSceneSettings(scene: any): Record<string, unknown> {
+  const o: any = scene?.toObject?.() ?? scene?._source ?? {};
+  const grid = o.grid ?? {};
+  return {
+    grid: { size: grid.size, type: grid.type, distance: grid.distance, units: grid.units },
+    tokenVision: o.tokenVision,
+    fogMode: fogModeToName(o.fog?.mode),
+    darkness: o.environment?.darknessLevel,
+    globalLight: o.environment?.globalLight?.enabled,
+    weather: o.weather ?? '',
+    playlist: o.playlist ?? null,
+    journal: o.journal ?? null,
+  };
 }

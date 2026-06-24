@@ -353,6 +353,80 @@ describe('handleCreateScene', () => {
       tools.handleCreateScene({ name: 'X', backgroundPath: 'b', padding: 0.9 })
     ).rejects.toThrow();
   });
+
+  it('forwards the new scene fields to the bridge', async () => {
+    const { tools, calls } = build({ sceneName: 'X', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({
+      name: 'X',
+      backgroundPath: 'b',
+      gridDistance: 5,
+      gridUnits: 'ft',
+      tokenVision: true,
+      fogMode: 'shared',
+      darkness: 0.4,
+      globalLight: false,
+      weather: 'snow',
+      playlist: 'Ambience',
+      journal: 'Read-Aloud',
+    });
+    expect(calls[0][1]).toMatchObject({
+      gridDistance: 5,
+      gridUnits: 'ft',
+      tokenVision: true,
+      fogMode: 'shared',
+      darkness: 0.4,
+      globalLight: false,
+      weather: 'snow',
+      playlist: 'Ambience',
+      journal: 'Read-Aloud',
+    });
+  });
+
+  it('rejects an invalid fogMode', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', fogMode: 'sometimes' })
+    ).rejects.toThrow();
+  });
+
+  it('rejects darkness above 1', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', darkness: 2 })
+    ).rejects.toThrow();
+  });
+
+  it('reports auto-detected dimensions and effective settings', async () => {
+    const { tools } = build({
+      sceneName: 'Cavern',
+      sceneId: 'sc1',
+      background: 'maps/cavern.webp',
+      width: 4000,
+      height: 3000,
+      autoSized: true,
+      settings: {
+        grid: { size: 100, type: 1, distance: 5, units: 'ft' },
+        tokenVision: true,
+        fogMode: 'individual',
+        darkness: 0.5,
+        globalLight: false,
+        weather: 'fog',
+        playlist: null,
+        journal: null,
+      },
+    });
+    const out = await tools.handleCreateScene({
+      name: 'Cavern',
+      backgroundPath: 'maps/cavern.webp',
+    });
+    expect(out).toContain('dimensions: 4000×3000px (auto from image)');
+    expect(out).toContain('grid 100px = 5 ft');
+    expect(out).toContain('vision on');
+    expect(out).toContain('fog individual');
+    expect(out).toContain('darkness 0.5');
+    expect(out).toContain('weather fog');
+    expect(out).not.toContain('global light on');
+  });
 });
 
 describe('handleSetActorArt', () => {
@@ -551,6 +625,63 @@ describe('handleUpdateScene', () => {
   it('rejects padding above 0.5', async () => {
     const { tools } = build();
     await expect(tools.handleUpdateScene({ sceneIdentifier: 's', padding: 0.9 })).rejects.toThrow();
+  });
+
+  it('forwards the new scene fields and clears links with ""', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      sceneName: 'C',
+      sceneId: 'sc1',
+      background: 'b',
+    });
+    await tools.handleUpdateScene({
+      sceneIdentifier: 'sc1',
+      darkness: 1,
+      globalLight: true,
+      weather: '',
+      playlist: '',
+      journal: 'Notes',
+    });
+    expect(calls[0][1]).toMatchObject({
+      darkness: 1,
+      globalLight: true,
+      weather: '',
+      playlist: '',
+      journal: 'Notes',
+    });
+  });
+
+  it('rejects an invalid fogMode', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateScene({ sceneIdentifier: 's', fogMode: 'maybe' })
+    ).rejects.toThrow();
+  });
+
+  it('appends effective settings to the update result', async () => {
+    const { tools } = build({
+      updated: true,
+      sceneName: 'C',
+      sceneId: 'sc1',
+      background: 'b',
+      settings: {
+        grid: { size: 100, type: 1, distance: 5, units: 'ft' },
+        tokenVision: false,
+        fogMode: 'shared',
+        darkness: 0,
+        globalLight: true,
+        weather: '',
+        playlist: 'pl1',
+        journal: null,
+      },
+    });
+    const out = await tools.handleUpdateScene({ sceneIdentifier: 'sc1', globalLight: true });
+    expect(out).toContain('vision off');
+    expect(out).toContain('fog shared');
+    expect(out).toContain('global light on');
+    expect(out).toContain('playlist pl1');
+    expect(out).not.toContain('darkness'); // 0 is suppressed
+    expect(out).not.toContain('weather'); // empty is suppressed
   });
 });
 
