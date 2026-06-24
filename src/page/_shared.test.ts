@@ -110,4 +110,22 @@ describe('sanitizeDocData', () => {
     expect(sanitizeDocData('x')).toBe('x');
     expect(sanitizeDocData(null)).toBe(null);
   });
+
+  it('preserves ActiveEffect changes[].key (collides with the sensitive `key` name)', () => {
+    // The blanket sensitive-field filter dropped `key` everywhere, leaving every effect read-back
+    // with keyless (useless) changes. The fix keeps `key` inside changes[] entries only.
+    const out = sanitizeDocData({
+      name: 'Bless',
+      changes: [
+        { key: 'system.attributes.ac.bonus', value: '2', type: 'add', phase: 'initial' },
+        { key: 'system.abilities.str.value', value: '4', mode: 2 },
+      ],
+    });
+    expect(out.changes).toEqual([
+      { key: 'system.attributes.ac.bonus', value: '2', type: 'add', phase: 'initial' },
+      { key: 'system.abilities.str.value', value: '4', mode: 2 },
+    ]);
+    // ...but a top-level `key` outside changes[] is still stripped as sensitive.
+    expect(sanitizeDocData({ key: 'secret', name: 'ok' })).toEqual({ name: 'ok' });
+  });
 });

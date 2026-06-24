@@ -109,11 +109,18 @@ function isExcludedField(key: string): boolean {
  * cycles + runaway depth, and skip the deprecated dnd5e legacy sense getters when the
  * modern `ranges` shape exists. `Object.keys()` never invokes getters, so deprecated
  * accessors are filtered before their values are read.
+ *
+ * `keepKeyField` is set only for the entries of an ActiveEffect `changes[]` array: each
+ * entry carries a `key` field naming the targeted data path (e.g. "system.attributes.ac.bonus").
+ * That field collides with the sensitive `key` name but is structural data, not a credential —
+ * blanket-stripping it left every effect read-back with keyless (useless) changes. The flag is
+ * scoped to the immediate change entry; it does NOT propagate to nested children.
  */
 export function sanitizeDocData(
   data: any,
   visited: WeakSet<object> = new WeakSet(),
-  depth = 0
+  depth = 0,
+  keepKeyField = false
 ): any {
   if (data === null || typeof data !== 'object') {
     return data;
@@ -128,7 +135,7 @@ export function sanitizeDocData(
 
   try {
     if (Array.isArray(data)) {
-      return data.map(item => sanitizeDocData(item, visited, depth + 1));
+      return data.map(item => sanitizeDocData(item, visited, depth + 1, keepKeyField));
     }
 
     const out: Record<string, any> = {};
@@ -137,7 +144,13 @@ export function sanitizeDocData(
       keys.includes('ranges') && keys.some(k => DEPRECATED_DND5E_SENSE_KEYS.includes(k));
 
     for (const key of keys) {
-      if (isExcludedField(key)) continue;
+      // ActiveEffect changes[]: recurse the entries preserving their `key` field (the change
+      // target path), which the blanket sensitive-field filter would otherwise drop.
+      if (key === 'changes' && Array.isArray(data[key])) {
+        out[key] = data[key].map((item: any) => sanitizeDocData(item, visited, depth + 1, true));
+        continue;
+      }
+      if (!(keepKeyField && key === 'key') && isExcludedField(key)) continue;
       if (key.startsWith('_') && key !== '_id') continue; // keep only _id among private props
       if (isDnd5eSensesShape && DEPRECATED_DND5E_SENSE_KEYS.includes(key)) continue;
 

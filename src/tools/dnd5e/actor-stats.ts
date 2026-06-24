@@ -29,8 +29,10 @@ export function extractActorBasicInfo(actorData: any): any {
       temp: system.attributes.hp.temp || 0,
     };
   }
-  if (system.attributes?.ac) {
-    basicInfo.armorClass = system.attributes.ac.value;
+  // AC.value is DERIVED (absent from the toObject() source), so prefer the derived block.
+  const acValue = actorData.derived?.ac?.value ?? system.attributes?.ac?.value;
+  if (acValue !== undefined) {
+    basicInfo.armorClass = acValue;
   }
 
   if (system.details?.level?.value) {
@@ -95,34 +97,44 @@ export function extractActorStats(actorData: any): any {
     };
   }
 
-  // Armor Class
-  const ac = system.attributes?.ac?.value ?? system.attributes?.ac;
+  // Armor Class — value is DERIVED (absent from the toObject() source); prefer the derived block.
+  const ac = actorData.derived?.ac?.value ?? system.attributes?.ac?.value;
   if (ac !== undefined) {
     stats.armorClass = ac;
   }
 
-  // Abilities (STR, DEX, CON, INT, WIS, CHA)
+  // Initiative — derived total (only present on the live actor).
+  if (typeof actorData.derived?.init?.total === 'number') {
+    stats.initiative = actorData.derived.init.total;
+  }
+
+  // Abilities (STR, DEX, CON, INT, WIS, CHA). The modifier is DERIVED (`abilities.<ab>.mod`),
+  // missing from the source blob — prefer the derived block, falling back to any inline mod.
   if (system.abilities) {
     stats.abilities = {};
     for (const [key, ability] of Object.entries(system.abilities)) {
       const abilityData = ability as any;
       stats.abilities[key] = {
         value: abilityData.value ?? 10,
-        modifier: abilityData.mod ?? 0,
+        modifier: actorData.derived?.abilities?.[key]?.mod ?? abilityData.mod ?? 0,
       };
     }
   }
 
-  // Skills
+  // Skills. `total` (the rolled modifier) and `passive` are DERIVED; prefer the derived block.
   if (system.skills) {
     stats.skills = {};
     for (const [key, skill] of Object.entries(system.skills)) {
       const skillData = skill as any;
-      stats.skills[key] = {
+      const d = actorData.derived?.skills?.[key];
+      const entry: any = {
         value: skillData.value ?? 0,
-        modifier: skillData.total ?? skillData.mod ?? 0,
+        modifier: d?.total ?? skillData.total ?? skillData.mod ?? 0,
         proficient: skillData.proficient ?? 0,
       };
+      const passive = d?.passive ?? skillData.passive;
+      if (passive !== undefined) entry.passive = passive;
+      stats.skills[key] = entry;
     }
   }
 
@@ -151,10 +163,16 @@ export function extractActorStats(actorData: any): any {
 
     const legact = system.resources?.legact;
     if (legact) {
+      // `available` (= max − spent) is DERIVED — prefer the derived block over the (absent) source value.
       stats.legendaryActions = {
-        available: legact.value ?? 0,
+        available: actorData.derived?.legact?.value ?? legact.value ?? 0,
         max: legact.max ?? 0,
       };
+    }
+
+    // XP is derived from CR (absent from the source) — surface it for stat-block display.
+    if (typeof actorData.derived?.xp?.value === 'number') {
+      stats.xp = actorData.derived.xp.value;
     }
   }
 

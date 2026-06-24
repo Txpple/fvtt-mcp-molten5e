@@ -265,6 +265,57 @@ function extractSaves(
 }
 
 /**
+ * dnd5e DERIVED values, read off the LIVE actor (NOT toObject()). The get-actor system blob is
+ * sanitized from `toObject().system`, which is the SOURCE data and so omits every prepared/derived
+ * field: ability `.mod`, skill `.total`/`.passive`/`.mod`, `attributes.ac.value`,
+ * `attributes.init.total`, the available-legendary-actions `legact.value` (= max − spent), and the
+ * CR-derived `details.xp.value`. Reading them here (the same way extractSaves reads save totals)
+ * lets the Node extractor surface real modifiers instead of zeros. Returns undefined when there is
+ * nothing derived to report.
+ */
+function extractDerived(actor: any): Record<string, any> | undefined {
+  const system = actor?.system;
+  if (!system || typeof system !== 'object') return undefined;
+  const out: Record<string, any> = {};
+
+  if (system.abilities && typeof system.abilities === 'object') {
+    const abilities: Record<string, { mod: number }> = {};
+    for (const [key, ab] of Object.entries(system.abilities)) {
+      const mod = (ab as any)?.mod;
+      if (typeof mod === 'number') abilities[key] = { mod };
+    }
+    if (Object.keys(abilities).length > 0) out.abilities = abilities;
+  }
+
+  if (system.skills && typeof system.skills === 'object') {
+    const skills: Record<string, { total: number; passive: number; mod: number }> = {};
+    for (const [key, sk] of Object.entries(system.skills)) {
+      const s = sk as any;
+      if (typeof s?.total === 'number') {
+        skills[key] = { total: s.total, passive: s.passive ?? 0, mod: s.mod ?? s.total };
+      }
+    }
+    if (Object.keys(skills).length > 0) out.skills = skills;
+  }
+
+  const acValue = system.attributes?.ac?.value;
+  if (typeof acValue === 'number') out.ac = { value: acValue };
+
+  const initTotal = system.attributes?.init?.total;
+  if (typeof initTotal === 'number') out.init = { total: initTotal };
+
+  const legact = system.resources?.legact;
+  if (legact && typeof legact.value === 'number') {
+    out.legact = { value: legact.value, max: legact.max ?? 0 };
+  }
+
+  const xpValue = system.details?.xp?.value;
+  if (typeof xpValue === 'number') out.xp = { value: xpValue };
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Detailed character info for one actor, resolved by name or id.
  * Payload mirrors the bridge query: { characterName?, characterId? }.
  * Returns the full CharacterInfo shape the Node character tool consumes:
@@ -337,6 +388,14 @@ export function getCharacterInfo(args: { characterName?: string; characterId?: s
   const saves = extractSaves(actor);
   if (saves) {
     characterData.saves = saves;
+  }
+
+  // Derived values (ability/skill modifiers, AC, init, legendary actions, xp) — read from the
+  // LIVE actor because the sanitized `system` blob comes from toObject() (source data) and omits
+  // every prepared field. The Node extractor prefers this block over the (absent) source values.
+  const derived = extractDerived(actor);
+  if (derived) {
+    characterData.derived = derived;
   }
 
   return characterData;

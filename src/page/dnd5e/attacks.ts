@@ -19,6 +19,8 @@ import { slugify, resolveActorFuzzy as findActorByIdentifier, DAMAGE_TYPES } fro
 // Method-specific constants (ported verbatim from the oracle).
 // =============================================================================
 
+// dnd5e 5.3.3 weapon property codes — the live CONFIG.DND5E.validProperties.weapon set (17).
+// Soft-validation only (warn, never block). Kept in sync with the copy in tools/dnd5e/add-feature.ts.
 const ATTACK_PROPERTY_CANONICAL = new Set([
   'ada',
   'amm',
@@ -30,7 +32,9 @@ const ATTACK_PROPERTY_CANONICAL = new Set([
   'lod',
   'mgc',
   'rch',
+  'rel',
   'ret',
+  'sil',
   'spc',
   'thr',
   'two',

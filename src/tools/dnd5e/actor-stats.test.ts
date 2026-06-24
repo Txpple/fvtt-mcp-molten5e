@@ -33,6 +33,15 @@ describe('extractActorBasicInfo', () => {
   it('returns an empty object when system data is missing', () => {
     expect(extractActorBasicInfo({})).toEqual({});
   });
+
+  it('prefers the derived AC value over the (absent) source value', () => {
+    const info = extractActorBasicInfo({
+      // toObject() source has no ac.value, only calc/flat — the live derived block carries value.
+      system: { attributes: { ac: { calc: 'natural', flat: 15 } } },
+      derived: { ac: { value: 15 } },
+    });
+    expect(info.armorClass).toBe(15);
+  });
 });
 
 describe('extractActorStats', () => {
@@ -88,6 +97,35 @@ describe('extractActorStats', () => {
       system: { spells: { spell1: { value: 4, max: 4 } } },
     });
     expect(stats.spellcasting).toEqual({ hasSpells: true, spellLevel: 0 });
+  });
+
+  it('consumes the derived block for ability mods, skill totals/passive, AC, init, legact, and xp', () => {
+    const stats = extractActorStats({
+      name: 'Barbed Devil',
+      type: 'npc',
+      system: {
+        // SOURCE (toObject) shape: no mods, no skill totals, ac has no value, legact no value.
+        details: { cr: 5, type: { value: 'fiend' } },
+        attributes: { hp: { value: 110, max: 110 }, ac: { calc: 'natural', flat: 15 } },
+        abilities: { str: { value: 20, proficient: 1 } },
+        skills: { prc: { value: 2, ability: 'wis' } },
+        resources: { legact: { max: 0, spent: 0 } },
+      },
+      derived: {
+        abilities: { str: { mod: 5 } },
+        skills: { prc: { total: 8, passive: 18, mod: 2 } },
+        ac: { value: 15 },
+        init: { total: 3 },
+        legact: { value: 0, max: 0 },
+        xp: { value: 1800 },
+      },
+    });
+    expect(stats.armorClass).toBe(15);
+    expect(stats.initiative).toBe(3);
+    expect(stats.abilities.str).toEqual({ value: 20, modifier: 5 });
+    expect(stats.skills.prc).toEqual({ value: 2, modifier: 8, proficient: 0, passive: 18 });
+    expect(stats.legendaryActions).toEqual({ available: 0, max: 0 });
+    expect(stats.xp).toBe(1800);
   });
 
   it('is safe on an actor with no system data', () => {

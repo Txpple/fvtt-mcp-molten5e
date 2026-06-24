@@ -26,6 +26,8 @@ const DAMAGE_CANONICAL = new Set([
   'thunder',
 ]);
 
+// dnd5e 5.3.3 weapon property codes — the live CONFIG.DND5E.validProperties.weapon set (17).
+// Soft-validation only (warn, never block). Kept in sync with the copy in page/dnd5e/attacks.ts.
 const ATTACK_PROPERTY_CANONICAL = new Set([
   'ada',
   'amm',
@@ -37,7 +39,9 @@ const ATTACK_PROPERTY_CANONICAL = new Set([
   'lod',
   'mgc',
   'rch',
+  'rel',
   'ret',
+  'sil',
   'spc',
   'thr',
   'two',
@@ -262,7 +266,7 @@ const AddFeatureSchema = z.object({
     .default([])
     .describe(
       'Weapon property codes (e.g. ["fin", "lgt"]). ' +
-        'Canonical 2014 codes: ada, amm, fin, fir, foc, hvy, lgt, lod, mgc, rch, ret, spc, thr, two, ver. ' +
+        'Canonical dnd5e codes: ada, amm, fin, fir, foc, hvy, lgt, lod, mgc, rch, rel, ret, sil, spc, thr, two, ver. ' +
         'Used by: attack, attack-with-save. Default: [].'
     ),
 
