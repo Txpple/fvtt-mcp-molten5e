@@ -19,17 +19,18 @@ function build() {
 }
 
 describe('tool registry', () => {
-  it('advertises 71 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 72 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(71);
+    expect(names.length).toBe(72);
   });
 
   it('advertises the actor-editing tools by name', () => {
     const { tools } = build();
     const names = new Set(tools.map(t => t.name));
     expect(names.has('update-actor')).toBe(true);
+    expect(names.has('update-actor-item')).toBe(true);
     expect(names.has('apply-condition')).toBe(true);
   });
 

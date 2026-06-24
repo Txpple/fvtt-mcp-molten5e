@@ -255,6 +255,89 @@ try {
       ? pass('apply-condition unknown warns', 'warned')
       : fail('apply-condition unknown warns', JSON.stringify(bad?.warnings));
   }
+
+  // =========================================================================
+  // PHASE 2 — update-actor-item: dot-path patch + deletePaths on an embedded item.
+  // =========================================================================
+  {
+    const npc = await makeTempNpc('ZZ-MCP-AT-ITEM');
+    // Seed a Claws weapon with one attack activity (known id, so we can patch/delete it).
+    const seed = await foundry.evaluate(async actorId => {
+      const a = game.actors.get(actorId);
+      const actId = foundry.utils.randomID(16);
+      const [created] = await a.createEmbeddedDocuments('Item', [
+        {
+          name: 'Claws',
+          type: 'weapon',
+          system: {
+            damage: {
+              base: {
+                number: 2,
+                denomination: 6,
+                types: ['slashing'],
+                bonus: '',
+                scaling: { mode: '', number: 1 },
+                custom: { enabled: false },
+              },
+            },
+            activities: {
+              [actId]: {
+                _id: actId,
+                type: 'attack',
+                attack: {
+                  bonus: '',
+                  ability: '',
+                  flat: false,
+                  type: { value: 'melee', classification: '' },
+                  critical: { threshold: null },
+                },
+                damage: { includeBase: true, parts: [] },
+              },
+            },
+          },
+        },
+      ]);
+      return { itemId: created.id, activityId: actId };
+    }, npc.id);
+
+    // Patch base damage + the activity attack bonus via dot-paths.
+    await foundry.call('updateActorItem', {
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Claws',
+      patch: {
+        'system.damage.base.number': 5,
+        'system.damage.base.types': ['piercing'],
+        [`system.activities.${seed.activityId}.attack.bonus`]: '3',
+      },
+    });
+    const ent = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Claws',
+    });
+    const sys = ent?.entity?.system;
+    const okPatch =
+      sys?.damage?.base?.number === 5 &&
+      JSON.stringify(sys?.damage?.base?.types) === JSON.stringify(['piercing']) &&
+      sys?.activities?.[seed.activityId]?.attack?.bonus === '3';
+    okPatch
+      ? pass('update-actor-item patch', 'damage 5 piercing, atk bonus +3')
+      : fail('update-actor-item patch', JSON.stringify(sys?.damage?.base));
+
+    // Delete the activity via deletePaths -> "-=" form.
+    await foundry.call('updateActorItem', {
+      actorIdentifier: npc.id,
+      itemIdentifier: 'Claws',
+      deletePaths: [`system.activities.${seed.activityId}`],
+    });
+    const ent2 = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Claws',
+    });
+    const acts = ent2?.entity?.system?.activities ?? {};
+    !acts[seed.activityId]
+      ? pass('update-actor-item deletePaths', 'activity removed')
+      : fail('update-actor-item deletePaths', JSON.stringify(Object.keys(acts)));
+  }
 } catch (e) {
   fail('SUITE', e?.message || String(e));
 } finally {

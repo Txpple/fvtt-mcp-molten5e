@@ -1506,3 +1506,85 @@ export async function updateActor(params: any): Promise<unknown> {
     warnings,
   };
 }
+
+/**
+ * Resolve an embedded Item on an actor by exact id, then exact name (case-insensitive), then a
+ * case-insensitive substring on name (optionally constrained to a `type`). Returns undefined when
+ * nothing matches. Exported for reuse by the activity tooling (manage-activity).
+ */
+export function resolveActorItem(actor: any, identifier: string, type?: string): any {
+  if (!identifier) return undefined;
+  const byId = actor.items?.get?.(identifier);
+  if (byId && (!type || byId.type === type)) return byId;
+  const idLower = identifier.toLowerCase();
+  const typeOk = (i: any) => !type || i.type === type;
+  return (
+    actor.items?.find((i: any) => typeOk(i) && i.name?.toLowerCase() === idLower) ??
+    actor.items?.find((i: any) => typeOk(i) && i.name?.toLowerCase().includes(idLower))
+  );
+}
+
+/**
+ * Turn a dot-path into a Foundry deletion key by prefixing its LAST segment with `-=`
+ * (e.g. "system.activities.abc" -> "system.activities.-=abc"), which removes that key on update.
+ */
+export function toDeletionKey(path: string): string {
+  const idx = path.lastIndexOf('.');
+  return idx < 0 ? `-=${path}` : `${path.slice(0, idx)}.-=${path.slice(idx + 1)}`;
+}
+
+/**
+ * Edit an embedded Item on an actor by applying a dot-path `patch` (and/or `deletePaths`, and/or a
+ * name/img change) via actor.updateEmbeddedDocuments('Item', ...). This is the generic embedded-doc
+ * editor: `patch` keys are Foundry dot-paths (e.g. "system.damage.base.number",
+ * "system.activities.<id>.attack.bonus") applied as-is — arrays REPLACE whole (dnd5e Sets/arrays are
+ * replace-whole). `deletePaths` remove keys via the `-=` form (e.g. to drop an activity by id).
+ * Resolves the actor fuzzily and the item by id/name. Returns the item identity + the applied keys.
+ */
+export async function updateActorItem(params: {
+  actorIdentifier: string;
+  itemIdentifier: string;
+  type?: string;
+  name?: string;
+  img?: string;
+  patch?: Record<string, any>;
+  deletePaths?: string[];
+}): Promise<unknown> {
+  const { actorIdentifier, itemIdentifier } = params ?? ({} as any);
+  if (!actorIdentifier) throw new Error('actorIdentifier is required');
+  if (!itemIdentifier) throw new Error('itemIdentifier is required');
+
+  const actor = resolveActor(actorIdentifier);
+  if (!actor) throw new Error(`Actor not found: ${actorIdentifier}`);
+  const item = resolveActorItem(actor, itemIdentifier, params.type);
+  if (!item) {
+    throw new Error(`Item "${itemIdentifier}" not found on actor "${actor.name}"`);
+  }
+
+  const update: Record<string, any> = { _id: item.id };
+  if (typeof params.name === 'string' && params.name.trim()) update.name = params.name.trim();
+  if (typeof params.img === 'string' && params.img.trim()) update.img = params.img.trim();
+  if (params.patch && typeof params.patch === 'object') {
+    for (const [k, v] of Object.entries(params.patch)) update[k] = v;
+  }
+  if (Array.isArray(params.deletePaths)) {
+    for (const p of params.deletePaths) {
+      if (typeof p === 'string' && p.length > 0) update[toDeletionKey(p)] = null;
+    }
+  }
+
+  const appliedKeys = Object.keys(update).filter(k => k !== '_id');
+  if (appliedKeys.length === 0) {
+    throw new Error('Provide name, img, patch, or deletePaths to change.');
+  }
+
+  await actor.updateEmbeddedDocuments('Item', [update]);
+
+  const updated = actor.items?.get?.(item.id) ?? item;
+  return {
+    success: true,
+    actor: { id: actor.id, name: actor.name },
+    item: { id: updated.id, name: updated.name, type: updated.type },
+    appliedKeys,
+  };
+}
