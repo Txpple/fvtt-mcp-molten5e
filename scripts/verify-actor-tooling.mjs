@@ -482,6 +482,89 @@ try {
     // cleanup the world item
     if (worldItemId) await foundry.call('deleteWorldItems', { identifiers: [worldItemId] });
   }
+
+  // =========================================================================
+  // PHASE 4 — homebrew-spell authoring + feat widening + read-side method migration.
+  // =========================================================================
+  {
+    const npc = await makeTempNpc('ZZ-MCP-AT-SPELL');
+
+    // Author a homebrew spell with an optional save activity.
+    await foundry.call('addHomebrewSpellToActor', {
+      actorIdentifier: npc.id,
+      name: 'Soul Bolt',
+      level: 3,
+      school: 'nec',
+      method: 'innate',
+      prepared: 0,
+      components: ['vocal', 'somatic'],
+      description: '<p>A bolt of necrotic energy.</p>',
+      activationType: 'action',
+      rangeValue: 120,
+      rangeUnits: 'ft',
+      sourceRules: '2024',
+      activity: {
+        type: 'save',
+        saveAbility: 'dex',
+        saveDC: 15,
+        onSave: 'half',
+        damageParts: [{ number: 8, denomination: 6, type: 'necrotic' }],
+      },
+    });
+    const spell = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Soul Bolt',
+    });
+    const ss = spell?.entity?.system;
+    const spellActs = Object.values(ss?.activities ?? {});
+    const okSpell =
+      spell?.entity?.type === 'spell' &&
+      ss?.level === 3 &&
+      ss?.school === 'nec' &&
+      ss?.method === 'innate' &&
+      JSON.stringify([...(ss?.properties ?? [])].sort()) === JSON.stringify(['somatic', 'vocal']) &&
+      spellActs.some(a => a.type === 'save' && a.save?.dc?.formula === '15');
+    okSpell
+      ? pass('homebrew-spell authored', `L${ss.level} ${ss.school}/${ss.method} + save activity`)
+      : fail(
+          'homebrew-spell authored',
+          JSON.stringify({
+            type: spell?.entity?.type,
+            level: ss?.level,
+            school: ss?.school,
+            method: ss?.method,
+            props: ss?.properties,
+          })
+        );
+
+    // Read-side migration: searchCharacterItems surfaces system.method on the spell.
+    const search = await foundry.call('searchCharacterItems', {
+      characterIdentifier: npc.id,
+      type: 'spell',
+      query: 'Soul Bolt',
+    });
+    search?.matches?.[0]?.method === 'innate'
+      ? pass('read migration: spell method surfaced', 'innate')
+      : fail('read migration: spell method', JSON.stringify(search?.matches?.[0]));
+
+    // Feat widening: author a passive feat with featType + requirements.
+    await foundry.call('addPassiveFeatureToActor', {
+      actorIdentifier: npc.id,
+      featureName: 'Pack Tactics',
+      description: '<p>Advantage when an ally is near.</p>',
+      featType: 'monster',
+      requirements: 'An ally within 5 feet of the target',
+      sourceRules: '2024',
+    });
+    const feat = await foundry.call('getCharacterEntity', {
+      characterIdentifier: npc.id,
+      entityIdentifier: 'Pack Tactics',
+    });
+    const fs = feat?.entity?.system;
+    fs?.type?.value === 'monster' && fs?.requirements === 'An ally within 5 feet of the target'
+      ? pass('feat widening (featType + requirements)', `${fs.type.value} / "${fs.requirements}"`)
+      : fail('feat widening', JSON.stringify({ type: fs?.type, requirements: fs?.requirements }));
+  }
 } catch (e) {
   fail('SUITE', e?.message || String(e));
 } finally {

@@ -125,11 +125,23 @@ interface SpellInfo {
   name: string;
   level: number;
   prepared?: boolean | undefined;
+  /** dnd5e 5.x casting method: atwill / innate / ritual / pact / spell. */
+  method?: string | undefined;
   traits?: string[] | undefined;
   actionCost?: string | undefined;
   range?: string | undefined;
   target?: string | undefined;
   area?: string | undefined;
+}
+
+/**
+ * Coerce a dnd5e 5.x spell `system.prepared` (0/1/2) — or legacy boolean — to a boolean.
+ * Absent → true (the historical default: a spell with no preparation flag reads as prepared).
+ */
+function coerceSpellPrepared(v: any): boolean {
+  if (v === undefined || v === null) return true;
+  if (typeof v === 'number') return v > 0;
+  return !!v;
 }
 
 interface SpellcastingEntry {
@@ -176,7 +188,8 @@ function extractSpellcastingData(actor: any): SpellcastingEntry[] {
       id: spell.id || '',
       name: spell.name || '',
       level: spellSystem?.level || 0,
-      prepared: spellSystem?.prepared ?? spellRaw?.preparation?.prepared ?? true,
+      prepared: coerceSpellPrepared(spellSystem?.prepared),
+      method: spellSystem?.method,
       traits: [],
       actionCost: spellSystem?.activation?.type || undefined,
       range: targeting.range,
@@ -212,7 +225,8 @@ function extractSpellcastingData(actor: any): SpellcastingEntry[] {
         id: spell.id || '',
         name: spell.name || '',
         level: spellSystem?.level || 0,
-        prepared: spellSystem?.preparation?.prepared ?? true,
+        prepared: coerceSpellPrepared(spellSystem?.prepared),
+        method: spellSystem?.method,
         actionCost: spellSystem?.activation?.type || undefined,
         range: targeting.range,
         target: targeting.target,
@@ -571,9 +585,10 @@ export function searchCharacterItems(args: {
 
     if (item.type === 'spell') {
       result.level = itemSystem?.level?.value ?? itemSystem?.level ?? itemSystem?.rank ?? 0;
-      const itemRaw = item._source?.system;
-      result.prepared =
-        itemSystem?.prepared ?? itemRaw?.preparation?.prepared ?? itemSystem?.location?.prepared;
+      // dnd5e 5.x: spell preparation is system.prepared (0/1/2) + system.method; the legacy
+      // system.preparation.prepared shape is gone.
+      result.prepared = itemSystem?.prepared ?? itemSystem?.location?.prepared;
+      result.method = itemSystem?.method;
       result.expended = itemSystem?.location?.expended;
 
       if (systemId === 'dnd5e') {

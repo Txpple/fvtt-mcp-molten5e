@@ -91,7 +91,16 @@ const damagePart = z.object({
 const AddFeatureSchema = z.object({
   // ── Discriminator ─────────────────────────────────────────────────
   featureType: z
-    .enum(['passive', 'save', 'attack', 'attack-with-save', 'aura', 'spellcasting', 'spells'])
+    .enum([
+      'passive',
+      'save',
+      'attack',
+      'attack-with-save',
+      'aura',
+      'spellcasting',
+      'spells',
+      'homebrew-spell',
+    ])
     .describe(
       'Mode selector — determines which parameters are used and which Foundry handler is called.'
     ),
@@ -322,12 +331,95 @@ const AddFeatureSchema = z.object({
         'Used by: spells.'
     ),
 
+  // ── Feat widening (passive) ───────────────────────────────────────
+  featType: z
+    .string()
+    .optional()
+    .describe(
+      'Feat category for the feat document type.value (e.g. "monster", "class", "feat", "background"). ' +
+        'Used by: passive. Default: "monster".'
+    ),
+  requirements: z
+    .string()
+    .optional()
+    .describe('Free-text prerequisite/requirements line on the feat. Used by: passive.'),
+
+  // ── Homebrew spell parameters ─────────────────────────────────────
+  spellLevel: z
+    .number()
+    .int()
+    .min(0)
+    .max(9)
+    .optional()
+    .describe('Spell level 0–9 (0 = cantrip). Required for: homebrew-spell.'),
+  spellSchool: z
+    .enum(['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs'])
+    .optional()
+    .describe('School: abj/con/div/enc/evo/ill/nec/trs. Used by: homebrew-spell.'),
+  spellMethod: z
+    .enum(['atwill', 'innate', 'ritual', 'pact', 'spell'])
+    .default('spell')
+    .describe(
+      'Casting method. "innate"/"atwill" for monster innate casting; "spell" for prepared/known. ' +
+        'Used by: homebrew-spell.'
+    ),
+  spellPrepared: z
+    .number()
+    .int()
+    .min(0)
+    .max(2)
+    .default(0)
+    .describe(
+      'Preparation state: 0 unprepared, 1 prepared, 2 always prepared. Used by: homebrew-spell.'
+    ),
+  spellComponents: z
+    .array(z.enum(['vocal', 'somatic', 'material', 'concentration', 'ritual']))
+    .default([])
+    .describe('Components/properties. Used by: homebrew-spell.'),
+  spellMaterials: z
+    .string()
+    .optional()
+    .describe(
+      'Material component text (when components include "material"). Used by: homebrew-spell.'
+    ),
+  spellRange: z
+    .number()
+    .optional()
+    .describe('Numeric range (with spellRangeUnits). Used by: homebrew-spell.'),
+  spellRangeUnits: z
+    .enum(['ft', 'mi', 'touch', 'self', 'spec', 'any'])
+    .optional()
+    .describe('Range units. Use "self"/"touch" without spellRange. Used by: homebrew-spell.'),
+  spellDuration: z
+    .number()
+    .optional()
+    .describe('Numeric duration (with spellDurationUnits). Used by: homebrew-spell.'),
+  spellDurationUnits: z
+    .string()
+    .optional()
+    .describe('Duration units (e.g. "inst", "minute", "hour", "round"). Used by: homebrew-spell.'),
+  spellActivity: z
+    .enum(['attack', 'save', 'damage', 'heal', 'utility'])
+    .optional()
+    .describe(
+      'Optional single activity giving the spell mechanics. Pair with damageParts (attack/damage/save), ' +
+        'attackType (attack), saveAbility+saveDC+saveOnSave (save), or healAmount (heal). Used by: homebrew-spell.'
+    ),
+  healAmount: z
+    .object({
+      number: z.number().int().min(1),
+      denomination: z.literal([4, 6, 8, 10, 12, 20, 100]),
+      type: z.enum(['healing', 'temphp']).optional(),
+    })
+    .optional()
+    .describe('Healing dice for a heal activity. Used by: homebrew-spell (spellActivity "heal").'),
+
   // ── Source metadata ───────────────────────────────────────────────
   sourceRules: z
     .enum(['2014', '2024'])
     .default('2014')
     .describe(
-      'Rules edition. Used by: passive, attack, attack-with-save, aura, spellcasting. Default: "2014".'
+      'Rules edition. Used by: passive, attack, attack-with-save, aura, spellcasting, homebrew-spell. Default: "2014".'
     ),
   sourceBook: z
     .string()
@@ -377,9 +469,9 @@ export class DnD5eAddFeatureTool {
         description:
           '[D&D 5e only] Add a feature, attack, spellcasting setup, or spells to an existing actor. ' +
           'Set featureType to select the mode — each mode uses only its own parameters:\n\n' +
-          '• passive — descriptive trait, no roll (Multiattack, Magic Resistance, Spider Climb).\n' +
+          '• passive — descriptive trait, no roll (Magic Resistance, Spider Climb).\n' +
           '  Required: actorIdentifier, featureName\n' +
-          '  Optional: description, sourceRules, sourceBook, sourcePage\n\n' +
+          '  Optional: description, featType (monster/class/feat/...), requirements, sourceRules, sourceBook, sourcePage\n\n' +
           '• save — feature that forces a saving throw (breath weapon, cone of cold, etc.).\n' +
           '  Required: actorIdentifier, featureName, saveAbility, saveDC, damageParts\n' +
           '  Optional: description, activationType, halfOnSave, areaType, areaSize ' +
@@ -406,9 +498,16 @@ export class DnD5eAddFeatureTool {
           '  Required: actorIdentifier, spellcastingClass, spellcastingLevel\n' +
           '  Optional: spellcastingAbility (default per class: wizard/artificer→INT, ' +
           'cleric/druid/ranger→WIS, sorcerer/warlock/bard/paladin→CHA), sourceRules\n\n' +
-          '• spells — import named spells from compendium. Names must be in English.\n' +
+          '• spells — import EXISTING named spells from compendium. Names must be in English.\n' +
           '  Required: actorIdentifier, spellNames (max 50)\n' +
           '  Optional: compendiumPacks (default ["dnd5e.spells"])\n\n' +
+          '• homebrew-spell — author a NEW spell from scratch (vs "spells" which imports).\n' +
+          '  Required: actorIdentifier, featureName, spellLevel\n' +
+          '  Optional: description, spellSchool, spellMethod (atwill/innate/ritual/pact/spell), ' +
+          'spellPrepared (0/1/2), spellComponents, spellMaterials, spellRange(+Units), ' +
+          'spellDuration(+Units), activationType, sourceRules, and an optional spellActivity ' +
+          '(attack/save/damage/heal/utility) with its params (damageParts, attackType, ' +
+          'saveAbility+saveDC+saveOnSave, or healAmount)\n\n' +
           'Use list-actors or get-actor first to find the actorIdentifier.',
 
         inputSchema: toInputSchema(AddFeatureSchema),
@@ -431,6 +530,7 @@ export class DnD5eAddFeatureTool {
           'aura',
           'spellcasting',
           'spells',
+          'homebrew-spell',
         ]),
       })
       .parse(args);
@@ -450,6 +550,8 @@ export class DnD5eAddFeatureTool {
         return this.handleSpellcasting(args);
       case 'spells':
         return this.handleSpells(args);
+      case 'homebrew-spell':
+        return this.handleHomebrewSpell(args);
     }
   }
 
@@ -463,6 +565,8 @@ export class DnD5eAddFeatureTool {
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       featureName: z.string().min(1, 'featureName cannot be empty'),
       description: z.string().default(''),
+      featType: z.string().optional(),
+      requirements: z.string().optional(),
       sourceRules: z.enum(['2014', '2024']).default('2014'),
       sourceBook: z.string().default(''),
       sourcePage: z.string().default(''),
@@ -1059,5 +1163,162 @@ export class DnD5eAddFeatureTool {
     } catch (error) {
       this.errorHandler.handleToolError(error, 'add-feature', 'spell import');
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // homebrew-spell — author a NEW spell Item from scratch (with an optional activity)
+  // ---------------------------------------------------------------------------
+
+  private async handleHomebrewSpell(args: any): Promise<any> {
+    const schema = z
+      .object({
+        featureType: z.literal('homebrew-spell'),
+        actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
+        featureName: z.string().min(1, 'featureName cannot be empty'),
+        description: z.string().default(''),
+        spellLevel: z.number().int().min(0).max(9),
+        spellSchool: z.enum(['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs']).optional(),
+        spellMethod: z.enum(['atwill', 'innate', 'ritual', 'pact', 'spell']).default('spell'),
+        spellPrepared: z.number().int().min(0).max(2).default(0),
+        spellComponents: z
+          .array(z.enum(['vocal', 'somatic', 'material', 'concentration', 'ritual']))
+          .default([]),
+        spellMaterials: z.string().optional(),
+        spellRange: z.number().optional(),
+        spellRangeUnits: z.enum(['ft', 'mi', 'touch', 'self', 'spec', 'any']).optional(),
+        spellDuration: z.number().optional(),
+        spellDurationUnits: z.string().optional(),
+        activationType: z
+          .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
+          .default('action'),
+        // optional single activity
+        spellActivity: z.enum(['attack', 'save', 'damage', 'heal', 'utility']).optional(),
+        damageParts: z.array(damagePart).optional(),
+        attackType: z.enum(['melee', 'ranged']).optional(),
+        saveAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
+        saveDC: z.number().int().min(1).max(30).optional(),
+        saveOnSave: z.enum(['half', 'none']).default('none'),
+        healAmount: z
+          .object({
+            number: z.number().int().min(1),
+            denomination: z.literal([4, 6, 8, 10, 12, 20, 100]),
+            type: z.enum(['healing', 'temphp']).optional(),
+          })
+          .optional(),
+        sourceRules: z.enum(['2014', '2024']).default('2014'),
+      })
+      .superRefine((data, ctx) => {
+        if (
+          data.spellActivity === 'save' &&
+          (data.saveAbility === undefined || data.saveDC === undefined)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['saveAbility'],
+            message: 'spellActivity "save" requires saveAbility and saveDC',
+          });
+        }
+        if (data.spellActivity === 'heal' && data.healAmount === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['healAmount'],
+            message: 'spellActivity "heal" requires healAmount',
+          });
+        }
+        if (data.spellActivity === 'attack' && data.attackType === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['attackType'],
+            message: 'spellActivity "attack" requires attackType',
+          });
+        }
+      });
+
+    const parsed = schema.parse(args);
+
+    // Soft validation (warn, never block).
+    const warnings: string[] = [];
+    if (parsed.spellSchool === undefined) {
+      warnings.push('No spellSchool set — the spell will have an empty school.');
+    }
+    for (const part of parsed.damageParts ?? []) {
+      if (!DAMAGE_CANONICAL.has(part.type)) {
+        warnings.push(`Unknown damage type "${part.type}" — verify it matches dnd5e system values`);
+      }
+    }
+
+    // Build the optional activity opts the page builder consumes.
+    let activity: Record<string, any> | undefined;
+    if (parsed.spellActivity) {
+      activity = {
+        type: parsed.spellActivity,
+        activationType: parsed.activationType,
+        damageParts: parsed.damageParts,
+        attackType: parsed.attackType,
+        ability: parsed.saveAbility, // harmless extra for non-attack types
+        saveAbility: parsed.saveAbility,
+        saveDC: parsed.saveDC,
+        onSave: parsed.saveOnSave,
+        healing: parsed.healAmount,
+      };
+    }
+
+    this.logger.info('Authoring homebrew spell', {
+      actorIdentifier: parsed.actorIdentifier,
+      featureName: parsed.featureName,
+      level: parsed.spellLevel,
+      method: parsed.spellMethod,
+      spellActivity: parsed.spellActivity ?? 'none',
+    });
+
+    try {
+      await assertDnd5e(this.foundry, this.logger, 'add-feature (homebrew-spell)');
+
+      const result = await this.foundry.call('addHomebrewSpellToActor', {
+        actorIdentifier: parsed.actorIdentifier,
+        name: parsed.featureName,
+        level: parsed.spellLevel,
+        school: parsed.spellSchool,
+        method: parsed.spellMethod,
+        prepared: parsed.spellPrepared,
+        components: parsed.spellComponents,
+        materials: parsed.spellMaterials,
+        description: parsed.description,
+        activationType: parsed.activationType,
+        rangeValue: parsed.spellRange,
+        rangeUnits: parsed.spellRangeUnits,
+        durationValue: parsed.spellDuration,
+        durationUnits: parsed.spellDurationUnits,
+        sourceRules: parsed.sourceRules,
+        ...(activity ? { activity } : {}),
+      });
+
+      return this.formatHomebrewSpellResponse(result, parsed, warnings);
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'add-feature', 'homebrew spell authoring');
+    }
+  }
+
+  private formatHomebrewSpellResponse(result: any, params: any, warnings: string[]): any {
+    const lvl = params.spellLevel === 0 ? 'cantrip' : `level ${params.spellLevel}`;
+    const summary = `✅ Spell "${result.item.name}" (${lvl}) added to "${result.actor.name}"`;
+    const details = [
+      `**Actor:** ${result.actor.name} (id: \`${result.actor.id}\`)`,
+      `**Spell:** ${result.item.name} (id: \`${result.item.id}\`) — ${lvl}, ${params.spellMethod}`,
+      `**Components:** ${(params.spellComponents ?? []).join(', ') || '(none)'}`,
+      ...(result.activityType ? [`**Activity:** ${result.activityType}`] : []),
+    ].join('\n');
+    const warningSection =
+      warnings.length > 0
+        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
+        : '';
+    return {
+      summary,
+      success: true,
+      item: result.item,
+      actor: result.actor,
+      warnings,
+      message: `${summary}\n\n${details}${warningSection}`,
+    };
   }
 }

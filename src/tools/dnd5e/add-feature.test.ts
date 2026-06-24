@@ -549,3 +549,106 @@ describe('handleAddFeature — spells', () => {
     ).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// homebrew-spell
+// ---------------------------------------------------------------------------
+
+describe('handleAddFeature — homebrew-spell', () => {
+  it('forwards addHomebrewSpellToActor with the mapped spell fields', async () => {
+    const { tools, calls } = build({
+      actor: { id: 'a1', name: 'Lich' },
+      item: { id: 's1', name: 'Soul Bolt', type: 'spell' },
+    });
+    const out = await tools.handleAddFeature({
+      featureType: 'homebrew-spell',
+      actorIdentifier: 'Lich',
+      featureName: 'Soul Bolt',
+      spellLevel: 1,
+      spellSchool: 'nec',
+      spellMethod: 'innate',
+      spellComponents: ['vocal', 'somatic'],
+      spellRange: 120,
+      spellRangeUnits: 'ft',
+    });
+    const [method, payload] = bridgeMethodFrom(calls);
+    expect(method).toBe('addHomebrewSpellToActor');
+    expect(payload.name).toBe('Soul Bolt');
+    expect(payload.level).toBe(1);
+    expect(payload.school).toBe('nec');
+    expect(payload.method).toBe('innate');
+    expect(payload.components).toEqual(['vocal', 'somatic']);
+    expect(payload.rangeValue).toBe(120);
+    expect(out.summary).toBe('✅ Spell "Soul Bolt" (level 1) added to "Lich"');
+  });
+
+  it('builds an optional save activity and forwards it', async () => {
+    const { tools, calls } = build({
+      actor: { id: 'a1', name: 'Lich' },
+      item: { id: 's2', name: 'Frost Nova', type: 'spell' },
+      activityType: 'save',
+    });
+    await tools.handleAddFeature({
+      featureType: 'homebrew-spell',
+      actorIdentifier: 'Lich',
+      featureName: 'Frost Nova',
+      spellLevel: 3,
+      spellActivity: 'save',
+      saveAbility: 'con',
+      saveDC: 16,
+      saveOnSave: 'half',
+      damageParts: [{ number: 8, denomination: 6, type: 'cold' }],
+    });
+    const [, payload] = bridgeMethodFrom(calls);
+    expect(payload.activity.type).toBe('save');
+    expect(payload.activity.saveAbility).toBe('con');
+    expect(payload.activity.saveDC).toBe(16);
+    expect(payload.activity.damageParts).toEqual([{ number: 8, denomination: 6, type: 'cold' }]);
+  });
+
+  it('rejects a missing spellLevel', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleAddFeature({
+        featureType: 'homebrew-spell',
+        actorIdentifier: 'X',
+        featureName: 'Y',
+      })
+    ).rejects.toThrow();
+  });
+
+  it('rejects a save activity without saveAbility/saveDC', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleAddFeature({
+        featureType: 'homebrew-spell',
+        actorIdentifier: 'X',
+        featureName: 'Y',
+        spellLevel: 1,
+        spellActivity: 'save',
+        damageParts: [{ number: 1, denomination: 6, type: 'cold' }],
+      })
+    ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// passive feat widening
+// ---------------------------------------------------------------------------
+
+describe('handleAddFeature — passive feat widening', () => {
+  it('forwards featType + requirements', async () => {
+    const { tools, calls } = build(itemResult({ item: { id: 'f1', name: 'Pack Tactics' } }));
+    await tools.handleAddFeature({
+      featureType: 'passive',
+      actorIdentifier: 'Wolf',
+      featureName: 'Pack Tactics',
+      featType: 'monster',
+      requirements: 'An ally within 5 feet',
+    });
+    const [method, payload] = bridgeMethodFrom(calls);
+    expect(method).toBe('addPassiveFeatureToActor');
+    expect(payload.featType).toBe('monster');
+    expect(payload.requirements).toBe('An ally within 5 feet');
+  });
+});

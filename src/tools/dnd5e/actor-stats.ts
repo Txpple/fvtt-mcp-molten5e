@@ -176,16 +176,14 @@ export function extractActorStats(actorData: any): any {
     }
   }
 
-  // Spellcasting
-  const hasSpells = !!(
-    system.spells ||
-    system.attributes?.spellcasting ||
-    (system.details?.spellLevel && system.details.spellLevel > 0)
-  );
+  // Spellcasting. The NPC spell level moved from details.spellLevel to attributes.spell.level in
+  // dnd5e 5.x (details.spellLevel kept only as a legacy fallback for old data).
+  const spellLevel = system.attributes?.spell?.level ?? system.details?.spellLevel ?? 0;
+  const hasSpells = !!(system.spells || system.attributes?.spellcasting || spellLevel > 0);
   if (hasSpells) {
     stats.spellcasting = {
       hasSpells: true,
-      spellLevel: system.details?.spellLevel ?? 0,
+      spellLevel,
     };
   }
 

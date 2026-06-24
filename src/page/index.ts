@@ -81,7 +81,7 @@ import { createNpcActor } from './dnd5e/npc.js';
 import { applyCondition } from './dnd5e/conditions.js';
 import { addSaveFeatureToActor, addPassiveFeatureToActor } from './dnd5e/features.js';
 import { addAttackToActor, addAuraToActor, addAttackWithSaveToActor } from './dnd5e/attacks.js';
-import { setActorSpellcasting, addSpellsToActor } from './dnd5e/spells.js';
+import { setActorSpellcasting, addSpellsToActor, addHomebrewSpellToActor } from './dnd5e/spells.js';
 import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
 
 const api: Window['__fvtt'] = {
@@ -175,6 +175,7 @@ const api: Window['__fvtt'] = {
   addAuraToActor,
   setActorSpellcasting,
   addSpellsToActor,
+  addHomebrewSpellToActor,
   addFeaturesFromCompendium,
 };
 

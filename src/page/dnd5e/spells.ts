@@ -9,6 +9,7 @@
 // scaffolding (validateFoundryState / auditLog / permissions / sockets).
 
 import { resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
+import { buildActivity } from './activities.js';
 
 // =============================================================================
 // Spellcasting slot tables — used by setActorSpellcasting.
@@ -377,5 +378,103 @@ export async function addSpellsToActor(data: any): Promise<unknown> {
     notFound,
     failed,
     warnings,
+  };
+}
+
+// =============================================================================
+// addHomebrewSpellToActor — author a NEW spell Item from scratch (vs addSpellsToActor,
+// which imports existing spells by name from a compendium). dnd5e 5.3.3 spell system data
+// (live-verified): level, school, method (atwill/innate/ritual/pact/spell), prepared (0/1/2),
+// properties = the component Set (vocal/somatic/material/concentration/ritual), materials, range,
+// duration, activation, + an optional single activity (built by the shared buildActivity).
+// =============================================================================
+
+export async function addHomebrewSpellToActor(args: {
+  actorIdentifier: string;
+  name: string;
+  level: number;
+  school?: string;
+  method?: string;
+  prepared?: number;
+  components?: string[];
+  materials?: string;
+  description?: string;
+  activationType?: string;
+  rangeValue?: number;
+  rangeUnits?: string;
+  durationValue?: number;
+  durationUnits?: string;
+  sourceRules?: string;
+  activity?: Record<string, any>;
+}): Promise<unknown> {
+  if (game.system.id !== 'dnd5e') {
+    throw new Error(
+      `addHomebrewSpellToActor requires D&D 5e. Current system: "${game.system.id}".`
+    );
+  }
+  const actor = findActorByIdentifier(args.actorIdentifier);
+  if (!actor) throw new Error(`Actor not found: "${args.actorIdentifier}"`);
+
+  const existing = actor.items.find(
+    (i: any) => i.type === 'spell' && i.name?.toLowerCase() === args.name?.toLowerCase()
+  );
+  if (existing) {
+    throw new Error(
+      `A spell named "${args.name}" already exists on actor "${actor.name}" (id: ${existing.id}).`
+    );
+  }
+
+  const system: Record<string, any> = {
+    level: args.level,
+    school: args.school ?? '',
+    method: args.method ?? 'spell',
+    prepared: args.prepared ?? 0,
+    properties: args.components ?? [],
+    description: { value: args.description ?? '', chat: '' },
+    activation: { type: args.activationType ?? 'action', value: 1, condition: '' },
+    source: { rules: args.sourceRules ?? '2014' },
+  };
+  if (args.materials) {
+    system.materials = { value: args.materials, consumed: false, cost: 0, supply: 0 };
+  }
+  if (args.rangeValue !== undefined || args.rangeUnits) {
+    system.range = {
+      value: args.rangeValue !== undefined ? String(args.rangeValue) : '',
+      units: args.rangeUnits ?? 'ft',
+      special: '',
+    };
+  }
+  if (args.durationValue !== undefined || args.durationUnits) {
+    system.duration = {
+      value: args.durationValue !== undefined ? String(args.durationValue) : '',
+      units: args.durationUnits ?? 'inst',
+    };
+  }
+  let activityType: string | undefined;
+  if (args.activity?.type) {
+    const id = foundry.utils.randomID(16);
+    const { type, ...rest } = args.activity;
+    activityType = type;
+    system.activities = { [id]: buildActivity(type, { id, ...rest }) };
+  }
+
+  const itemData = {
+    name: args.name,
+    type: 'spell',
+    img: 'icons/svg/daze.svg',
+    system,
+  };
+  const [created] = (await actor.createEmbeddedDocuments('Item', [itemData])) as any[];
+  if (!created) {
+    throw new Error(`Failed to create spell "${args.name}" on actor "${actor.name}"`);
+  }
+
+  return {
+    success: true,
+    actor: { id: actor.id, name: actor.name },
+    item: { id: created.id, name: created.name, type: 'spell' },
+    level: args.level,
+    method: system.method,
+    ...(activityType ? { activityType } : {}),
   };
 }
