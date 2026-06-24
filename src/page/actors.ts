@@ -1525,6 +1525,23 @@ export async function updateActor(params: any): Promise<unknown> {
     );
   }
 
+  // --- currency (coins; actor-level, applies to NPCs and PCs alike) ---
+  if (params.currency && typeof params.currency === 'object') {
+    const mode = params.currency.mode === 'add' ? 'add' : 'set';
+    const live = actor.system?.currency ?? {};
+    let touched = false;
+    for (const coin of ['pp', 'gp', 'ep', 'sp', 'cp'] as const) {
+      const v = params.currency[coin];
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        // 'add' adjusts the live pile (negatives spend, clamped at 0); 'set' overwrites.
+        const base = mode === 'add' ? Number(live[coin] ?? 0) : 0;
+        update[`system.currency.${coin}`] = Math.max(0, Math.round(base + v));
+        touched = true;
+      }
+    }
+    if (touched) applied.push('currency');
+  }
+
   if (Object.keys(update).length === 0) {
     const extra = warnings.length ? ` (${warnings.join('; ')})` : '';
     throw new Error(`No applicable fields to update.${extra}`);

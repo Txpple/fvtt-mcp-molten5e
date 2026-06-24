@@ -210,6 +210,24 @@ const UpdateActorSchema = z.object({
       '[NPC, 2024] Habitats (replace the whole list), e.g. [{type:"forest"},{type:"planar",subtype:"nine hells"}].'
     ),
   treasure: setField('[NPC, 2024] Treasure themes (any, arcana, individual, ...).'),
+
+  // currency (coins) — actor-level, applies to NPCs and PCs
+  currency: z
+    .object({
+      mode: z
+        .enum(['set', 'add'])
+        .default('set')
+        .describe(
+          'set (default) overwrites each listed coin; add adjusts by the amount (negatives spend, clamped at 0).'
+        ),
+      pp: z.number().int().optional().describe('Platinum pieces.'),
+      gp: z.number().int().optional().describe('Gold pieces.'),
+      ep: z.number().int().optional().describe('Electrum pieces.'),
+      sp: z.number().int().optional().describe('Silver pieces.'),
+      cp: z.number().int().optional().describe('Copper pieces.'),
+    })
+    .optional()
+    .describe('Carried coins (pp/gp/ep/sp/cp). Only the coins you list change.'),
 });
 
 export interface DnD5eUpdateActorToolOptions {
@@ -242,7 +260,8 @@ export class DnD5eUpdateActorTool {
           '• defenses — damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities / languages ' +
           '(each {mode: replace|add|remove, values, custom?}), telepathy\n' +
           '• resources* — legendaryActions, legendaryResistances, lair\n' +
-          '• 2024* — habitat, treasure\n\n' +
+          '• 2024* — habitat, treasure\n' +
+          '• currency — coins {mode: set|add, pp, gp, ep, sp, cp} (carried money)\n\n' +
           'Fields marked * are NPC-only (skipped with a warning on player characters). This authors the ' +
           'stat block; it does NOT edit embedded items (use update-actor-item / add-feature / manage-activity) ' +
           'or run combat. Use list-actors or get-actor to find the actorIdentifier.',

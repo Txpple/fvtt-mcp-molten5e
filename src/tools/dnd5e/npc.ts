@@ -120,7 +120,18 @@ export class DnD5eNpcTools {
           'swarm',
         ]),
         creatureSubtype: z.string().default(''),
-        size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']),
+        size: z.enum([
+          'tiny',
+          'small',
+          'sm',
+          'medium',
+          'med',
+          'large',
+          'lg',
+          'huge',
+          'gargantuan',
+          'grg',
+        ]),
         alignment: z.string().default(''),
         cr: z.union([
           z

@@ -68,6 +68,43 @@ describe('handleUpdateActor', () => {
     expect(call?.[1].damageImmunities).toEqual({ mode: 'replace', values: ['fire', 'poison'] });
   });
 
+  it('forwards a currency group with its default mode', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Knight', type: 'npc' },
+      applied: ['currency'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Knight',
+      currency: { gp: 30, sp: 5 },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].currency).toEqual({ mode: 'set', gp: 30, sp: 5 });
+  });
+
+  it('forwards currency mode add for loot adjustments', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Knight', type: 'npc' },
+      applied: ['currency'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Knight',
+      currency: { mode: 'add', gp: -10 },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].currency).toEqual({ mode: 'add', gp: -10 });
+  });
+
+  it('rejects a non-integer coin amount', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', currency: { gp: 1.5 } })
+    ).rejects.toThrow();
+  });
+
   it('surfaces bridge warnings in the response', async () => {
     const { tool } = makeTool({
       success: true,

@@ -157,6 +157,13 @@ describe('handleCreateNpc — zod validation rejects bad input', () => {
     await expect(tools.handleCreateNpc(validArgs({ size: 'colossal' }))).rejects.toThrow();
   });
 
+  it('accepts a short size code (lg) like update-actor does', async () => {
+    const { tools, calls } = build(bridgeResult());
+    await tools.handleCreateNpc(validArgs({ size: 'lg' }));
+    const call = calls.find(([n]) => n === 'createNpcActor');
+    expect(call?.[1].size).toBe('lg');
+  });
+
   it('rejects a malformed CR string', async () => {
     const { tools } = build();
     await expect(tools.handleCreateNpc(validArgs({ cr: '1/3' }))).rejects.toThrow();
