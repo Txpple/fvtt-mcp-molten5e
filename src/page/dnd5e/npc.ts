@@ -4,83 +4,28 @@
 // size/languages, skills). Runs inside the headless Foundry page.
 
 import { getOrCreateFolder, DAMAGE_TYPES } from '../_shared.js';
+import {
+  normalizeSize,
+  normalizeSkill,
+  normalizeCR,
+  formatCR,
+  CONDITION_TYPES,
+} from './actor-fields.js';
+
+// CR helpers keep their npc-prefixed names for existing importers (npc.test.ts); the
+// implementations now live in the shared actor-fields module so create + update share them.
+export { normalizeCR as npcNormalizeCR, formatCR as npcFormatCR };
 
 // =============================================================================
-// NPC creation helpers — ported verbatim from the oracle (data-access.ts),
-// each used exclusively by createNpcActor.
+// NPC creation helpers — used exclusively by createNpcActor.
 // =============================================================================
-
-const NPC_CONDITION_CANONICAL = new Set([
-  'blinded',
-  'charmed',
-  'deafened',
-  'exhaustion',
-  'frightened',
-  'grappled',
-  'incapacitated',
-  'invisible',
-  'paralyzed',
-  'petrified',
-  'poisoned',
-  'prone',
-  'restrained',
-  'stunned',
-  'unconscious',
-]);
-
-const NPC_SIZE_MAP: Record<string, string> = {
-  tiny: 'tiny',
-  small: 'sm',
-  medium: 'med',
-  large: 'lg',
-  huge: 'huge',
-  gargantuan: 'grg',
-};
-
-const NPC_SKILL_MAP: Record<string, string> = {
-  Acrobatics: 'acr',
-  'Animal Handling': 'ani',
-  Arcana: 'arc',
-  Athletics: 'ath',
-  Deception: 'dec',
-  History: 'his',
-  Insight: 'ins',
-  Intimidation: 'itm',
-  Investigation: 'inv',
-  Medicine: 'med',
-  Nature: 'nat',
-  Perception: 'prc',
-  Performance: 'prf',
-  Persuasion: 'per',
-  Religion: 'rel',
-  'Sleight of Hand': 'slt',
-  Stealth: 'ste',
-  Survival: 'sur',
-};
-
-export function npcNormalizeCR(input: string | number): number {
-  if (typeof input === 'number') return input;
-  if (input.includes('/')) {
-    const [num, den] = input.split('/').map(Number);
-    return num / den;
-  }
-  return parseInt(input, 10);
-}
-
-export function npcFormatCR(value: number): string {
-  if (value === 0) return '0';
-  if (value === 0.125) return '1/8';
-  if (value === 0.25) return '1/4';
-  if (value === 0.5) return '1/2';
-  return String(Math.round(value));
-}
 
 export function npcBuildSkillsBlock(
   skills: Array<{ skill: string; proficiency: string }>
 ): Record<string, { value: number }> {
   const result: Record<string, { value: number }> = {};
   for (const { skill, proficiency } of skills) {
-    const key = NPC_SKILL_MAP[skill];
+    const key = normalizeSkill(skill);
     if (key) {
       result[key] = { value: proficiency === 'expert' ? 2 : 1 };
     }
@@ -155,7 +100,7 @@ export function buildNpcActorData(data: NpcInput): {
     }
   }
   for (const value of data.conditionImmunities) {
-    if (!NPC_CONDITION_CANONICAL.has(value)) {
+    if (!CONDITION_TYPES.has(value)) {
       const msg = `Unknown condition "${value}" in conditionImmunities — verify it matches dnd5e system values`;
       warnings.push(msg);
       console.warn(msg);
@@ -163,7 +108,7 @@ export function buildNpcActorData(data: NpcInput): {
   }
 
   // Normalize CR to float
-  const normalizedCR = npcNormalizeCR(data.cr);
+  const normalizedCR = normalizeCR(data.cr);
 
   // Ability scores with saving throw proficiency flags
   const savingThrowSet = new Set(data.savingThrows);
@@ -235,7 +180,7 @@ export function buildNpcActorData(data: NpcInput): {
         },
       },
       traits: {
-        size: NPC_SIZE_MAP[data.size] ?? 'med',
+        size: normalizeSize(data.size) ?? 'med',
         di: { value: data.damageImmunities, custom: '', bypasses: [] },
         dr: { value: data.damageResistances, custom: '', bypasses: [] },
         dv: { value: data.damageVulnerabilities, custom: '', bypasses: [] },
@@ -292,7 +237,7 @@ export async function createNpcActor(data: NpcInput): Promise<unknown> {
     actor: {
       id: actor.id,
       name: actor.name,
-      cr: npcFormatCR(normalizedCR),
+      cr: formatCR(normalizedCR),
       folder: folderId ?? null,
     },
     warnings,

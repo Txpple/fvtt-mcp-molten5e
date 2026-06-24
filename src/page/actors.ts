@@ -15,6 +15,16 @@ import {
   toSource,
   sanitizeDocData as sanitize,
 } from './_shared.js';
+import {
+  ABILITIES,
+  ARMOR_CALC,
+  CONDITION_TYPES,
+  CREATURE_TYPES,
+  DAMAGE_TYPES,
+  normalizeCR,
+  normalizeSize,
+  normalizeSkill,
+} from './dnd5e/actor-fields.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
 // declared in foundry-globals.d.ts; reach it off globalThis (loosely typed).
@@ -1163,4 +1173,336 @@ export async function removeActorItems(params: {
   );
 
   return { actorId: actor.id, actorName: actor.name, removed, notFound };
+}
+
+/**
+ * Edit an existing actor's own system data (the stat-block fields — NOT its embedded items, which
+ * are handled by updateActorItem / add-feature). Resolves the actor fuzzily, then builds ONE
+ * `actor.update()` patch from whichever field groups the caller supplied:
+ *
+ *  - identity:   name, img
+ *  - details:    size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source
+ *  - abilities:  abilities.<ab>, savingThrows (replace), skills (merge)
+ *  - vitals:     hp, ac, initiative
+ *  - movement / senses (senses uses the modern `senses.ranges.*` path)
+ *  - defenses:   damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities
+ *                (Set fields with mode replace|add|remove via read-modify-write), languages, telepathy
+ *  - resources*: legendaryActions, legendaryResistances, lair
+ *  - 2024*:      habitat, treasure
+ *
+ * Fields marked * are NPC-only; on a non-NPC actor they are skipped with a warning (we don't grow PC
+ * class-progression logic here). Movement values are FormulaField strings, so numbers are coerced.
+ * Set fields are replace-whole in dnd5e, so add/remove are done by reading the live Set first.
+ * Unknown enum-ish values (damage/condition/creatureType/AC-calc/size/skill) warn but never block.
+ * Returns { success, actor:{id,name,type}, applied:[...field names], warnings }.
+ */
+export async function updateActor(params: any): Promise<unknown> {
+  const identifier = params?.actorIdentifier;
+  if (!identifier) throw new Error('actorIdentifier is required');
+  const actor = resolveActor(identifier);
+  if (!actor) throw new Error(`Actor not found: ${identifier}`);
+
+  const isNpc = actor.type === 'npc';
+  const update: Record<string, any> = {};
+  const warnings: string[] = [];
+  const applied: string[] = [];
+
+  const warnUnknown = (label: string, value: string, set: Set<string>) => {
+    if (!set.has(value)) {
+      warnings.push(`Unknown ${label} "${value}" — verify it matches dnd5e system values`);
+    }
+  };
+  // NPC-only gate: returns true (apply) only for npc actors; otherwise warns + skips.
+  const npcOnly = (field: string): boolean => {
+    if (!isNpc) {
+      warnings.push(`"${field}" is an NPC-only field — skipped on ${actor.type} "${actor.name}"`);
+      return false;
+    }
+    return true;
+  };
+
+  // --- identity ---
+  if (typeof params.name === 'string' && params.name.trim()) {
+    update.name = params.name.trim();
+    applied.push('name');
+  }
+  if (typeof params.img === 'string' && params.img.trim()) {
+    update.img = params.img.trim();
+    applied.push('img');
+  }
+
+  // --- details ---
+  if (params.size !== undefined) {
+    const sz = normalizeSize(String(params.size));
+    if (sz) {
+      update['system.traits.size'] = sz;
+      applied.push('size');
+    } else {
+      warnings.push(`Unknown size "${params.size}" — left unchanged`);
+    }
+  }
+  if (params.cr !== undefined && npcOnly('cr')) {
+    update['system.details.cr'] = normalizeCR(params.cr);
+    applied.push('cr');
+  }
+  if (params.creatureType !== undefined && npcOnly('creatureType')) {
+    warnUnknown('creature type', String(params.creatureType), CREATURE_TYPES);
+    update['system.details.type.value'] = params.creatureType;
+    applied.push('creatureType');
+  }
+  if (params.creatureSubtype !== undefined && npcOnly('creatureSubtype')) {
+    update['system.details.type.subtype'] = params.creatureSubtype;
+    applied.push('creatureSubtype');
+  }
+  if (params.swarmSize !== undefined && npcOnly('swarmSize')) {
+    update['system.details.type.swarm'] =
+      params.swarmSize === '' ? '' : (normalizeSize(String(params.swarmSize)) ?? '');
+    applied.push('swarmSize');
+  }
+  if (typeof params.alignment === 'string') {
+    update['system.details.alignment'] = params.alignment;
+    applied.push('alignment');
+  }
+  if (typeof params.biography === 'string') {
+    update['system.details.biography.value'] = params.biography;
+    applied.push('biography');
+  }
+  if (params.source && typeof params.source === 'object') {
+    let touched = false;
+    for (const k of ['book', 'page', 'rules'] as const) {
+      if (typeof params.source[k] === 'string') {
+        update[`system.details.source.${k}`] = params.source[k];
+        touched = true;
+      }
+    }
+    if (touched) applied.push('source');
+  }
+
+  // --- abilities / saves / skills ---
+  if (params.abilities && typeof params.abilities === 'object') {
+    let touched = false;
+    for (const ab of ABILITIES) {
+      if (typeof params.abilities[ab] === 'number') {
+        update[`system.abilities.${ab}.value`] = params.abilities[ab];
+        touched = true;
+      }
+    }
+    if (touched) applied.push('abilities');
+  }
+  if (Array.isArray(params.savingThrows)) {
+    const set = new Set(params.savingThrows.map(String));
+    for (const ab of ABILITIES) {
+      update[`system.abilities.${ab}.proficient`] = set.has(ab) ? 1 : 0;
+    }
+    applied.push('savingThrows');
+  }
+  if (Array.isArray(params.skills)) {
+    let touched = false;
+    for (const s of params.skills) {
+      const key = normalizeSkill(String(s?.skill ?? ''));
+      if (!key) {
+        warnings.push(`Unknown skill "${s?.skill}" — skipped`);
+        continue;
+      }
+      update[`system.skills.${key}.value`] =
+        s.proficiency === 'expert' ? 2 : s.proficiency === 'proficient' ? 1 : 0;
+      touched = true;
+    }
+    if (touched) applied.push('skills');
+  }
+
+  // --- vitals ---
+  if (params.hp && typeof params.hp === 'object') {
+    for (const k of ['value', 'max', 'temp', 'tempmax'] as const) {
+      if (typeof params.hp[k] === 'number') update[`system.attributes.hp.${k}`] = params.hp[k];
+    }
+    if (typeof params.hp.formula === 'string')
+      update['system.attributes.hp.formula'] = params.hp.formula;
+    applied.push('hp');
+  }
+  if (params.ac && typeof params.ac === 'object') {
+    if (typeof params.ac.calc === 'string') {
+      warnUnknown('AC calculation', params.ac.calc, ARMOR_CALC);
+      update['system.attributes.ac.calc'] = params.ac.calc;
+    }
+    if (typeof params.ac.flat === 'number') update['system.attributes.ac.flat'] = params.ac.flat;
+    if (typeof params.ac.formula === 'string')
+      update['system.attributes.ac.formula'] = params.ac.formula;
+    applied.push('ac');
+  }
+  if (params.initiative && typeof params.initiative === 'object') {
+    if (typeof params.initiative.bonus === 'number') {
+      update['system.attributes.init.bonus'] = String(params.initiative.bonus);
+    }
+    if (typeof params.initiative.ability === 'string') {
+      update['system.attributes.init.ability'] = params.initiative.ability;
+    }
+    applied.push('initiative');
+  }
+
+  // --- movement (FormulaField strings) / senses (ranges.* ints) ---
+  if (params.movement && typeof params.movement === 'object') {
+    for (const k of ['walk', 'fly', 'swim', 'climb', 'burrow'] as const) {
+      const v = params.movement[k];
+      if (v !== undefined && v !== null) update[`system.attributes.movement.${k}`] = String(v);
+    }
+    if (typeof params.movement.units === 'string') {
+      update['system.attributes.movement.units'] = params.movement.units;
+    }
+    if (typeof params.movement.hover === 'boolean') {
+      update['system.attributes.movement.hover'] = params.movement.hover;
+    }
+    applied.push('movement');
+  }
+  if (params.senses && typeof params.senses === 'object') {
+    for (const k of ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const) {
+      if (typeof params.senses[k] === 'number') {
+        update[`system.attributes.senses.ranges.${k}`] = params.senses[k];
+      }
+    }
+    if (typeof params.senses.units === 'string') {
+      update['system.attributes.senses.units'] = params.senses.units;
+    }
+    if (typeof params.senses.special === 'string') {
+      update['system.attributes.senses.special'] = params.senses.special;
+    }
+    applied.push('senses');
+  }
+
+  // --- defenses (Set fields: replace-whole, so add/remove read the live Set first) ---
+  const applySet = (
+    path: string,
+    current: any,
+    field: any,
+    validSet: Set<string> | null,
+    label: string,
+    name: string
+  ) => {
+    const values: string[] = Array.isArray(field.values) ? field.values.map(String) : [];
+    if (validSet) for (const v of values) warnUnknown(label, v, validSet);
+    const mode = field.mode ?? 'replace';
+    if (mode === 'replace') {
+      update[`${path}.value`] = values;
+    } else {
+      const cur = Array.from((current ?? []) as Iterable<string>).map(String);
+      update[`${path}.value`] =
+        mode === 'add'
+          ? Array.from(new Set([...cur, ...values]))
+          : cur.filter(x => !values.includes(x));
+    }
+    if (typeof field.custom === 'string') update[`${path}.custom`] = field.custom;
+    applied.push(name);
+  };
+
+  const traits = actor.system?.traits ?? {};
+  if (params.damageImmunities) {
+    applySet(
+      'system.traits.di',
+      traits.di?.value,
+      params.damageImmunities,
+      DAMAGE_TYPES,
+      'damage type',
+      'damageImmunities'
+    );
+  }
+  if (params.damageResistances) {
+    applySet(
+      'system.traits.dr',
+      traits.dr?.value,
+      params.damageResistances,
+      DAMAGE_TYPES,
+      'damage type',
+      'damageResistances'
+    );
+  }
+  if (params.damageVulnerabilities) {
+    applySet(
+      'system.traits.dv',
+      traits.dv?.value,
+      params.damageVulnerabilities,
+      DAMAGE_TYPES,
+      'damage type',
+      'damageVulnerabilities'
+    );
+  }
+  if (params.conditionImmunities) {
+    applySet(
+      'system.traits.ci',
+      traits.ci?.value,
+      params.conditionImmunities,
+      CONDITION_TYPES,
+      'condition',
+      'conditionImmunities'
+    );
+  }
+  if (params.languages) {
+    applySet(
+      'system.traits.languages',
+      traits.languages?.value,
+      params.languages,
+      null,
+      'language',
+      'languages'
+    );
+  }
+  if (
+    params.telepathy &&
+    typeof params.telepathy === 'object' &&
+    typeof params.telepathy.value === 'number'
+  ) {
+    update['system.traits.languages.communication.telepathy'] = {
+      value: params.telepathy.value,
+      units: params.telepathy.units ?? 'ft',
+    };
+    applied.push('telepathy');
+  }
+
+  // --- resources (NPC) ---
+  if (typeof params.legendaryActions === 'number' && npcOnly('legendaryActions')) {
+    update['system.resources.legact.max'] = params.legendaryActions;
+    applied.push('legendaryActions');
+  }
+  if (typeof params.legendaryResistances === 'number' && npcOnly('legendaryResistances')) {
+    update['system.resources.legres.max'] = params.legendaryResistances;
+    applied.push('legendaryResistances');
+  }
+  if (params.lair && typeof params.lair === 'object' && npcOnly('lair')) {
+    if (typeof params.lair.initiative === 'number') {
+      update['system.resources.lair.value'] = true;
+      update['system.resources.lair.initiative'] = params.lair.initiative;
+      applied.push('lair');
+    }
+  }
+
+  // --- 2024 fields (NPC) ---
+  if (Array.isArray(params.habitat) && npcOnly('habitat')) {
+    update['system.details.habitat.value'] = params.habitat.map((h: any) =>
+      h?.subtype ? { type: h.type, subtype: h.subtype } : { type: h.type }
+    );
+    applied.push('habitat');
+  }
+  if (params.treasure && npcOnly('treasure')) {
+    applySet(
+      'system.details.treasure',
+      actor.system?.details?.treasure?.value,
+      params.treasure,
+      null,
+      'treasure',
+      'treasure'
+    );
+  }
+
+  if (Object.keys(update).length === 0) {
+    const extra = warnings.length ? ` (${warnings.join('; ')})` : '';
+    throw new Error(`No applicable fields to update.${extra}`);
+  }
+
+  await actor.update(update);
+
+  return {
+    success: true,
+    actor: { id: actor.id, name: actor.name, type: actor.type },
+    applied,
+    warnings,
+  };
 }

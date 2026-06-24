@@ -218,12 +218,14 @@ export const DAMAGE_TYPES = new Set([
   'force',
   'lightning',
   'necrotic',
+  'none', // dnd5e 5.3.3 CONFIG.DND5E.damageTypes
   'piercing',
   'poison',
   'psychic',
   'radiant',
   'slashing',
   'thunder',
+  'vitality', // dnd5e 5.3.3 CONFIG.DND5E.damageTypes
 ]);
 
 /**

@@ -1,0 +1,295 @@
+import { z } from 'zod';
+import type { FoundryBridge } from '../../foundry.js';
+import { Logger } from '../../logger.js';
+import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { assertDnd5e } from '../../utils/system-detection.js';
+import { toInputSchema } from '../../utils/schema.js';
+
+/**
+ * update-actor — edit an EXISTING dnd5e actor's own stat-block fields (abilities, saves, skills,
+ * HP/AC/init, movement, senses, defenses, languages, details/biography, NPC resources, 2024 habitat/
+ * treasure). It does NOT touch embedded items (use update-actor-item / add-feature / manage-activity)
+ * or run combat automation. The page layer (updateActor) owns correctness: field paths, NPC-only
+ * gating, FormulaField string coercion, Set add/remove read-modify-write, and soft validation.
+ */
+
+const ABILITY = z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']);
+
+// Reusable Set-field shape (damage/condition immunities, languages, treasure). Replace overwrites
+// the whole list; add/remove merge against the actor's current list (page reads it live).
+const setField = (what: string) =>
+  z
+    .object({
+      mode: z
+        .enum(['replace', 'add', 'remove'])
+        .default('replace')
+        .describe(
+          'replace (default) overwrites the whole list; add/remove merge with the current list.'
+        ),
+      values: z.array(z.string()).default([]).describe(what),
+      custom: z
+        .string()
+        .optional()
+        .describe(
+          'Free-text custom entry stored alongside the set (replaces the existing custom string).'
+        ),
+    })
+    .optional();
+
+const UpdateActorSchema = z.object({
+  actorIdentifier: z
+    .string()
+    .min(1)
+    .describe('Name or id of the actor to edit (partial name match supported).'),
+
+  // identity
+  name: z.string().min(1).optional().describe('Rename the actor.'),
+  img: z.string().optional().describe('Portrait image path or URL.'),
+
+  // details (most NPC-only)
+  size: z
+    .enum(['tiny', 'small', 'sm', 'medium', 'med', 'large', 'lg', 'huge', 'gargantuan', 'grg'])
+    .optional()
+    .describe('Creature size (long name or short code).'),
+  cr: z
+    .number()
+    .min(0)
+    .max(30)
+    .optional()
+    .describe('[NPC] Challenge rating (0.125 / 0.25 / 0.5 allowed).'),
+  creatureType: z
+    .string()
+    .optional()
+    .describe(
+      '[NPC] Creature type: aberration, beast, celestial, construct, dragon, elemental, fey, fiend, giant, humanoid, monstrosity, ooze, plant, undead.'
+    ),
+  creatureSubtype: z
+    .string()
+    .optional()
+    .describe('[NPC] Creature subtype free text (e.g. "Devil").'),
+  swarmSize: z
+    .enum(['', 'tiny', 'sm', 'med', 'lg', 'huge', 'grg'])
+    .optional()
+    .describe('[NPC] Swarm member size, or "" if the creature is not a swarm.'),
+  alignment: z.string().optional().describe('Alignment free text (e.g. "Lawful Evil").'),
+  biography: z.string().optional().describe('Biography / description (HTML).'),
+  source: z
+    .object({
+      book: z.string().optional(),
+      page: z.string().optional(),
+      rules: z.enum(['2014', '2024']).optional(),
+    })
+    .optional()
+    .describe('Source metadata (book / page / rules edition).'),
+
+  // abilities / saves / skills
+  abilities: z
+    .object({
+      str: z.number().int().min(1).max(30).optional(),
+      dex: z.number().int().min(1).max(30).optional(),
+      con: z.number().int().min(1).max(30).optional(),
+      int: z.number().int().min(1).max(30).optional(),
+      wis: z.number().int().min(1).max(30).optional(),
+      cha: z.number().int().min(1).max(30).optional(),
+    })
+    .optional()
+    .describe('Ability scores to set — only the abilities you list change.'),
+  savingThrows: z
+    .array(ABILITY)
+    .optional()
+    .describe(
+      'Replace the proficient saving throws: the listed abilities become proficient, all others non-proficient.'
+    ),
+  skills: z
+    .array(
+      z.object({
+        skill: z.string().describe('Skill full name ("Perception") or key ("prc").'),
+        proficiency: z
+          .enum(['none', 'proficient', 'expert'])
+          .describe('none clears proficiency; proficient = ×1; expert = ×2 (expertise).'),
+      })
+    )
+    .optional()
+    .describe('Set skill proficiencies — merge: only the listed skills change.'),
+
+  // vitals
+  hp: z
+    .object({
+      value: z.number().int().optional(),
+      max: z.number().int().optional(),
+      temp: z.number().int().optional(),
+      tempmax: z.number().int().optional(),
+      formula: z.string().optional(),
+    })
+    .optional()
+    .describe('Hit points (value / max / temp / tempmax / formula).'),
+  ac: z
+    .object({
+      calc: z
+        .string()
+        .optional()
+        .describe('AC calculation: flat, natural, default, mage, draconic, unarmoredMonk, ...'),
+      flat: z
+        .number()
+        .int()
+        .optional()
+        .describe('Flat AC value (used by calc "flat" / "natural").'),
+      formula: z.string().optional(),
+    })
+    .optional()
+    .describe('Armor class.'),
+  initiative: z
+    .object({
+      bonus: z.number().optional(),
+      ability: ABILITY.or(z.literal('')).optional(),
+    })
+    .optional()
+    .describe('Initiative bonus and/or ability override.'),
+
+  // movement / senses
+  movement: z
+    .object({
+      walk: z.number().min(0).optional(),
+      fly: z.number().min(0).optional(),
+      swim: z.number().min(0).optional(),
+      climb: z.number().min(0).optional(),
+      burrow: z.number().min(0).optional(),
+      units: z.string().optional(),
+      hover: z.boolean().optional(),
+    })
+    .optional()
+    .describe('Movement speeds (in the given units, default feet).'),
+  senses: z
+    .object({
+      darkvision: z.number().min(0).optional(),
+      blindsight: z.number().min(0).optional(),
+      tremorsense: z.number().min(0).optional(),
+      truesight: z.number().min(0).optional(),
+      units: z.string().optional(),
+      special: z.string().optional(),
+    })
+    .optional()
+    .describe('Senses ranges (feet) plus special-sense free text.'),
+
+  // defenses
+  damageImmunities: setField('Damage types (acid, bludgeoning, cold, fire, ...).'),
+  damageResistances: setField('Damage types (acid, bludgeoning, cold, fire, ...).'),
+  damageVulnerabilities: setField('Damage types (acid, bludgeoning, cold, fire, ...).'),
+  conditionImmunities: setField('Conditions (poisoned, charmed, frightened, ...).'),
+  languages: setField('Languages (common, infernal, draconic, ...).'),
+  telepathy: z
+    .object({ value: z.number().int().min(0), units: z.string().default('ft') })
+    .optional()
+    .describe('Telepathy range (0 = none).'),
+
+  // resources (NPC)
+  legendaryActions: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('[NPC] Legendary action points per round (resources.legact.max).'),
+  legendaryResistances: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('[NPC] Legendary resistance uses per day (resources.legres.max).'),
+  lair: z
+    .object({ initiative: z.number().int().optional() })
+    .optional()
+    .describe(
+      '[NPC] Lair actions — sets the lair initiative count (marks the creature as having a lair).'
+    ),
+
+  // 2024 fields (NPC)
+  habitat: z
+    .array(z.object({ type: z.string(), subtype: z.string().optional() }))
+    .optional()
+    .describe(
+      '[NPC, 2024] Habitats (replace the whole list), e.g. [{type:"forest"},{type:"planar",subtype:"nine hells"}].'
+    ),
+  treasure: setField('[NPC, 2024] Treasure themes (any, arcana, individual, ...).'),
+});
+
+export interface DnD5eUpdateActorToolOptions {
+  foundry: FoundryBridge;
+  logger: Logger;
+}
+
+export class DnD5eUpdateActorTool {
+  private foundry: FoundryBridge;
+  private logger: Logger;
+  private errorHandler: ErrorHandler;
+
+  constructor({ foundry, logger }: DnD5eUpdateActorToolOptions) {
+    this.foundry = foundry;
+    this.logger = logger.child({ component: 'DnD5eUpdateActorTool' });
+    this.errorHandler = new ErrorHandler(this.logger);
+  }
+
+  getToolDefinitions() {
+    return [
+      {
+        name: 'update-actor',
+        description:
+          "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
+          '• identity — name, img\n' +
+          '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
+          '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
+          '• vitals — hp, ac, initiative\n' +
+          '• movement, senses\n' +
+          '• defenses — damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities / languages ' +
+          '(each {mode: replace|add|remove, values, custom?}), telepathy\n' +
+          '• resources* — legendaryActions, legendaryResistances, lair\n' +
+          '• 2024* — habitat, treasure\n\n' +
+          'Fields marked * are NPC-only (skipped with a warning on player characters). This authors the ' +
+          'stat block; it does NOT edit embedded items (use update-actor-item / add-feature / manage-activity) ' +
+          'or run combat. Use list-actors or get-actor to find the actorIdentifier.',
+        inputSchema: toInputSchema(UpdateActorSchema),
+      },
+    ];
+  }
+
+  async handleUpdateActor(args: any): Promise<any> {
+    try {
+      const parsed = UpdateActorSchema.parse(args ?? {});
+      this.logger.info('Updating dnd5e actor', { actorIdentifier: parsed.actorIdentifier });
+
+      await assertDnd5e(this.foundry, this.logger, 'update-actor');
+      const result = await this.foundry.call('updateActor', parsed);
+
+      this.logger.info('Actor updated', {
+        actorId: result?.actor?.id,
+        applied: result?.applied?.length,
+        warnings: result?.warnings?.length,
+      });
+      return this.formatResponse(result);
+    } catch (error) {
+      if (error instanceof FormattedToolError) throw error;
+      this.errorHandler.handleToolError(error, 'update-actor', 'updating actor');
+    }
+  }
+
+  private formatResponse(result: any): any {
+    const applied: string[] = result?.applied ?? [];
+    const warnings: string[] = result?.warnings ?? [];
+    const summary = `✅ Updated "${result?.actor?.name}" — ${applied.length ? applied.join(', ') : 'no changes'}`;
+    const details = [
+      `**Actor:** ${result?.actor?.name} (id: \`${result?.actor?.id}\`, type: ${result?.actor?.type})`,
+      `**Applied:** ${applied.length ? applied.join(', ') : '(none)'}`,
+    ].join('\n');
+    const warningSection =
+      warnings.length > 0
+        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
+        : '';
+    return {
+      summary,
+      success: true,
+      actor: result?.actor,
+      applied,
+      warnings,
+      message: `${summary}\n\n${details}${warningSection}`,
+    };
+  }
+}
