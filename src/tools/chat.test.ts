@@ -112,6 +112,39 @@ describe('send-chat-message', () => {
     // refusal short-circuits — the bridge is never called
     expect(calls.length).toBe(0);
   });
+
+  it('inlines a local image as a base64 data: URI with embed:"dataUri" (no upload)', async () => {
+    const { tools, calls } = build({
+      id: 'c5',
+      alias: 'GM',
+      visibility: 'public',
+      whisperCount: 0,
+    });
+    const dav = fakeDav();
+    (tools as any).davClient = dav;
+
+    const img = tmpFile('inline.webp');
+    await writeFile(img, Buffer.from([1, 2, 3]));
+
+    await tools.handleSendChatMessage({
+      content: '<p>Inline.</p>',
+      images: [{ path: img, embed: 'dataUri' }],
+    });
+
+    // dataUri reads the file directly — no WebDAV upload.
+    expect(dav.putFile).not.toHaveBeenCalled();
+    const forwarded = calls[0][1].content as string;
+    expect(forwarded).toContain('<img src="data:image/webp;base64,AQID"');
+  });
+
+  it('refuses embed:"dataUri" for an http URL', async () => {
+    const { tools } = build();
+    const out = await tools.handleSendChatMessage({
+      content: '<p>x</p>',
+      images: [{ path: 'https://example.com/x.png', embed: 'dataUri' }],
+    });
+    expect(out).toMatch(/needs a LOCAL file/i);
+  });
 });
 
 describe('list-chat-messages', () => {

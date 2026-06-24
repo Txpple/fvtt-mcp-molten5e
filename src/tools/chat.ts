@@ -40,6 +40,15 @@ const ImageSchema = z.object({
     ),
   caption: z.string().optional().describe('Optional caption shown under the image.'),
   alt: z.string().optional().describe('Optional alt text (defaults to the caption).'),
+  embed: z
+    .enum(['webdav', 'dataUri'])
+    .default('webdav')
+    .describe(
+      'webdav (default) = upload a local file to the world over WebDAV and link its public URL ' +
+        '(http/Data-relative paths are linked as-is). dataUri = inline the LOCAL file directly into ' +
+        'the message HTML as a base64 data: URI — self-contained, no upload, but it bloats the ' +
+        'message in the world DB, so keep it for small images.'
+    ),
 });
 
 const SendChatMessageSchema = z.object({
@@ -356,7 +365,12 @@ export class ChatTools {
    * <figure> HTML. Returns a plain refusal string on a WebDAV/world-DB guard rather than throwing.
    */
   private async assembleImages(
-    images: Array<{ path: string; caption?: string | undefined; alt?: string | undefined }>,
+    images: Array<{
+      path: string;
+      caption?: string | undefined;
+      alt?: string | undefined;
+      embed?: 'webdav' | 'dataUri' | undefined;
+    }>,
     folder: string,
     overwrite: boolean
   ): Promise<{ figures: string[] } | { refusal: string }> {
@@ -364,6 +378,27 @@ export class ChatTools {
     for (const img of images) {
       const p = img.path;
       let url: string;
+
+      // dataUri: inline a LOCAL file as base64 directly in the HTML (no upload).
+      if (img.embed === 'dataUri') {
+        if (/^https?:\/\//i.test(p) || p.startsWith('data:')) {
+          return {
+            refusal: `Image "${p}": embed:"dataUri" needs a LOCAL file path, not a URL. Use embed:"webdav" or pass a local file.`,
+          };
+        }
+        let bytes: Buffer;
+        try {
+          bytes = await readFile(p);
+        } catch (err) {
+          return {
+            refusal: `Cannot read local image "${p}" for dataUri embed: ${(err as Error).message}`,
+          };
+        }
+        const mime = guessContentType(p) || 'application/octet-stream';
+        url = `data:${mime};base64,${bytes.toString('base64')}`;
+        figures.push(figureHtml(url, img.caption, img.alt));
+        continue;
+      }
 
       if (/^https?:\/\//i.test(p)) {
         url = p;
