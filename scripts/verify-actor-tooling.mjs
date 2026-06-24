@@ -203,6 +203,58 @@ try {
           JSON.stringify({ applied: r?.applied, warnings: r?.warnings })
         );
   }
+
+  // =========================================================================
+  // PHASE 1b — apply-condition: toggle on/off + exhaustion level.
+  // =========================================================================
+  {
+    const npc = await makeTempNpc('ZZ-MCP-AT-COND');
+    const on = await foundry.call('applyCondition', {
+      actorIdentifier: npc.id,
+      conditions: ['poisoned', 'prone'],
+    });
+    const onOk = on?.statuses?.includes('poisoned') && on?.statuses?.includes('prone');
+    onOk
+      ? pass('apply-condition add', on.statuses.join(','))
+      : fail('apply-condition add', JSON.stringify(on));
+
+    const off = await foundry.call('applyCondition', {
+      actorIdentifier: npc.id,
+      conditions: ['prone'],
+      active: false,
+    });
+    !off?.statuses?.includes('prone') && off?.statuses?.includes('poisoned')
+      ? pass('apply-condition remove', `now ${off.statuses.join(',') || '(none)'}`)
+      : fail('apply-condition remove', JSON.stringify(off));
+
+    // Exhaustion level via the dnd5e.exhaustionLevel flag (derives system.attributes.exhaustion).
+    await foundry.call('applyCondition', {
+      actorIdentifier: npc.id,
+      conditions: ['exhaustion'],
+      exhaustionLevel: 4,
+    });
+    const exh = await foundry.evaluate(id => {
+      const a = game.actors.get(id);
+      const eff = a.effects.find(e => e.statuses?.has?.('exhaustion'));
+      return {
+        sys: a.system?.attributes?.exhaustion,
+        flag: eff?.flags?.dnd5e?.exhaustionLevel,
+        name: eff?.name,
+      };
+    }, npc.id);
+    exh?.sys === 4 && exh?.flag === 4
+      ? pass('apply-condition exhaustion level', `${exh.name} (sys=${exh.sys})`)
+      : fail('apply-condition exhaustion level', JSON.stringify(exh));
+
+    // unknown condition warns, not throws
+    const bad = await foundry.call('applyCondition', {
+      actorIdentifier: npc.id,
+      conditions: ['confuddled'],
+    });
+    (bad?.warnings ?? []).some(w => w.includes('confuddled'))
+      ? pass('apply-condition unknown warns', 'warned')
+      : fail('apply-condition unknown warns', JSON.stringify(bad?.warnings));
+  }
 } catch (e) {
   fail('SUITE', e?.message || String(e));
 } finally {

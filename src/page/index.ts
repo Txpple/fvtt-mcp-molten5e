@@ -76,6 +76,7 @@ import { createFolder, moveDocuments, bulkDelete, deleteFolder } from './organiz
 import { findAssetReferences, relinkAsset, setActorArt, addJournalImage } from './assets.js';
 import { getEnhancedCreatureIndex, listCreaturesByCriteria } from './creature-index.js';
 import { createNpcActor } from './dnd5e/npc.js';
+import { applyCondition } from './dnd5e/conditions.js';
 import { addSaveFeatureToActor, addPassiveFeatureToActor } from './dnd5e/features.js';
 import { addAttackToActor, addAuraToActor, addAttackWithSaveToActor } from './dnd5e/attacks.js';
 import { setActorSpellcasting, addSpellsToActor } from './dnd5e/spells.js';
@@ -162,6 +163,7 @@ const api: Window['__fvtt'] = {
   addJournalImage,
   // dnd5e actor authoring (npc creation, feature/attack/aura/spell authoring, compendium import)
   createNpcActor,
+  applyCondition,
   addPassiveFeatureToActor,
   addSaveFeatureToActor,
   addAttackToActor,

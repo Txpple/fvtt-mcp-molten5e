@@ -20,6 +20,7 @@ import { DnD5eAddFeatureTool } from './tools/dnd5e/add-feature.js';
 import { DnD5eNpcTools } from './tools/dnd5e/npc.js';
 import { DnD5eFeaturesFromCompendiumTools } from './tools/dnd5e/features.js';
 import { DnD5eUpdateActorTool } from './tools/dnd5e/update-actor.js';
+import { DnD5eConditionTool } from './tools/dnd5e/conditions.js';
 import { buildGrantToActorTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
@@ -64,6 +65,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     logger,
   });
   const dnd5eUpdateActorTool = new DnD5eUpdateActorTool({ foundry, logger });
+  const dnd5eConditionTool = new DnD5eConditionTool({ foundry, logger });
 
   const questCreationTools = new QuestCreationTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
@@ -93,6 +95,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...sceneTools.getToolDefinitions(),
     ...actorCreationTools.getToolDefinitions(),
     ...dnd5eUpdateActorTool.getToolDefinitions(),
+    ...dnd5eConditionTool.getToolDefinitions(),
     grantToActorTool,
     ...questCreationTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
@@ -141,6 +144,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'delete-actor': args => actorCreationTools.handleDeleteActor(args),
     'delete-folder': args => actorCreationTools.handleDeleteFolder(args),
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),
+    'apply-condition': args => dnd5eConditionTool.handleApplyCondition(args),
 
     // Actor authoring — unified grant entry (composes feature / compendium / items modes)
     'grant-to-actor': args => {
