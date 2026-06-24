@@ -2,8 +2,10 @@
 CLAUDE.md
 LOCAL.md
 
-# Local Claude Code settings (machine-specific; never commit)
-.claude/
+# Local Claude Code settings (machine-specific; never commit) — EXCEPT skills/,
+# which ship WITH the package: project skills are part of the deliverable.
+.claude/*
+!.claude/skills/
 
 # Local MCP wiring (machine-specific; the tracked template is .mcp.json.example)
 .mcp.json
