@@ -24,6 +24,7 @@ import { DnD5eUpdateActorItemTool } from './tools/dnd5e/update-actor-item.js';
 import { DnD5eManageActivityTool } from './tools/dnd5e/manage-activity.js';
 import { DnD5eManageEffectTool } from './tools/dnd5e/manage-effect.js';
 import { DnD5eConditionTool } from './tools/dnd5e/conditions.js';
+import { DnD5eAddItemTool } from './tools/dnd5e/add-item.js';
 import { buildGrantToActorTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
@@ -72,6 +73,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const dnd5eManageActivityTool = new DnD5eManageActivityTool({ foundry, logger });
   const dnd5eManageEffectTool = new DnD5eManageEffectTool({ foundry, logger });
   const dnd5eConditionTool = new DnD5eConditionTool({ foundry, logger });
+  const dnd5eAddItemTool = new DnD5eAddItemTool({ foundry, logger });
 
   const questCreationTools = new QuestCreationTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
@@ -105,6 +107,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eManageActivityTool.getToolDefinitions(),
     ...dnd5eManageEffectTool.getToolDefinitions(),
     ...dnd5eConditionTool.getToolDefinitions(),
+    ...dnd5eAddItemTool.getToolDefinitions(),
     grantToActorTool,
     ...questCreationTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
@@ -157,6 +160,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'manage-activity': args => dnd5eManageActivityTool.handleManageActivity(args),
     'manage-effect': args => dnd5eManageEffectTool.handleManageEffect(args),
     'apply-condition': args => dnd5eConditionTool.handleApplyCondition(args),
+    'add-item': args => dnd5eAddItemTool.handleAddItem(args),
 
     // Actor authoring — unified grant entry (composes feature / compendium / items modes)
     'grant-to-actor': args => {

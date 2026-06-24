@@ -84,6 +84,7 @@ import { addSaveFeatureToActor, addPassiveFeatureToActor } from './dnd5e/feature
 import { addAttackToActor, addAuraToActor, addAttackWithSaveToActor } from './dnd5e/attacks.js';
 import { setActorSpellcasting, addSpellsToActor, addHomebrewSpellToActor } from './dnd5e/spells.js';
 import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
+import { addItem } from './dnd5e/items.js';
 
 const api: Window['__fvtt'] = {
   // world / scene
@@ -180,6 +181,7 @@ const api: Window['__fvtt'] = {
   addSpellsToActor,
   addHomebrewSpellToActor,
   addFeaturesFromCompendium,
+  addItem,
 };
 
 window.__fvtt = api;
