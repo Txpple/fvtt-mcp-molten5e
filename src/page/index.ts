@@ -70,6 +70,7 @@ import {
   postItemCard,
   requestRoll,
 } from './chat.js';
+import { setUserAvatar } from './users.js';
 import { createFolder, moveDocuments, bulkDelete, deleteFolder } from './organization.js';
 import { findAssetReferences, relinkAsset, setActorArt, addJournalImage } from './assets.js';
 import { getEnhancedCreatureIndex, listCreaturesByCriteria } from './creature-index.js';
@@ -145,6 +146,8 @@ const api: Window['__fvtt'] = {
   exportChatLog,
   postItemCard,
   requestRoll,
+  // users
+  setUserAvatar,
   // organization (folders / move / bulk-delete)
   createFolder,
   moveDocuments,

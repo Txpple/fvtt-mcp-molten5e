@@ -26,6 +26,7 @@ import { AssetBridgeTools } from './tools/asset-bridge.js';
 import { TableTools } from './tools/tables.js';
 import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
+import { UserTools } from './tools/users.js';
 import { OrganizationTools } from './tools/organization.js';
 
 export interface ToolRegistry {
@@ -72,6 +73,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const tableTools = new TableTools({ foundry, logger });
   const cardsTools = new CardsTools({ foundry, logger });
   const chatTools = new ChatTools({ foundry, logger });
+  const userTools = new UserTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
   // Unified actor-granting tool: composes the feature-authoring + compendium-feature mode schemas
@@ -96,6 +98,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...tableTools.getToolDefinitions(),
     ...cardsTools.getToolDefinitions(),
     ...chatTools.getToolDefinitions(),
+    ...userTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
   ]) {
     defByName.set(def.name, def);
@@ -218,6 +221,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'export-chat-log': args => chatTools.handleExportChatLog(args),
     'post-item-card': args => chatTools.handlePostItemCard(args),
     'request-roll': args => chatTools.handleRequestRoll(args),
+
+    // Users
+    'set-user-avatar': args => userTools.handleSetUserAvatar(args),
 
     // Organization & batch
     'create-folder': args => organizationTools.handleCreateFolder(args),

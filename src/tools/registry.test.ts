@@ -19,11 +19,11 @@ function build() {
 }
 
 describe('tool registry', () => {
-  it('advertises 68 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 69 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(68);
+    expect(names.length).toBe(69);
   });
 
   it('advertises the six chat-log tools by name', () => {

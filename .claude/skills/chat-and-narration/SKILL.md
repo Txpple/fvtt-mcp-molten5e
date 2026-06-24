@@ -44,10 +44,18 @@ Content is HTML. Keep these shapes consistent:
   `send-chat-message { content: "<p>\"You shall not pass.\"</p>", visibility: "public", speakerActor: "Gandalf" }`
 - **Boxed narration / read-aloud** — `public`, wrap in a consistent block, e.g.
   `<blockquote>…</blockquote>` or `<section class="read-aloud">…</section>`.
-- **Player handout with an image** — use the first-class `images` param; do NOT hand-write `<img>` or
-  guess URLs. Pass a local file path (it uploads over WebDAV automatically) or an existing asset path:
-  `send-chat-message { content: "<p>You find a map.</p>", visibility: "public", images: [{ path: "C:/maps/treasure.webp", caption: "The treasure map" }] }`
-  ⚠️ Uploaded images are served PUBLICLY with no auth — don't post anything sensitive.
+- **Player handout / image** — use the first-class `images` param; do NOT hand-write `<img>` or guess
+  URLs. Each image has an `embed` mode. **If the user gives an image but does NOT make the placement
+  clear, ASK which they want before posting** (don't silently pick):
+    1. **Embed in the HTML** (`embed: "dataUri"`) — the image bytes are read and inlined into the message
+       itself as a base64 `data:` URI. Self-contained, nothing left at a path on the server, but it
+       bloats the message in the world DB — keep it for small images.
+    2. **Upload to WebDAV at a location** (`embed: "webdav"`, the default) — confirm/choose a
+       Data-relative folder (default `worlds/<world>/assets/chat`), upload the file there, and link its
+       public URL. Permanent and reusable. ⚠️ Served PUBLICLY with no auth — nothing sensitive.
+  If the user already signalled which (e.g. "just embed it" / "put it at worlds/.../maps"), skip the ask
+  and do that. Example:
+  `send-chat-message { content: "<p>You find a map.</p>", visibility: "public", images: [{ path: "C:/maps/treasure.webp", caption: "The treasure map", embed: "webdav" }] }`
 
 ## Rich dnd5e cards and roll requests
 
