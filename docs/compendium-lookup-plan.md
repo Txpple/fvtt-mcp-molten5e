@@ -80,10 +80,15 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
   separate change needed.
 
 ### Phase 3 — Skills (ship with their tools)
-- [ ] **3a — `stat-block-builder`**: discover via `search-compendium-creatures` / `-spells` by
-  type+facet; drop hard-coded pack-id reasoning (the §6 need→pack table is now the tool's job).
-- [ ] **3b — `physical-item-builder`**: discover gear via `search-compendium-items` by rarity/type;
-  drop pack-id reasoning.
+- [x] **3a — `stat-block-builder`**: discovery now routes through the faceted tools
+  (`search-compendium-creatures` / `-spells` / `-items`) by type+facet, with a note that hits carry
+  `{pack,id}` to feed straight into create-actor/import-item/get-compendium-entry. Dropped the
+  hard-coded equipment pack-ids (gear → `search-compendium-items`); reframed Step-4 feature pulls to
+  rely on `add-feature`'s premium-pack DEFAULTS (MM-features + PHB-classes), naming a pack only for the
+  origins/racial exception.
+- [x] **3b — `physical-item-builder`**: Step-0 discovery now uses `search-compendium-items` (faceted by
+  rarity/subtype/magical) instead of `search-compendium` + hard-coded `*.equipment` pack-ids; copy by
+  the hit's `pack`+`id`. Name lookup kept as the quick path.
 
 ### Phase 4 — Live verification *(needs an MCP restart — the running bundle is stale)*
 - [ ] **4a** — restart Claude Code (loads the new `dist/page.bundle.js` + new tools).

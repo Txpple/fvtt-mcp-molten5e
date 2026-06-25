@@ -34,11 +34,12 @@ bearing, edition-correct** Foundry items. It adds NO new mechanics; the tools ho
 4. **If you can't find a workable 2024 match, STOP and ASK** — don't silently fall back to 2014 or
    invent a rarity / price / damage die.
 
-Tools: **`import-item`** (copy from a compendium — the default path), **`search-compendium` /
-`get-compendium-entry`** (find the packId + itemId), **`add-item`** (author from scratch — homebrew
-last resort only), **`update-actor`** (actor `currency`/coins), **`update-actor-item`** /
-**`manage-activity`** / **`manage-effect`** (modify a copied base into a custom item),
-**`get-actor` / `get-actor-entity`** (read back).
+Tools: **`import-item`** (copy from a compendium — the default path), **`search-compendium-items`**
+(faceted discovery by rarity / subtype / magical — the default way to *find* gear), **`search-compendium`**
+(broad name lookup) / **`get-compendium-entry`** (confirm the entry; you copy by the hit's `pack` + `id`),
+**`add-item`** (author from scratch — homebrew last resort only), **`update-actor`** (actor
+`currency`/coins), **`update-actor-item`** / **`manage-activity`** / **`manage-effect`** (modify a copied
+base into a custom item), **`get-actor` / `get-actor-entity`** (read back).
 
 ## Target: actor inventory vs world library
 
@@ -48,12 +49,14 @@ last resort only), **`update-actor`** (actor `currency`/coins), **`update-actor-
 
 ## Step 0 — Find it in the compendium (the default path)
 
-`search-compendium` for the item by name in the **premium books ONLY** — never the `dnd5e.*` SRD
-(design.md §2.3): **`dnd-players-handbook.equipment`** (PHB gear), **`dnd-dungeon-masters-guide.equipment`**
-(DMG magic items). Confirm the match with `get-compendium-entry`, then
-copy it with **`import-item`** (`packId` + `itemId`, plus `actorIdentifier` or `folder`). On-copy you
-can `name`-rename, set `quantity`, `equipped`, `identified`, or nest in a `container`. Done — it has the
-right stats and art.
+Discover the item with **`search-compendium-items`** — faceted by `documentType`
+(gear|weapon|armor|consumable), `rarity`, `itemType` (subtype: wondrous / potion / ring / wand / …),
+`magical`, and `name`. It searches the **premium books ONLY** (never the `dnd5e.*` SRD, design.md §2.3)
+and ranks them first, so you don't reason about pack ids. (For a quick exact-name lookup,
+`search-compendium` by name also works.) Confirm a hit with `get-compendium-entry` if you need the full
+entry, then copy it with **`import-item`** (`packId` = the hit's `pack`, `itemId` = its `id`, plus
+`actorIdentifier` or `folder`). On-copy you can `name`-rename, set `quantity`, `equipped`, `identified`,
+or nest in a `container`. Done — it has the right stats and art.
 
 ## Step 1 — Custom or magic variant (copy a base, then modify, then rename)
 

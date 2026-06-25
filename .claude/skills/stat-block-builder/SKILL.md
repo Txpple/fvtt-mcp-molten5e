@@ -25,9 +25,16 @@ Tools used: `create-actor` (compendium pull or authored), `update-actor`, `add-f
 compendium-features / spells), **`import-item`** (COPY gear from a compendium — the default for
 inventory), `add-item` (author homebrew gear — last resort), `manage-activity`, `manage-effect`,
 `apply-condition`, `set-actor-art`, `set-actor-ownership`, `move-documents`, `update-actor-item`
-(per-item corrections), `search-compendium` / `search-compendium-creatures` / `get-compendium-entry`
-(find things to copy), plus `get-actor` / `get-actor-entity` to read back. Defer item judgment to the
-[[physical-item-builder]] skill.
+(per-item corrections), the faceted discovery tools `search-compendium-creatures` /
+`search-compendium-spells` / `search-compendium-items` (find things to copy by **type + facet** —
+each searches the premium books only and never the SRD, so you don't reason about pack ids),
+`search-compendium` (broad **name** lookup) / `get-compendium-entry` (full entry), plus `get-actor` /
+`get-actor-entity` to read back. Defer item judgment to the [[physical-item-builder]] skill.
+
+> **Faceted discovery returns minimal hits.** `search-compendium-creatures` / `-spells` / `-items`
+> each return `results: [{ id, name, type, uuid, pack, packLabel, img, facets }]`, premium-first
+> ranked. Pick a hit by name, then feed its **`pack` + `id`** straight into `create-actor`
+> (source: compendium), `import-item`, or `get-compendium-entry` — no pack-id guesswork.
 
 > **`add-feature` invocation shape.** It takes a top-level `mode` — only `feature`,
 > `compendium-features`, or `items` — plus nested params. Authoring any single
@@ -102,19 +109,21 @@ Immediately `update-actor` for anything the base builder doesn't cover or that y
 ## Step 4 — Special traits, class features & racial abilities (prefer compendium import)
 
 For official, named traits/features **prefer importing** them so the real text/mechanics + art come in,
-via `add-feature` mode `compendium-features` (first-match-wins across the packs you pass):
-**Premium books ONLY — never the `dnd5e.*` SRD packs (design.md §2.3).**
-- **Monster traits** (Pack Tactics, Nimble Escape, Magic Resistance, Multiattack) →
-  `dnd-monster-manual.features`.
-- **Class features** (Lay on Hands, Channel Divinity, Fighting Style, …) → **class features ARE
-  importable**: the individual feature feats live in the **classes pack**
-  (`dnd-players-handbook.classes`), alongside the class items.
-  This is the pattern the official 2024 sample PCs use (each feature is its own `feat`).
-- **Racial abilities** (a dragonborn's Breath Weapon, etc.) → copy from the **origins pack**
-  (`dnd-players-handbook.origins`). E.g. a breath weapon is a `<Element> Breath
-  Weapon` feat (`Fire Breath Weapon`, `Cold Breath Weapon`, …) — `import-item` it (it carries the real
-  cone+line save activities, type, uses), then **fix its `@scale.*` damage formula** to an explicit die
-  for the creature's level (see the @scale gotcha above). Don't author racial abilities by hand.
+via `add-feature` mode `compendium-features` (pass `featureNames`; first-match-wins). The tool
+**defaults its `compendiumPacks` to the premium feature packs** (Monster-Manual features + PHB classes)
+and refuses any `dnd5e.*` SRD pack (design.md §2.3) — so for the two common cases you **name no packs at
+all**, just the feature names:
+- **Monster traits** (Pack Tactics, Nimble Escape, Magic Resistance, Multiattack) — covered by the
+  default MM-features pack.
+- **Class features** (Lay on Hands, Channel Divinity, Fighting Style, …) — covered by the default PHB
+  classes pack: each 2024 class feature is its own importable `feat` (the pattern the official sample
+  PCs use).
+- **Racial abilities** (a dragonborn's Breath Weapon, etc.) live in the **origins** pack, which is *not*
+  a default — so this is the one case you override `compendiumPacks: ["dnd-players-handbook.origins"]`.
+  E.g. a breath weapon is a `<Element> Breath Weapon` feat (`Fire Breath Weapon`, `Cold Breath Weapon`,
+  …) — import it (it carries the real cone+line save activities, type, uses), then **fix its `@scale.*`
+  damage formula** to an explicit die for the creature's level (see the @scale gotcha above). Don't
+  author racial abilities by hand.
 
 Only author from scratch with `add-feature` mode `feature` / `featureType: "passive"` (`featType:
 "monster"`, prerequisite in `requirements`) for genuinely homebrew traits with no compendium source.
@@ -144,6 +153,11 @@ Class-based → `add-feature` `spellcasting` (sets slots) then `spells` (import 
 Innate / homebrew → `add-feature` `homebrew-spell` (`spellMethod: "innate"`, components, optional
 `spellActivity`).
 
+When the block names its spells you can import them straight by name. When you need to *find* spells —
+verify an exact name, or pick by criteria (e.g. "a CR-appropriate fire evocation") — use
+`search-compendium-spells` (facets: `spellLevel`, `spellSchool`, `damageType`, `name`); it searches the
+premium books only, so no pack-id reasoning. Then import the confirmed names via `add-feature` `spells`.
+
 ## Step 7 — Effects and starting conditions
 
 For ongoing derived modifiers that aren't a base-stat value (a permanent +1 AC aura, granted resistance)
@@ -155,9 +169,10 @@ Conditions the creature *starts* with (rare) → `apply-condition`.
 
 Build the rest of what the creature carries and drops — COPY from the 2024 PHB/DMG compendiums first;
 defer item judgment to [[physical-item-builder]]:
-- **Find then copy:** `search-compendium` the gear in the premium books only — never the `dnd5e.*` SRD
-  (`dnd-players-handbook.equipment`, `dnd-dungeon-masters-guide.equipment`) → `import-item` (`packId` + `itemId`,
-  `actorIdentifier`). Copies bring correct stats AND art.
+- **Find then copy:** discover gear with `search-compendium-items` (facets: `documentType`
+  gear|weapon|armor|consumable, `rarity`, `itemType`, `magical`, `name` — premium books only, never the
+  `dnd5e.*` SRD, so no pack-id reasoning) → `import-item` the chosen hit (`packId` = its `pack`,
+  `itemId` = its `id`, plus `actorIdentifier`). Copies bring correct stats AND art.
 - **Worn armor / shield** → `import-item` the real armor/shield. Copied armor doesn't auto-drive AC; set
   the actor's AC with `update-actor` if needed (a shield's bonus applies under any calc). When you must
   AUTHOR body armor via `add-item`, pass `wireAc: true` to switch the actor to armor-based AC.
