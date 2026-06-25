@@ -16,22 +16,55 @@ export interface TableToolsOptions {
   logger: Logger;
 }
 
-const resultSchema = z.object({
-  text: z
-    .string()
-    .min(1, 'result text is required')
-    .describe('Result text (shown when this entry is rolled).'),
-  weight: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe('Relative weight (default 1). Determines how many roll values map here.'),
-  range: z
-    .tuple([z.number().int(), z.number().int()])
-    .optional()
-    .describe('Explicit [low, high] roll range. Omit to auto-assign from weights.'),
-});
+const resultSchema = z
+  .object({
+    text: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Literal result text (HTML / @UUID enrichers allowed). Combine with `uuid` via a {{link}} ' +
+          'placeholder for mixed loot, e.g. "A pouch holding {{link}} and 2d6 gp".'
+      ),
+    uuid: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Reference a REAL item by compendium UUID (e.g. ' +
+          'Compendium.dnd-dungeon-masters-guide.equipment.Item.<id>) — rendered as a clickable @UUID ' +
+          'link, exactly how the published books build loot tables. Premium-book sources only; the ' +
+          'tool refuses SRD (dnd5e.*) and unresolvable refs. World-document UUIDs (Item.<id>) are ' +
+          'allowed too. Provide `text` OR `uuid` (or both) per result.'
+      ),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Display label for the `uuid` link (default: the resolved document name).'),
+    weight: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Relative weight (default 1). Determines how many roll values map here.'),
+    range: z
+      .tuple([z.number().int(), z.number().int()])
+      .optional()
+      .describe('Explicit [low, high] roll range. Omit to auto-assign from weights.'),
+  })
+  .refine(
+    r =>
+      (typeof r.text === 'string' && r.text.trim().length > 0) ||
+      (typeof r.uuid === 'string' && r.uuid.trim().length > 0),
+    { message: 'each result needs either "text" or "uuid"' }
+  );
+
+// Reduce @UUID[uuid]{Label} enricher links to their human label for display (the raw enricher is
+// what's stored; this just makes the rolled-result line readable).
+function stripUuidEnrichers(text: string): string {
+  return (text ?? '').replace(/@UUID\[[^\]]+\]\{([^}]*)\}/g, '$1');
+}
 
 // Single source of truth for each tool's input contract: the handler parses with these
 // schemas and getToolDefinitions() advertises toInputSchema(...) of the same schema.
@@ -85,9 +118,11 @@ export class TableTools {
       {
         name: 'create-rolltable',
         description:
-          'Create a RollTable from a list of text results. Ranges are auto-assigned from weights ' +
-          '(and the formula defaults to 1d<total weight>) unless you provide explicit ranges/formula. ' +
-          'Use for random encounter/loot/rumour tables. GM-only.',
+          'Create a RollTable from a list of results. Each result is literal `text` and/or a `uuid` ' +
+          'referencing a REAL premium-book item (rendered as a clickable @UUID link — the way the ' +
+          'published loot tables are built; SRD refs are refused). Ranges are auto-assigned from ' +
+          'weights (and the formula defaults to 1d<total weight>) unless you provide explicit ' +
+          'ranges/formula. Use for random encounter/loot/rumour/treasure tables. GM-only.',
         inputSchema: toInputSchema(CreateRollTableSchema),
       },
       {
@@ -107,8 +142,10 @@ export class TableTools {
       {
         name: 'roll-on-table',
         description:
-          'Roll on a RollTable and return the drawn result(s). Evaluates without marking results ' +
-          'drawn or posting to chat.',
+          'Roll on a world RollTable and return the drawn result(s). Evaluates without marking ' +
+          'results drawn or posting to chat. Any @UUID item links in a drawn result are surfaced as ' +
+          'importable (uuid + label) so loot can be pulled into the world. (World tables only — a ' +
+          'compendium/DMG table must be copied into the world first.)',
         inputSchema: toInputSchema(RollOnTableSchema),
       },
       {
@@ -154,8 +191,16 @@ export class TableTools {
     if (result?.rolled === false) {
       return `Roll table not found: "${result?.notFound ?? identifier}".`;
     }
-    const texts = (result?.results ?? []).map((r: any) => `"${r.text}"`).join(', ');
-    return `Rolled ${result?.total} on "${result?.tableName}" → ${texts || '(no result matched)'}`;
+    const drawn = result?.results ?? [];
+    const texts = drawn
+      .map((r: any) => `"${stripUuidEnrichers(r.text ?? r.description ?? '')}"`)
+      .join(', ');
+    const links = drawn.flatMap((r: any) => r.links ?? []);
+    let out = `Rolled ${result?.total} on "${result?.tableName}" → ${texts || '(no result matched)'}`;
+    if (links.length > 0) {
+      out += `\n  importable: ${links.map((l: any) => `${l.label} [${l.uuid}]`).join('; ')}`;
+    }
+    return out;
   }
 
   async handleDeleteRollTable(args: any): Promise<string> {

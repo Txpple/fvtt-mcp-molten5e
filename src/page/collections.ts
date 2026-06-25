@@ -5,6 +5,7 @@
 // Return shapes match the Node tools' existing contract (see
 // src/tools/{tables,cards,asset-bridge}.ts + their tests).
 
+import { isSrdPack } from '../utils/compendium-sources.js';
 import { normalizeAssetPath, basename, getOrCreateFolder } from './_shared.js';
 
 // Foundry document classes (Playlist, RollTable, Cards) and CONST live in the page
@@ -14,6 +15,8 @@ const PlaylistClass: any = (globalThis as any).Playlist;
 const RollTableClass: any = (globalThis as any).RollTable;
 const CardsClass: any = (globalThis as any).Cards;
 const CONST_: any = (globalThis as any).CONST;
+// Foundry's global UUID resolver — async, resolves compendium AND world documents.
+const fromUuid_: (uuid: string) => Promise<any> = (globalThis as any).fromUuid;
 
 // --- local helpers (sharedHelpersNeeded: a generic id/name document resolver) ---
 
@@ -115,11 +118,18 @@ export async function rollOnTable(args: { identifier: string }): Promise<unknown
     tableName: table.name,
     total: roll?.total,
     formula: roll?.formula ?? table.formula,
-    results: (results ?? []).map((r: any) => ({
-      id: r.id,
-      text: r.text ?? r.description ?? '',
-      range: r.range,
-    })),
+    results: (results ?? []).map((r: any) => {
+      // v14 canonical field is `description`; `text` is a deprecation getter. Surface any
+      // @UUID enricher links so a skill can import the real items a drawn loot entry references.
+      const description = r.description ?? r.text ?? '';
+      return {
+        id: r.id,
+        text: description,
+        description,
+        range: r.range,
+        links: parseUuidLinks(description),
+      };
+    }),
   };
 }
 
@@ -233,28 +243,129 @@ export async function deletePlaylists(args: { identifiers: string[] }): Promise<
 
 // --- roll table writes ---
 
-// Build TableResult child data from the input results, auto-assigning sequential
-// ranges from weights when explicit ranges are omitted so the table is
-// immediately rollable. Throws on an empty/missing result text.
-function buildTableResults(
-  results: Array<{ text: string; weight?: number; range?: [number, number] }>
-): Array<{ type: string; text: string; weight: number; range: [number, number]; drawn: boolean }> {
-  let cursor = 1;
-  return results.map((r, idx) => {
-    if (!r || typeof r.text !== 'string' || r.text.trim().length === 0) {
-      throw new Error(`results[${idx}]: "text" is required and must be a non-empty string`);
+// Input shape for one table entry (Node-validated by tables.ts; mirrored here).
+interface RollTableResultInput {
+  text?: string;
+  uuid?: string;
+  name?: string;
+  weight?: number;
+  range?: [number, number];
+}
+
+// Parse the pack id from a Compendium UUID: "Compendium.<scope>.<pack>.<Type>.<id>" -> "<scope>.<pack>".
+// Returns null for a world UUID ("Actor.<id>", "Item.<id>") — those carry no pack to SRD-check.
+function packIdFromUuid(uuid: string): string | null {
+  const parts = (uuid || '').split('.');
+  return parts[0] === 'Compendium' && parts.length >= 3 ? `${parts[1]}.${parts[2]}` : null;
+}
+
+// Extract @UUID[uuid]{label} enricher links from a result description (for roll-on-table to surface
+// the real items a drawn loot entry references, so a skill can import them).
+function parseUuidLinks(text: string): Array<{ uuid: string; label: string }> {
+  const out: Array<{ uuid: string; label: string }> = [];
+  const re = /@UUID\[([^\]]+)\]\{([^}]*)\}/g;
+  let m: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex-exec iteration
+  while ((m = re.exec(text || '')) !== null) out.push({ uuid: m[1], label: m[2] });
+  return out;
+}
+
+// Build the v14 TableResult `description` (HTMLField — the canonical result text; v14 dropped the
+// old `text` field) for ONE input entry. Correctness only (design.md §2.1):
+//   - a `uuid` is validated (compendium UUIDs must be premium-book, never SRD — §2.3) and resolved
+//     (refused if it doesn't exist — §2.4 ask-don't-invent), then rendered as a book-style
+//     `@UUID[uuid]{name}` enricher — exactly how the published loot tables link items;
+//   - literal `text` is used as-is, but any hand-written SRD `@UUID` link in it is refused, so
+//     "never SRD" holds by construction even for prose results;
+//   - `text` + `uuid` combine: a `{{link}}` placeholder in `text` is replaced by the link (mixed
+//     loot like "a pouch holding {{link}} and 2d6 gp"); otherwise the link is appended.
+async function buildResultDescription(r: RollTableResultInput): Promise<string> {
+  const text = typeof r.text === 'string' ? r.text : '';
+  const uuid = typeof r.uuid === 'string' ? r.uuid.trim() : '';
+
+  if (uuid) {
+    const packId = packIdFromUuid(uuid);
+    if (packId && isSrdPack(packId)) {
+      throw new Error(
+        `refusing to reference SRD pack "${packId}" in a table result (design.md §2.3): link the ` +
+          'premium-book item instead (dnd-monster-manual.*, dnd-players-handbook.*, dnd-dungeon-masters-guide.*).'
+      );
     }
-    const weight = typeof r.weight === 'number' && r.weight > 0 ? Math.floor(r.weight) : 1;
+    const doc = typeof fromUuid_ === 'function' ? await fromUuid_(uuid) : null;
+    if (!doc) {
+      throw new Error(
+        `could not resolve uuid "${uuid}" — use search-compendium / get-compendium-entry to find a ` +
+          "real premium-book item (design.md §2.4: ask, don't invent)."
+      );
+    }
+    const label =
+      typeof r.name === 'string' && r.name.trim().length > 0 ? r.name.trim() : (doc.name ?? uuid);
+    const link = `@UUID[${uuid}]{${label}}`;
+    if (text.trim().length > 0) {
+      return text.includes('{{link}}') ? text.split('{{link}}').join(link) : `${text} ${link}`;
+    }
+    return link;
+  }
+
+  if (text.trim().length === 0) {
+    throw new Error('each result needs either "text" or "uuid"');
+  }
+  // Never emit an SRD reference, even from hand-written enricher text (design.md §2.3).
+  for (const lnk of parseUuidLinks(text)) {
+    const linkPackId = packIdFromUuid(lnk.uuid);
+    if (linkPackId && isSrdPack(linkPackId)) {
+      throw new Error(
+        `refusing an SRD @UUID reference to "${linkPackId}" in result text (design.md §2.3): ` +
+          'use the premium-book equivalent.'
+      );
+    }
+  }
+  return text;
+}
+
+// Build TableResult child data from the input results, auto-assigning sequential ranges from
+// weights when explicit ranges are omitted so the table is immediately rollable. Each entry's
+// `description` is built (and compendium links validated) by buildResultDescription. Async because
+// resolving a `uuid` to its document name is async; the range cursor is sequential so this stays a
+// for-loop (not Promise.all). Throws (prefixed with the entry index) on an empty/invalid entry.
+async function buildTableResults(results: RollTableResultInput[]): Promise<
+  Array<{
+    type: string;
+    description: string;
+    weight: number;
+    range: [number, number];
+    drawn: boolean;
+  }>
+> {
+  const TEXT = CONST_?.TABLE_RESULT_TYPES?.TEXT ?? 'text';
+  const out: Array<{
+    type: string;
+    description: string;
+    weight: number;
+    range: [number, number];
+    drawn: boolean;
+  }> = [];
+  let cursor = 1;
+  for (let idx = 0; idx < results.length; idx++) {
+    const r = results[idx];
+    let description: string;
+    try {
+      description = await buildResultDescription(r ?? {});
+    } catch (e: any) {
+      throw new Error(`results[${idx}]: ${e?.message ?? e}`);
+    }
+    const weight = typeof r?.weight === 'number' && r.weight > 0 ? Math.floor(r.weight) : 1;
     let range: [number, number];
-    if (Array.isArray(r.range) && r.range.length === 2) {
+    if (Array.isArray(r?.range) && r.range.length === 2) {
       range = [r.range[0], r.range[1]];
       cursor = Math.max(cursor, r.range[1] + 1);
     } else {
       range = [cursor, cursor + weight - 1];
       cursor += weight;
     }
-    return { type: 'text', text: r.text, weight, range, drawn: false };
-  });
+    out.push({ type: TEXT, description, weight, range, drawn: false });
+  }
+  return out;
 }
 
 // Create a RollTable from text results. Ranges auto-assign from weights and the
@@ -266,7 +377,7 @@ export async function createRollTable(args: {
   replacement?: boolean;
   displayRoll?: boolean;
   folderName?: string;
-  results: Array<{ text: string; weight?: number; range?: [number, number] }>;
+  results: RollTableResultInput[];
 }): Promise<unknown> {
   if (!args?.name || args.name.trim().length === 0) {
     throw new Error('name is required and must be a non-empty string');
@@ -275,7 +386,7 @@ export async function createRollTable(args: {
     throw new Error('results array is required and must contain at least one entry');
   }
 
-  const results = buildTableResults(args.results);
+  const results = await buildTableResults(args.results);
   const maxRange = results.reduce((m, r) => Math.max(m, r.range[1]), 0);
   const formula =
     typeof args.formula === 'string' && args.formula.trim().length > 0
@@ -314,7 +425,7 @@ export async function updateRollTable(args: {
   formula?: string;
   replacement?: boolean;
   displayRoll?: boolean;
-  results?: Array<{ text: string; weight?: number; range?: [number, number] }>;
+  results?: RollTableResultInput[];
 }): Promise<unknown> {
   const table = resolveStrict(game.tables, args.identifier);
   if (!table) {
@@ -344,7 +455,7 @@ export async function updateRollTable(args: {
     if (existingIds.length > 0) {
       await table.deleteEmbeddedDocuments('TableResult', existingIds);
     }
-    const newResults = buildTableResults(args.results!);
+    const newResults = await buildTableResults(args.results!);
     await table.createEmbeddedDocuments('TableResult', newResults);
   }
 

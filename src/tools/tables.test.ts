@@ -112,6 +112,44 @@ describe('handleCreateRollTable', () => {
       tools.handleCreateRollTable({ name: 'X', results: [{ text: '' }] })
     ).rejects.toThrow();
   });
+
+  it('rejects a result with neither text nor uuid', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateRollTable({ name: 'X', results: [{ weight: 2 }] })
+    ).rejects.toThrow();
+  });
+
+  it('forwards uuid-referencing results (compendium loot links)', async () => {
+    const { tools, calls } = build({
+      tableName: 'Hoard',
+      tableId: 'h1',
+      formula: '1d2',
+      resultCount: 2,
+    });
+    await tools.handleCreateRollTable({
+      name: 'Hoard',
+      results: [
+        {
+          uuid: 'Compendium.dnd-dungeon-masters-guide.equipment.Item.dmgRubyOfTheWarM',
+          name: 'Ruby of the War Mage',
+        },
+        {
+          text: 'A pouch holding {{link}} and 2d6 gp',
+          uuid: 'Compendium.dnd-players-handbook.equipment.Item.x',
+        },
+      ],
+    });
+    expect(calls[0][0]).toBe('createRollTable');
+    expect(calls[0][1].results[0]).toMatchObject({
+      uuid: 'Compendium.dnd-dungeon-masters-guide.equipment.Item.dmgRubyOfTheWarM',
+      name: 'Ruby of the War Mage',
+    });
+    expect(calls[0][1].results[1]).toMatchObject({
+      text: 'A pouch holding {{link}} and 2d6 gp',
+      uuid: 'Compendium.dnd-players-handbook.equipment.Item.x',
+    });
+  });
 });
 
 describe('handleListRollTables', () => {
@@ -205,6 +243,25 @@ describe('handleRollOnTable', () => {
     const { tools } = build({ total: 3, tableName: 'Loot', results: [] });
     const out = await tools.handleRollOnTable({ identifier: 'Loot' });
     expect(out).toBe('Rolled 3 on "Loot" → (no result matched)');
+  });
+
+  it('prettifies @UUID enrichers and lists importable item links', async () => {
+    const uuid = 'Compendium.dnd-dungeon-masters-guide.equipment.Item.dmgRubyOfTheWarM';
+    const { tools } = build({
+      total: 68,
+      tableName: 'Arcana - Common',
+      results: [
+        {
+          text: `@UUID[${uuid}]{Ruby of the War Mage}`,
+          links: [{ uuid, label: 'Ruby of the War Mage' }],
+        },
+      ],
+    });
+    const out = await tools.handleRollOnTable({ identifier: 'Arcana - Common' });
+    expect(out).toBe(
+      'Rolled 68 on "Arcana - Common" → "Ruby of the War Mage"\n' +
+        `  importable: Ruby of the War Mage [${uuid}]`
+    );
   });
 
   it('reports not-found when the bridge says rolled:false', async () => {
