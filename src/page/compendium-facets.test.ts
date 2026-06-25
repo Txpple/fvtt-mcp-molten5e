@@ -67,6 +67,14 @@ describe('buildFacetFilters', () => {
     ]);
   });
 
+  it('spell: full school names normalize to dnd5e keys; unknown passes through lowercased', () => {
+    const f = buildFacetFilters('spell', {
+      documentType: 'spell',
+      spellSchool: ['Evocation', 'necromancy', 'Whatever'],
+    } as FacetedSearchArgs);
+    expect(f).toEqual([{ k: 'system.school', o: 'in', v: ['evo', 'nec', 'whatever'] }]);
+  });
+
   it('gear: rarity/itemType -> in, properties -> hasany', () => {
     const f = buildFacetFilters('gear', {
       documentType: 'gear',

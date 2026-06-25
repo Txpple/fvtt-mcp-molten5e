@@ -157,6 +157,80 @@ const ListCompendiumPacksSchema = z.object({
   type: z.string().optional().describe('Optional filter by pack type'),
 });
 
+// Thin typed facade over the page-side faceted engine (searchCompendiumFaceted). The tool hard-codes
+// documentType: 'spell', so only spell facets are representable here (design.md §2.1, "a tool is a
+// contract"). Lenient string/number unions mirror the other compendium schemas — they recover the
+// stringified argument shapes some MCP clients send.
+const SearchCompendiumSpellsSchema = z.object({
+  name: z
+    .string()
+    .optional()
+    .describe('Case-insensitive substring to narrow by spell name (e.g., "fire", "cure wounds").'),
+  spellLevel: z
+    .union([
+      z
+        .object({
+          min: z.number().min(0).max(9).optional().describe('Minimum level (0 = cantrip)'),
+          max: z.number().min(0).max(9).optional().describe('Maximum level'),
+        })
+        .describe('Level range, e.g. {"min":1,"max":3}'),
+      z.number().min(0).max(9).describe('Exact spell level (0 = cantrip … 9)'),
+      z
+        .string()
+        .refine(
+          val => {
+            try {
+              const parsed = JSON.parse(val);
+              return (
+                typeof parsed === 'object' &&
+                parsed !== null &&
+                (typeof parsed.min === 'number' || typeof parsed.max === 'number')
+              );
+            } catch {
+              return false;
+            }
+          },
+          { message: 'Spell-level range must be valid JSON with min/max numbers' }
+        )
+        .transform(val => JSON.parse(val) as { min?: number; max?: number }),
+      z
+        .string()
+        .refine(val => !Number.isNaN(parseInt(val, 10)), {
+          message: 'Spell level must be a valid number',
+        })
+        .transform(val => parseInt(val, 10)),
+    ])
+    .optional()
+    .describe(
+      'Filter by spell level — exact number (0 = cantrip … 9) or a {"min","max"} range for surveys.'
+    ),
+  spellSchool: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe(
+      'Spell school(s): abjuration · conjuration · divination · enchantment · evocation · illusion · necromancy · transmutation (full name or dnd5e 3-letter key; one value or an array).'
+    ),
+  damageType: z
+    .string()
+    .optional()
+    .describe(
+      'Keep only spells that deal this damage type (e.g., "fire", "cold", "radiant"). Two-stage: candidate spells are loaded to inspect their activities, so this narrows an already facet-filtered set.'
+    ),
+  limit: z
+    .union([
+      z.number().min(1).max(200),
+      z
+        .string()
+        .refine(val => {
+          const num = parseInt(val, 10);
+          return !Number.isNaN(num) && num >= 1 && num <= 200;
+        })
+        .transform(val => parseInt(val, 10)),
+    ])
+    .default(50)
+    .describe('Maximum results to return (default: 50, max: 200)'),
+});
+
 export interface CompendiumToolsOptions {
   foundry: FoundryBridge;
   logger: Logger;
@@ -204,6 +278,12 @@ export class CompendiumTools {
         description:
           'D&D 5e CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria (Challenge Rating, type, size, spellcasting, legendary actions). Searches the premium book Actor packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features premium-book pack prioritization and high result limits for complete surveys.',
         inputSchema: toInputSchema(ListCreaturesByCriteriaSchema),
+      },
+      {
+        name: 'search-compendium-spells',
+        description:
+          'D&D 5e SPELL DISCOVERY: find spells matching faceted criteria (level, school, damage type, name) across the premium book packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Backed by the system Compendium Browser, so filters check real spell data (not name heuristics). Returns minimal hits ({id,name,type,uuid,pack,packLabel,img,facets}) premium-first ranked — identify candidates here, then pull full detail with get-compendium-entry. damageType is a two-stage refine (loads candidate spells to inspect their activities).',
+        inputSchema: toInputSchema(SearchCompendiumSpellsSchema),
       },
       {
         name: 'list-compendium-packs',
@@ -486,6 +566,80 @@ export class CompendiumTools {
         `Failed to list compendium packs: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  async handleSearchCompendiumSpells(args: any): Promise<any> {
+    let params: z.infer<typeof SearchCompendiumSpellsSchema>;
+    try {
+      params = SearchCompendiumSpellsSchema.parse(args);
+    } catch (parseError) {
+      if (parseError instanceof z.ZodError) {
+        const details = parseError.issues
+          .map(err => `${err.path.join('.')}: ${err.message}`)
+          .join('; ');
+        throw new Error(
+          `Parameter validation failed: ${details}. Received args: ${JSON.stringify(args)}`
+        );
+      }
+      throw parseError;
+    }
+
+    const criteriaDescription = this.describeSpellCriteria(params);
+    this.logger.info('Spell faceted search', { criteria: criteriaDescription });
+
+    try {
+      // Thin facade: hard-code the content type and forward the spell facets to the one engine.
+      const hits = await this.foundry.call('searchCompendiumFaceted', {
+        documentType: 'spell',
+        name: params.name,
+        spellLevel: params.spellLevel,
+        spellSchool: params.spellSchool,
+        damageType: params.damageType,
+        limit: params.limit,
+      });
+
+      // Enforced backstop to the engine's by-uuid SRD exclusion: a dnd5e.* hit is never a result
+      // (design.md §2.3). The engine already drops SRD packs; re-drop here so the contract holds
+      // (and counts stay book-only) even if one slips past.
+      const list: any[] = Array.isArray(hits) ? hits : [];
+      const results = list.filter(hit => !isSrdPack(hit?.pack));
+
+      return {
+        documentType: 'spell',
+        criteriaDescription,
+        results,
+        totalFound: results.length,
+        criteria: params,
+        note: 'Premium book spells only — the SRD is never a source (design.md §2.3). Use get-compendium-entry for full spell detail.',
+      };
+    } catch (error) {
+      this.logger.error('Failed to search compendium spells', error);
+      throw new Error(
+        `Failed to search compendium spells: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /** Human-readable summary of the spell-search facets (transparency + logging). */
+  private describeSpellCriteria(params: z.infer<typeof SearchCompendiumSpellsSchema>): string {
+    const parts: string[] = [];
+    if (params.spellLevel !== undefined) {
+      if (typeof params.spellLevel === 'number') {
+        parts.push(params.spellLevel === 0 ? 'cantrip' : `level ${params.spellLevel}`);
+      } else {
+        const min = params.spellLevel.min ?? 0;
+        const max = params.spellLevel.max ?? 9;
+        parts.push(`level ${min}-${max}`);
+      }
+    }
+    if (params.spellSchool) {
+      parts.push(
+        Array.isArray(params.spellSchool) ? params.spellSchool.join('/') : params.spellSchool
+      );
+    }
+    if (params.damageType) parts.push(`${params.damageType} damage`);
+    if (params.name) parts.push(`name~"${params.name}"`);
+    return parts.length > 0 ? parts.join(', ') : 'no criteria';
   }
 
   private formatCompendiumItem(item: any, gameSystem?: GameSystem): any {

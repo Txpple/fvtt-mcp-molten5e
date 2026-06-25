@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 describe('CompendiumTools.getToolDefinitions', () => {
-  it('exposes exactly the four compendium tools', () => {
+  it('exposes exactly the five compendium tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
@@ -54,6 +54,7 @@ describe('CompendiumTools.getToolDefinitions', () => {
       'list-compendium-packs',
       'search-compendium',
       'search-compendium-creatures',
+      'search-compendium-spells',
     ]);
   });
 
@@ -70,6 +71,7 @@ describe('CompendiumTools.getToolDefinitions', () => {
     expect(byName['search-compendium'].inputSchema.required).toEqual(['query']);
     expect(byName['get-compendium-entry'].inputSchema.required).toEqual(['packId', 'itemId']);
     expect(byName['search-compendium-creatures'].inputSchema.required).toEqual([]);
+    expect(byName['search-compendium-spells'].inputSchema.required).toEqual([]);
   });
 });
 
@@ -387,6 +389,96 @@ describe('handleListCreaturesByCriteria', () => {
     expect(out.totalFound).toBe(1);
     expect(out.creatures).toHaveLength(1);
     expect(out.creatures[0]).toMatchObject({ id: 'b1', pack: { id: 'dnd-monster-manual.actors' } });
+  });
+});
+
+describe('handleSearchCompendiumSpells', () => {
+  // The faceted engine (searchCompendiumFaceted) returns a bare CompendiumHit[].
+  const hit = (over: any = {}) => ({
+    id: 's1',
+    name: 'Fireball',
+    type: 'spell',
+    uuid: 'Compendium.dnd-players-handbook.spells.Item.s1',
+    pack: 'dnd-players-handbook.spells',
+    packLabel: 'PHB Spells',
+    img: 'icons/fire.png',
+    facets: { spellLevel: 3, spellSchool: 'evo' },
+    ...over,
+  });
+
+  it('forwards documentType:spell + facets to searchCompendiumFaceted and shapes the result', async () => {
+    const { tools, calls } = build('dnd5e', [hit()]);
+
+    const out = await tools.handleSearchCompendiumSpells({
+      spellLevel: 3,
+      spellSchool: 'evocation',
+      damageType: 'fire',
+      name: 'fire',
+    });
+
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call).toBeDefined();
+    expect(call![1]).toEqual({
+      documentType: 'spell',
+      name: 'fire',
+      spellLevel: 3,
+      spellSchool: 'evocation',
+      damageType: 'fire',
+      limit: 50, // schema default
+    });
+
+    expect(out.documentType).toBe('spell');
+    expect(out.criteriaDescription).toBe('level 3, evocation, fire damage, name~"fire"');
+    expect(out.totalFound).toBe(1);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({ id: 's1', pack: 'dnd-players-handbook.spells' });
+  });
+
+  it('describes a cantrip and a level range', async () => {
+    const { tools } = build('dnd5e', []);
+    expect((await tools.handleSearchCompendiumSpells({ spellLevel: 0 })).criteriaDescription).toBe(
+      'cantrip'
+    );
+    expect(
+      (await tools.handleSearchCompendiumSpells({ spellLevel: { min: 1, max: 3 } }))
+        .criteriaDescription
+    ).toBe('level 1-3');
+  });
+
+  it('coerces a stringified level (lenient client shape)', async () => {
+    const { tools, calls } = build('dnd5e', []);
+    await tools.handleSearchCompendiumSpells({ spellLevel: '5' });
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call![1].spellLevel).toBe(5);
+  });
+
+  it('drops SRD (dnd5e.*) spell hits and counts only book results (enforced backstop)', async () => {
+    const { tools } = build('dnd5e', [
+      hit(),
+      hit({ id: 'srd1', pack: 'dnd5e.spells24', packLabel: 'SRD Spells' }),
+    ]);
+    const out = await tools.handleSearchCompendiumSpells({ spellSchool: 'evo' });
+    expect(out.totalFound).toBe(1);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({ id: 's1' });
+  });
+
+  it('reports an empty result set cleanly', async () => {
+    const { tools } = build('dnd5e', []);
+    const out = await tools.handleSearchCompendiumSpells({ spellLevel: 9 });
+    expect(out.totalFound).toBe(0);
+    expect(out.results).toEqual([]);
+    expect(out.criteriaDescription).toBe('level 9');
+  });
+
+  it('rejects a spell level above 9', async () => {
+    const { tools } = build();
+    await expect(tools.handleSearchCompendiumSpells({ spellLevel: 10 })).rejects.toThrow();
+  });
+
+  it('rejects a limit above the maximum of 200', async () => {
+    const { tools } = build();
+    await expect(tools.handleSearchCompendiumSpells({ limit: 201 })).rejects.toThrow();
   });
 });
 

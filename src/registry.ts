@@ -143,6 +143,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'search-compendium': args => compendiumTools.handleSearchCompendium(args),
     'get-compendium-entry': args => compendiumTools.handleGetCompendiumItem(args),
     'search-compendium-creatures': args => compendiumTools.handleListCreaturesByCriteria(args),
+    'search-compendium-spells': args => compendiumTools.handleSearchCompendiumSpells(args),
     'list-compendium-packs': args => compendiumTools.handleListCompendiumPacks(args),
 
     // Scene / world

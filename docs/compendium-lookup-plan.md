@@ -52,8 +52,11 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
 ## Plan (check off as landed)
 
 ### Phase 2 — Node tool facades over the engine *(each: zod schema → `searchCompendiumFaceted` → `CompendiumHit[]`; tests + premium-only descriptions; registered in `src/registry.ts`)*
-- [ ] **2a — `search-compendium-spells`** (new). Facets: `spellLevel` (num|range), `spellSchool`,
-  `damageType` (two-stage), `name`, `limit`.
+- [x] **2a — `search-compendium-spells`** (new). Facets: `spellLevel` (num|range), `spellSchool`,
+  `damageType` (two-stage), `name`, `limit`. Thin facade on `CompendiumTools` hard-coding
+  `documentType:'spell'`; SRD backstop + premium-only description; 77 tools. Added engine-side
+  `SPELL_SCHOOL_TO_DND5E` so friendly school names ('evocation') normalize to dnd5e keys ('evo')
+  alongside `SIZE_TO_DND5E`. Gate green (690 tests). **Live verify deferred to Phase 4 (restart).**
 - [ ] **2b — `search-compendium-items`** (new). `documentType` gear|weapon|armor|consumable; facets:
   `rarity`, `itemType` (subtype), `properties`, `magical`, `name`, `limit`.
 - [ ] **2c — Re-back `search-compendium-creatures` on the engine** (`documentType: creature`); switch

@@ -95,6 +95,32 @@ const SIZE_TO_DND5E: Record<string, string> = {
   gargantuan: 'grg',
 };
 
+/**
+ * Friendly spell-school name → dnd5e stored school KEY (what system.school actually holds).
+ * Accepts either the full name ('evocation') or the already-correct key ('evo'), so callers and
+ * the spells facade never have to know dnd5e's 3-letter codes — the normalization lives here with
+ * the other facet-key maps (correctness, not judgment; design.md §2.1). Unknown values pass through
+ * lowercased so a future/unmapped school still filters on whatever the index holds.
+ */
+const SPELL_SCHOOL_TO_DND5E: Record<string, string> = {
+  abjuration: 'abj',
+  abj: 'abj',
+  conjuration: 'con',
+  con: 'con',
+  divination: 'div',
+  div: 'div',
+  enchantment: 'enc',
+  enc: 'enc',
+  evocation: 'evo',
+  evo: 'evo',
+  illusion: 'ill',
+  ill: 'ill',
+  necromancy: 'nec',
+  nec: 'nec',
+  transmutation: 'trs',
+  trs: 'trs',
+};
+
 /** Index field paths to request per facet family (so projected hits carry their facet values). */
 const INDEX_FIELDS: Record<ContentTypeDef['kind'], string[]> = {
   creature: [
@@ -156,7 +182,9 @@ export function buildFacetFilters(
     }
   } else if (kind === 'spell') {
     pushRange(out, 'system.level', args.spellLevel);
-    const schools = toArray(args.spellSchool).map(s => s.toLowerCase());
+    const schools = toArray(args.spellSchool).map(
+      s => SPELL_SCHOOL_TO_DND5E[s.toLowerCase()] ?? s.toLowerCase()
+    );
     if (schools.length) out.push({ k: 'system.school', o: 'in', v: schools });
   } else if (kind === 'gear') {
     const rarities = toArray(args.rarity);
