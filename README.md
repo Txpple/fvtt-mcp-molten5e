@@ -8,6 +8,11 @@ static files.
 
 ---
 
+> 📐 **Design north star — [`design.md`](design.md).** The mission, scope, the *skills decide, tools
+> do* contract, and the NPC authoring doctrine all live there; it's the document every skill, tool,
+> and refactor traces back to. **🚧 Still under construction** — actively evolving alongside the
+> project, so expect it (and the tool surface) to change.
+
 ## Why this shape
 
 Managed Foundry hosts (like Molten) don't expose a general control API and you can't run a process
