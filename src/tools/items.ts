@@ -111,20 +111,28 @@ const RemoveFromActorSchema = z
     message: 'Provide itemIds and/or itemNames identifying the items to remove',
   });
 
+// The item array for placing items on an actor. Exported because it is the CANONICAL source for
+// add-feature's mode "items" too (composed by buildAddFeatureTool) — so the advertised add-feature
+// contract is generated from the same zod this handler enforces, never a hand-written duplicate.
+export const AddToActorItemsSchema = z
+  .array(
+    z.object({
+      name: z.string().min(1, 'Item name cannot be empty').describe('Display name of the item'),
+      type: z
+        .string()
+        .min(1, 'Item type cannot be empty')
+        .describe('dnd5e item type (weapon, equipment, …)'),
+      img: z.string().optional().describe('Optional icon path'),
+      system: z.record(z.string(), z.any()).optional(),
+    })
+  )
+  .min(1, 'At least one item is required');
+
 // add-to-actor is reached via the handleManageWorldItems dispatcher (and add-feature mode "items"),
 // not advertised as its own tool — so this is a parse-only contract.
 const AddToActorSchema = z.object({
   actorIdentifier: z.string().min(1, 'Actor identifier cannot be empty'),
-  items: z
-    .array(
-      z.object({
-        name: z.string().min(1, 'Item name cannot be empty'),
-        type: z.string().min(1, 'Item type cannot be empty'),
-        img: z.string().optional(),
-        system: z.record(z.string(), z.any()).optional(),
-      })
-    )
-    .min(1, 'At least one item is required'),
+  items: AddToActorItemsSchema,
 });
 
 export interface ItemToolsOptions {

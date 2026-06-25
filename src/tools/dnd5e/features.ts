@@ -9,8 +9,9 @@ import { DEFAULT_FEATURE_PACKS, assertNoSrdPacks } from '../../utils/compendium-
 
 // Single source of truth for this tool's input contract: the handler parses with this schema and
 // getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised and
-// enforced contracts cannot drift. The add-feature tool composes this via getInputSchema().
-const AddFeaturesFromCompendiumSchema = z.object({
+// enforced contracts cannot drift. buildAddFeatureTool imports this schema to compose the
+// add-feature 'compendium-features' mode params from the same zod.
+export const AddFeaturesFromCompendiumSchema = z.object({
   actorIdentifier: z
     .string()
     .min(1, 'actorIdentifier cannot be empty')
@@ -59,11 +60,6 @@ export class DnD5eFeaturesFromCompendiumTools {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eFeaturesFromCompendiumTools' });
     this.errorHandler = new ErrorHandler(this.logger);
-  }
-
-  /** This tool's JSON-Schema. Exposed so the add-feature tool can compose the 'compendium-features' mode params. */
-  getInputSchema(): Record<string, unknown> {
-    return this.getToolDefinitions()[0].inputSchema as Record<string, unknown>;
   }
 
   getToolDefinitions() {

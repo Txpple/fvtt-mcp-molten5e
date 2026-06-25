@@ -89,7 +89,7 @@ const damagePart = z.object({
 // never hand-written, and cannot silently drift.
 // ---------------------------------------------------------------------------
 
-const AddFeatureSchema = z.object({
+export const AddFeatureSchema = z.object({
   // ── Discriminator ─────────────────────────────────────────────────
   featureType: z
     .enum([
@@ -456,11 +456,6 @@ export class DnD5eAddFeatureTool {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eAddFeatureTool' });
     this.errorHandler = new ErrorHandler(this.logger);
-  }
-
-  /** This tool's JSON-Schema. Exposed so the add-feature tool can compose the 'feature' mode params. */
-  getInputSchema(): Record<string, unknown> {
-    return this.getToolDefinitions()[0].inputSchema as Record<string, unknown>;
   }
 
   getToolDefinitions() {

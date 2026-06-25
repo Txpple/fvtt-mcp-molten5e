@@ -92,12 +92,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const userTools = new UserTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
-  // Unified add-feature tool: composes the feature-authoring + compendium-feature mode schemas
-  // (each sourced via the owning tool's getInputSchema()) into a single-entry `add-feature`.
-  const addFeatureTool = buildAddFeatureTool(
-    dnd5eAddFeatureTool.getInputSchema(),
-    dnd5eFeaturesFromCompendiumTools.getInputSchema()
-  );
+  // Unified add-feature tool: composes the three mode schemas (feature / compendium-features /
+  // items) — each generated from the owning handler's zod — into a single-entry `add-feature`.
+  const addFeatureTool = buildAddFeatureTool();
 
   // Collect every advertised definition into a name -> definition lookup.
   const defByName = new Map<string, any>();

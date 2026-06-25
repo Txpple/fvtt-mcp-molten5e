@@ -79,6 +79,30 @@ describe('tool registry', () => {
     expect(names.has('grant-to-actor')).toBe(false); // old name fully retired
   });
 
+  it("generates add-feature's schema from zod with the mode enum + the dispatch properties", () => {
+    // The schema is now generated from one zod wrapper (no hand-written JSON). The registry handler
+    // dispatches on these exact properties, so lock them in.
+    const { tools } = build();
+    const af = tools.find(t => t.name === 'add-feature') as any;
+    expect(af.inputSchema.type).toBe('object');
+    expect(af.inputSchema.required).toEqual(['actorIdentifier', 'mode']);
+    expect(Object.keys(af.inputSchema.properties).sort()).toEqual([
+      'actorIdentifier',
+      'compendiumFeatures',
+      'feature',
+      'items',
+      'mode',
+    ]);
+    expect(af.inputSchema.properties.mode.enum).toEqual([
+      'compendium-features',
+      'feature',
+      'items',
+    ]);
+    // items[] composes the canonical ItemTools zod (item shape with name+type required).
+    expect(af.inputSchema.properties.items.type).toBe('array');
+    expect(af.inputSchema.properties.items.items.required).toEqual(['name', 'type']);
+  });
+
   it('advertises the six chat-log tools by name', () => {
     const { tools } = build();
     const names = new Set(tools.map(t => t.name));
