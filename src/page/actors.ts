@@ -11,6 +11,7 @@
 import {
   resolveActorFuzzy as resolveActor,
   getOrCreateFolder as getOrCreateFolderShared,
+  importFromCompendium,
   MCP_FLAG_SCOPE,
   toSource,
   sanitizeDocData as sanitize,
@@ -888,40 +889,27 @@ export async function createActorFromCompendium(request: {
 }): Promise<unknown> {
   const { packId, itemId, customNames, quantity = 1, addToScene = false, placement } = request;
 
-  // Validate inputs.
-  if (!packId || !itemId) {
-    throw new Error('Both packId and itemId are required');
-  }
-
-  // Get the pack.
-  const pack = game.packs.get(packId);
-  if (!pack) {
-    throw new Error(`Compendium pack "${packId}" not found`);
-  }
-
-  // Get the specific document.
-  const sourceDocument = await pack.getDocument(itemId);
-  if (!sourceDocument) {
-    throw new Error(`Document "${itemId}" not found in pack "${packId}"`);
-  }
+  // Resolve + fetch through the shared whole-document copy primitive (validates
+  // inputs, resolves the pack, fetches the document). Actor-specific validation
+  // runs below on the live `source`; the per-quantity loop re-derives an
+  // independent copy via sourceActor.toObject().
+  const { pack, source: sourceActor } = await importFromCompendium(packId, itemId);
 
   // Validate that the document is an Actor.
-  if (sourceDocument.documentName !== 'Actor') {
+  if (sourceActor.documentName !== 'Actor') {
     throw new Error(
-      `Document "${itemId}" is not an Actor (documentName: ${sourceDocument.documentName}, type: ${sourceDocument.type})`
+      `Document "${itemId}" is not an Actor (documentName: ${sourceActor.documentName}, type: ${sourceActor.type})`
     );
   }
 
   // Validate actor type — support all common actor types including DSA5
   // creatures and Cosmere RPG adversaries.
   const validActorTypes = ['character', 'npc', 'creature', 'adversary'];
-  if (!validActorTypes.includes(sourceDocument.type)) {
+  if (!validActorTypes.includes(sourceActor.type)) {
     throw new Error(
-      `Document "${itemId}" has unsupported actor type: ${sourceDocument.type}. Supported types: ${validActorTypes.join(', ')}`
+      `Document "${itemId}" has unsupported actor type: ${sourceActor.type}. Supported types: ${validActorTypes.join(', ')}`
     );
   }
-
-  const sourceActor = sourceDocument;
 
   // Prepare custom names.
   const names = customNames.length > 0 ? customNames : [`${sourceActor.name} Copy`];

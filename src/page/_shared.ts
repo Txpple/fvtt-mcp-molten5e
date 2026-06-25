@@ -60,6 +60,55 @@ export function toSource(doc: any): any {
   return typeof doc?.toObject === 'function' ? doc.toObject() : doc;
 }
 
+/**
+ * Resolve a single document from a compendium pack and return a fresh, copy-ready
+ * plain data object. The spine of every WHOLE-DOCUMENT compendium-first copy
+ * (design.md §2.3): `createActorFromCompendium` and `importItemFromCompendium` both
+ * fetch through here. It performs the universal sequence —
+ *   game.packs.get(packId) → pack.getDocument(docId) → toObject() → strip `_id`
+ * — and returns `{ pack, source, data }`, so each caller still does its own
+ * document-type validation (on `source`) and curates/overrides/creates from `data`
+ * (a deep copy with the source `_id` removed so Foundry assigns a fresh local id).
+ * A caller that creates MANY copies of one source (the actor path's `quantity`)
+ * re-derives an independent copy per item via `source.toObject()`.
+ *
+ * Embedded-item copy (add-feature spells / compendium-features) keeps its own
+ * best-effort, name-indexed hand-roll and intentionally does NOT route through here.
+ *
+ * `opts.requirePackType` enforces a pack DocumentName (e.g. 'Item') BEFORE the
+ * fetch — mirroring `importItemFromCompendium`'s pre-fetch guard.
+ */
+export async function importFromCompendium(
+  packId: string,
+  docId: string,
+  opts: { requirePackType?: string } = {}
+): Promise<{ pack: any; source: any; data: any }> {
+  if (!packId || !docId) {
+    throw new Error('Both packId and itemId are required');
+  }
+  const pack = game.packs.get(packId);
+  if (!pack) {
+    throw new Error(
+      `Compendium pack not found: "${packId}". Use list-compendium-packs to find the exact id.`
+    );
+  }
+  if (opts.requirePackType && pack.metadata.type !== opts.requirePackType) {
+    throw new Error(
+      `Pack "${packId}" is type "${pack.metadata.type}", expected "${opts.requirePackType}" — pick a matching pack.`
+    );
+  }
+  const source = await pack.getDocument(docId);
+  if (!source) {
+    throw new Error(
+      `Document "${docId}" not found in pack "${packId}". ` +
+        'Use search-compendium / get-compendium-entry to find the exact packId + itemId.'
+    );
+  }
+  const data: any = source.toObject();
+  delete data._id; // let Foundry assign a fresh local id (prevents id clash)
+  return { pack, source, data };
+}
+
 // --- document sanitizer (single source of truth) ----------------------------
 // Hoisted from the byte-identical copies in actors.ts (`sanitize`) and items.ts
 // (`sanitizeData`/`removeSensitiveFields`). This is the page layer's single

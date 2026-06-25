@@ -76,9 +76,14 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `import-item`, `add-feature` spells + compendium-features) — a caller/skill that names an SRD pack is
   now *refused* with a message pointing at the premium equivalent. "Never SRD" is enforced BY
   CONSTRUCTION, not just by defaults/ranking/prose. Tests cover the guard; gate green (652).
-- [ ] **0.2 — One copy primitive** (Inv. 2, tool, M). Whole-doc copy → `importFromCompendium`; keep
-  the centralized hand-roll for embedded-item copy. *Done when:* each copy path routes through one
-  primitive; **parity verified live**.
+- [x] **0.2 — One copy primitive** (Inv. 2, tool, M) — **landed `master`.** New page primitive
+  `importFromCompendium` in `src/page/_shared.ts` (game.packs.get → getDocument → toObject → strip
+  `_id`, with an optional `requirePackType` pre-fetch guard). Both whole-document copy paths route
+  through it: `createActorFromCompendium` (uses `pack`+`source`, keeps its per-quantity `toObject()`)
+  and `importItemFromCompendium` (uses the copy-ready `data`). Embedded-item copy
+  (spells/compendium-features) keeps its hand-roll, as planned. Unit test added (`_shared.test.ts`);
+  **parity verified live on `sandbox`** via new `scripts/verify-copy-primitive.mjs` (23/23 — content +
+  art + all embedded items copied, fresh `_id`, guards fire). Gate green (693 tests).
 - [x] **0.3 — Shared authoring-policy snippet** (cross-cutting, skill, S) — **landed `master`.** New
   single source `.claude/skills/_shared/authoring-policy.md` (2024-default · compendium-first/never-SRD ·
   copy→modify→rename · ask-don't-invent · authoring-not-play, tracing to design.md §2.3–§2.4/§6). Both

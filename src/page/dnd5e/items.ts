@@ -13,7 +13,7 @@
 // (a deterministic FormulaField stored as a STRING); weapon base damage lives in system.damage.base;
 // container membership is stored on the CHILD (child.system.container = container _id).
 
-import { resolveActorFuzzy } from '../_shared.js';
+import { resolveActorFuzzy, importFromCompendium } from '../_shared.js';
 import { buildActivity } from './activities.js';
 import { createWorldItems } from '../items.js';
 
@@ -143,7 +143,7 @@ export function buildPhysicalItemData(opts: PhysicalItemOpts): {
   // EquippableItemTemplate. Default to equipped for NPC gear, but NOT for something stowed in a
   // container (an item inside a bag/chest shouldn't read as worn/wielded).
   if (EQUIPPABLE_DOC.has(docType)) {
-    system.equipped = opts.equipped ?? (opts.containerId ? false : true);
+    system.equipped = opts.equipped ?? !opts.containerId;
     system.attunement = opts.attunement ?? '';
     system.attuned = opts.attuned ?? false;
   }
@@ -406,27 +406,12 @@ export async function importItemFromCompendium(data: any): Promise<unknown> {
     throw new Error(`importItemFromCompendium requires D&D 5e (current: "${game.system.id}").`);
   }
 
-  const pack = game.packs.get(data.packId);
-  if (!pack) {
-    throw new Error(`Compendium pack not found: "${data.packId}". Use list-compendium-packs.`);
-  }
-  if (pack.metadata.type !== 'Item') {
-    throw new Error(
-      `Pack "${data.packId}" is type "${pack.metadata.type}", expected "Item" — pick an Item pack.`
-    );
-  }
-
-  const sourceDoc = await pack.getDocument(data.itemId);
-  if (!sourceDoc) {
-    throw new Error(
-      `Item "${data.itemId}" not found in pack "${data.packId}". ` +
-        'Use search-compendium / get-compendium-entry to find the exact packId + itemId.'
-    );
-  }
-
-  const doc: any = sourceDoc.toObject();
+  // Fetch + copy-prep through the shared whole-document copy primitive (validates
+  // inputs, enforces an Item pack, fetches the document, strips the source _id).
+  const { data: doc } = await importFromCompendium(data.packId, data.itemId, {
+    requirePackType: 'Item',
+  });
   const sourceName = doc.name;
-  delete doc._id; // let Foundry assign a fresh local id (prevents id clash)
   doc.system = doc.system ?? {};
   if (data.name) doc.name = data.name; // rename (the base for a custom variant)
   if (typeof data.quantity === 'number') doc.system.quantity = data.quantity;

@@ -8,8 +8,15 @@
  * `activities` Map to `{}`, while sanitizing `toSource(doc).system` preserves it.
  */
 
-import { describe, it, expect } from 'vitest';
-import { normalizeAssetPath, basename, slugify, toSource, sanitizeDocData } from './_shared.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  normalizeAssetPath,
+  basename,
+  slugify,
+  toSource,
+  sanitizeDocData,
+  importFromCompendium,
+} from './_shared.js';
 
 describe('normalizeAssetPath', () => {
   it('strips query, hash, host/protocol, backslashes, leading slash and Data/ prefix', () => {
@@ -127,5 +134,78 @@ describe('sanitizeDocData', () => {
     ]);
     // ...but a top-level `key` outside changes[] is still stripped as sensitive.
     expect(sanitizeDocData({ key: 'secret', name: 'ok' })).toEqual({ name: 'ok' });
+  });
+});
+
+describe('importFromCompendium', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A mock compendium document whose toObject() returns a FRESH literal each call
+  // (mirrors Foundry's Document.toObject — independent plain source data).
+  const mockDoc = () => ({
+    _id: 'src123',
+    name: 'Longsword',
+    type: 'weapon',
+    documentName: 'Item',
+    toObject: () => ({ _id: 'src123', name: 'Longsword', type: 'weapon', system: { foo: 1 } }),
+  });
+  const mockPack = (type: string, doc: unknown) => ({
+    metadata: { type, label: 'Mock Pack' },
+    getDocument: vi.fn(async () => doc),
+  });
+  const stubGame = (pack: unknown) =>
+    vi.stubGlobal('game', {
+      packs: { get: vi.fn((id: string) => (id === 'pack.id' ? pack : undefined)) },
+    });
+
+  it('resolves pack+doc and returns a copy-ready `data` with _id stripped (source keeps it)', async () => {
+    const doc = mockDoc();
+    stubGame(mockPack('Item', doc));
+
+    const { pack, source, data } = await importFromCompendium('pack.id', 'src123');
+
+    expect(pack.metadata.label).toBe('Mock Pack');
+    expect(source).toBe(doc);
+    expect(source._id).toBe('src123'); // the live source document is untouched
+    expect(data._id).toBeUndefined(); // the copy drops _id so Foundry assigns a fresh one
+    expect(data).toMatchObject({ name: 'Longsword', type: 'weapon', system: { foo: 1 } });
+  });
+
+  it('returns fresh `data` — mutating it does not leak back into the source', async () => {
+    const doc = mockDoc();
+    stubGame(mockPack('Item', doc));
+
+    const { data } = await importFromCompendium('pack.id', 'src123');
+    data.system.foo = 999;
+
+    expect(doc.toObject().system.foo).toBe(1); // a fresh toObject is unaffected
+  });
+
+  it('enforces requirePackType BEFORE fetching the document', async () => {
+    const pack = mockPack('Actor', mockDoc()); // wrong pack type
+    stubGame(pack);
+
+    await expect(
+      importFromCompendium('pack.id', 'src123', { requirePackType: 'Item' })
+    ).rejects.toThrow(/expected "Item"/);
+    expect(pack.getDocument).not.toHaveBeenCalled(); // rejected before the fetch
+  });
+
+  it('throws on missing inputs, a missing pack, and a missing document', async () => {
+    stubGame(mockPack('Item', mockDoc()));
+    await expect(importFromCompendium('', 'x')).rejects.toThrow(
+      'Both packId and itemId are required'
+    );
+    await expect(importFromCompendium('nope.id', 'x')).rejects.toThrow(/Compendium pack not found/);
+
+    vi.stubGlobal('game', {
+      packs: {
+        get: vi.fn(() => ({
+          metadata: { type: 'Item', label: 'P' },
+          getDocument: vi.fn(async () => null),
+        })),
+      },
+    });
+    await expect(importFromCompendium('pack.id', 'missing')).rejects.toThrow(/not found in pack/);
   });
 });
