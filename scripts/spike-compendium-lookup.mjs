@@ -39,7 +39,9 @@ let ok = false;
 try {
   if (MAGIC) {
     log('waking via Magic URL...');
-    await page.goto(MAGIC, { waitUntil: 'domcontentloaded' }).catch(e => log('magic nav note:', e.message));
+    await page
+      .goto(MAGIC, { waitUntil: 'domcontentloaded' })
+      .catch(e => log('magic nav note:', e.message));
   }
 
   log('navigating to /join ...');
@@ -47,22 +49,37 @@ try {
   for (let attempt = 1; attempt <= 12 && !joined; attempt++) {
     await page.goto(`${BASE}/join`, { waitUntil: 'domcontentloaded' }).catch(() => {});
     // The join form is JS-rendered after domcontentloaded — wait for it, don't race it.
-    const found = await page.waitForSelector('select[name="userid"]', { timeout: 8000 }).then(() => true).catch(() => false);
-    log(`  attempt ${attempt}: url=${page.url()} title="${await page.title().catch(() => '?')}" userid=${found}`);
-    if (found) { joined = true; break; }
+    const found = await page
+      .waitForSelector('select[name="userid"]', { timeout: 8000 })
+      .then(() => true)
+      .catch(() => false);
+    log(
+      `  attempt ${attempt}: url=${page.url()} title="${await page.title().catch(() => '?')}" userid=${found}`
+    );
+    if (found) {
+      joined = true;
+      break;
+    }
     await page.waitForTimeout(3000);
   }
   if (!joined) {
-    const diag = await page.evaluate(() => ({
-      url: location.href,
-      title: document.title,
-      bodyClass: document.body?.className,
-      selects: [...document.querySelectorAll('select')].map(s => s.name || s.id || '(unnamed)'),
-      inputs: [...document.querySelectorAll('input')].map(i => i.name || i.type),
-      buttons: [...document.querySelectorAll('button, a.button')].map(b => (b.textContent || '').trim()).filter(Boolean).slice(0, 12),
-      forms: [...document.querySelectorAll('form')].map(f => f.id || f.name || f.action || '(form)'),
-      bodyText: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 400),
-    })).catch(e => ({ error: String(e?.message || e) }));
+    const diag = await page
+      .evaluate(() => ({
+        url: location.href,
+        title: document.title,
+        bodyClass: document.body?.className,
+        selects: [...document.querySelectorAll('select')].map(s => s.name || s.id || '(unnamed)'),
+        inputs: [...document.querySelectorAll('input')].map(i => i.name || i.type),
+        buttons: [...document.querySelectorAll('button, a.button')]
+          .map(b => (b.textContent || '').trim())
+          .filter(Boolean)
+          .slice(0, 12),
+        forms: [...document.querySelectorAll('form')].map(
+          f => f.id || f.name || f.action || '(form)'
+        ),
+        bodyText: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 400),
+      }))
+      .catch(e => ({ error: String(e?.message || e) }));
     log('JOIN DIAG: ' + JSON.stringify(diag, null, 2));
     throw new Error('No /join userid form — see JOIN DIAG above.');
   }
@@ -80,12 +97,18 @@ try {
 
   log('waiting for game.ready ...');
   const ready = await Promise.race([
-    page.waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 120_000 }).then(() => 'ready'),
+    page
+      .waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 120_000 })
+      .then(() => 'ready'),
     (async () => {
       for (let i = 0; i < 60; i++) {
-        const errs = await page.evaluate(() =>
-          [...document.querySelectorAll('.notification.error, p.error')].map(e => e.textContent?.trim()).filter(Boolean)
-        ).catch(() => []);
+        const errs = await page
+          .evaluate(() =>
+            [...document.querySelectorAll('.notification.error, p.error')]
+              .map(e => e.textContent?.trim())
+              .filter(Boolean)
+          )
+          .catch(() => []);
         if (errs.length) return 'error:' + errs.join(' | ');
         await page.waitForTimeout(2000);
       }
@@ -98,14 +121,25 @@ try {
 
   const probe = await page.evaluate(async () => {
     const out = {};
-    const safe = async (name, fn) => { try { out[name] = await fn(); } catch (e) { out[name] = { error: String(e?.message || e) }; } };
+    const safe = async (name, fn) => {
+      try {
+        out[name] = await fn();
+      } catch (e) {
+        out[name] = { error: String(e?.message || e) };
+      }
+    };
     const packIdFromUuid = uuid => {
       // "Compendium.<scope>.<packname>.<DocType>.<id>" -> "<scope>.<packname>"
       const p = (uuid || '').split('.');
       return p[0] === 'Compendium' && p.length >= 3 ? `${p[1]}.${p[2]}` : null;
     };
 
-    out.world = { world: game.world?.id, system: game.system?.id, systemVersion: game.system?.version, foundry: game.version };
+    out.world = {
+      world: game.world?.id,
+      system: game.system?.id,
+      systemVersion: game.system?.version,
+      foundry: game.version,
+    };
 
     // 1) PACK INVENTORY ------------------------------------------------------
     await safe('packs', () =>
@@ -120,26 +154,55 @@ try {
     // 2) CREATURE INDEX-FIELD PROBE -----------------------------------------
     await safe('creatureIndex', async () => {
       const pack = game.packs.get('dnd-monster-manual.actors');
-      if (!pack) return { error: 'dnd-monster-manual.actors not found', actorPacks: Array.from(game.packs.values()).filter(p => p.metadata.type === 'Actor').map(p => p.metadata.id) };
+      if (!pack)
+        return {
+          error: 'dnd-monster-manual.actors not found',
+          actorPacks: Array.from(game.packs.values())
+            .filter(p => p.metadata.type === 'Actor')
+            .map(p => p.metadata.id),
+        };
       const fields = [
-        'system.details.cr', 'system.details.type.value', 'system.details.type.subtype', 'system.details.type.swarm',
-        'system.traits.size', 'system.attributes.hp.max', 'system.attributes.ac.flat', 'system.attributes.ac.calc',
-        'system.attributes.ac.value', 'system.attributes.spell.level', 'system.resources.legact.max',
-        'system.details.alignment', 'system.source.book', 'system.source',
+        'system.details.cr',
+        'system.details.type.value',
+        'system.details.type.subtype',
+        'system.details.type.swarm',
+        'system.traits.size',
+        'system.attributes.hp.max',
+        'system.attributes.ac.flat',
+        'system.attributes.ac.calc',
+        'system.attributes.ac.value',
+        'system.attributes.spell.level',
+        'system.resources.legact.max',
+        'system.details.alignment',
+        'system.source.book',
+        'system.source',
       ];
       const idx = await pack.getIndex({ fields });
-      const sample = Array.from(idx.values()).filter(e => e.type === 'npc').slice(0, 4).map(e => ({
-        name: e.name, type: e.type, img: e.img,
-        cr: e.system?.details?.cr, ctype: e.system?.details?.type?.value,
-        subtype: e.system?.details?.type?.subtype, swarm: e.system?.details?.type?.swarm,
-        size: e.system?.traits?.size, hpMax: e.system?.attributes?.hp?.max,
-        acFlat: e.system?.attributes?.ac?.flat, acCalc: e.system?.attributes?.ac?.calc,
-        acValue: e.system?.attributes?.ac?.value, // expect UNDEFINED (derived)
-        spellLevel: e.system?.attributes?.spell?.level, legactMax: e.system?.resources?.legact?.max,
-        alignment: e.system?.details?.alignment, source: e.system?.source,
-      }));
+      const sample = Array.from(idx.values())
+        .filter(e => e.type === 'npc')
+        .slice(0, 4)
+        .map(e => ({
+          name: e.name,
+          type: e.type,
+          img: e.img,
+          cr: e.system?.details?.cr,
+          ctype: e.system?.details?.type?.value,
+          subtype: e.system?.details?.type?.subtype,
+          swarm: e.system?.details?.type?.swarm,
+          size: e.system?.traits?.size,
+          hpMax: e.system?.attributes?.hp?.max,
+          acFlat: e.system?.attributes?.ac?.flat,
+          acCalc: e.system?.attributes?.ac?.calc,
+          acValue: e.system?.attributes?.ac?.value, // expect UNDEFINED (derived)
+          spellLevel: e.system?.attributes?.spell?.level,
+          legactMax: e.system?.resources?.legact?.max,
+          alignment: e.system?.details?.alignment,
+          source: e.system?.source,
+        }));
       const total = Array.from(idx.values()).filter(e => e.type === 'npc').length;
-      const alignmentFilled = Array.from(idx.values()).filter(e => e.type === 'npc' && e.system?.details?.alignment).length;
+      const alignmentFilled = Array.from(idx.values()).filter(
+        e => e.type === 'npc' && e.system?.details?.alignment
+      ).length;
       return { fieldsRequested: fields, npcCount: total, alignmentFilled, sample };
     });
 
@@ -156,9 +219,16 @@ try {
         try {
           const f = dm?.compendiumBrowserFilters;
           const m = typeof f === 'function' ? f.call(dm) : f;
-          if (m instanceof Map) return Array.from(m.entries()).map(([k, v]) => ({ key: k, type: v?.type, keyPath: v?.config?.keyPath || v?.keyPath }));
+          if (m instanceof Map)
+            return Array.from(m.entries()).map(([k, v]) => ({
+              key: k,
+              type: v?.type,
+              keyPath: v?.config?.keyPath || v?.keyPath,
+            }));
           return m ? Object.keys(m) : null;
-        } catch (e) { return { error: String(e?.message || e) }; }
+        } catch (e) {
+          return { error: String(e?.message || e) };
+        }
       };
       return {
         npc: grab(CONFIG.Actor?.dataModels?.npc),
@@ -171,18 +241,26 @@ try {
       if (!CB?.fetch) return { skipped: 'no fetch' };
       const res = await CB.fetch(CONFIG.Actor.documentClass, {
         types: new Set(['npc']),
-        filters: [{ k: 'system.details.cr', o: 'gte', v: 5 }, { k: 'system.details.cr', o: 'lte', v: 8 }],
+        filters: [
+          { k: 'system.details.cr', o: 'gte', v: 5 },
+          { k: 'system.details.cr', o: 'lte', v: 8 },
+        ],
         index: true,
       });
       const arr = Array.from(res ?? []);
       const byPack = {};
-      for (const e of arr) { const pk = packIdFromUuid(e.uuid) || 'unknown'; byPack[pk] = (byPack[pk] || 0) + 1; }
+      for (const e of arr) {
+        const pk = packIdFromUuid(e.uuid) || 'unknown';
+        byPack[pk] = (byPack[pk] || 0) + 1;
+      }
       const srd = Object.keys(byPack).filter(k => k.startsWith('dnd5e.'));
       return {
         count: arr.length,
         byPack,
         srdPacksPresent: srd,
-        sample: arr.slice(0, 3).map(e => ({ name: e.name, cr: e.system?.details?.cr, uuid: e.uuid })),
+        sample: arr
+          .slice(0, 3)
+          .map(e => ({ name: e.name, cr: e.system?.details?.cr, uuid: e.uuid })),
       };
     });
 
@@ -191,18 +269,29 @@ try {
       if (!CB?.fetch) return { skipped: 'no fetch' };
       const res = await CB.fetch(CONFIG.Item.documentClass, {
         types: new Set(['spell']),
-        filters: [{ k: 'system.level', o: 'lte', v: 3 }, { k: 'system.school', o: 'in', v: ['evo'] }],
+        filters: [
+          { k: 'system.level', o: 'lte', v: 3 },
+          { k: 'system.school', o: 'in', v: ['evo'] },
+        ],
         index: true,
       });
       const arr = Array.from(res ?? []);
       const byPack = {};
-      for (const e of arr) { const pk = packIdFromUuid(e.uuid) || 'unknown'; byPack[pk] = (byPack[pk] || 0) + 1; }
+      for (const e of arr) {
+        const pk = packIdFromUuid(e.uuid) || 'unknown';
+        byPack[pk] = (byPack[pk] || 0) + 1;
+      }
       const srd = Object.keys(byPack).filter(k => k.startsWith('dnd5e.'));
       return {
         count: arr.length,
         byPack,
         srdPacksPresent: srd,
-        sample: arr.slice(0, 3).map(e => ({ name: e.name, level: e.system?.level, school: e.system?.school, uuid: e.uuid })),
+        sample: arr.slice(0, 3).map(e => ({
+          name: e.name,
+          level: e.system?.level,
+          school: e.system?.school,
+          uuid: e.uuid,
+        })),
       };
     });
 
@@ -234,9 +323,15 @@ try {
           const f = dm?.compendiumBrowserFilters;
           const m = typeof f === 'function' ? f.call(dm) : f;
           if (m instanceof Map)
-            return Array.from(m.entries()).map(([k, v]) => ({ key: k, type: v?.type, keyPath: v?.config?.keyPath || v?.keyPath }));
+            return Array.from(m.entries()).map(([k, v]) => ({
+              key: k,
+              type: v?.type,
+              keyPath: v?.config?.keyPath || v?.keyPath,
+            }));
           return m ? Object.keys(m) : null;
-        } catch (e) { return { error: String(e?.message || e) }; }
+        } catch (e) {
+          return { error: String(e?.message || e) };
+        }
       };
       const facets = {
         weapon: grab(CONFIG.Item?.dataModels?.weapon),
@@ -248,7 +343,9 @@ try {
       const sampleFromPack = async id => {
         const pack = game.packs.get(id);
         if (!pack) return { error: `${id} not found` };
-        const idx = await pack.getIndex({ fields: ['system.rarity', 'system.type.value', 'system.properties'] });
+        const idx = await pack.getIndex({
+          fields: ['system.rarity', 'system.type.value', 'system.properties'],
+        });
         const entries = Array.from(idx.values());
         const types = {};
         const rarities = {};
@@ -258,8 +355,11 @@ try {
           rarities[r] = (rarities[r] || 0) + 1;
         }
         const sample = entries.slice(0, 3).map(e => ({
-          name: e.name, type: e.type, rarity: e.system?.rarity,
-          itemSubtype: e.system?.type?.value, properties: e.system?.properties,
+          name: e.name,
+          type: e.type,
+          rarity: e.system?.rarity,
+          itemSubtype: e.system?.type?.value,
+          properties: e.system?.properties,
         }));
         return { count: entries.length, types, rarities, sample };
       };
@@ -276,27 +376,61 @@ try {
         });
         const arr = Array.from(res ?? []);
         const byPack = {};
-        for (const e of arr) { const pk = packIdFromUuid(e.uuid) || '?'; byPack[pk] = (byPack[pk] || 0) + 1; }
-        fetchRare = { count: arr.length, byPack, sample: arr.slice(0, 3).map(e => ({ name: e.name, rarity: e.system?.rarity, type: e.type })) };
+        for (const e of arr) {
+          const pk = packIdFromUuid(e.uuid) || '?';
+          byPack[pk] = (byPack[pk] || 0) + 1;
+        }
+        fetchRare = {
+          count: arr.length,
+          byPack,
+          sample: arr
+            .slice(0, 3)
+            .map(e => ({ name: e.name, rarity: e.system?.rarity, type: e.type })),
+        };
       }
-      return { facetKeyPaths: facets, phbEquipment: phb, dmgEquipment: dmg, fetchRareGear: fetchRare };
+      return {
+        facetKeyPaths: facets,
+        phbEquipment: phb,
+        dmgEquipment: dmg,
+        fetchRareGear: fetchRare,
+      };
     });
 
     // 4) TWO-STAGE SPELL DAMAGE ---------------------------------------------
     await safe('spellDamageShape', async () => {
       const pack = game.packs.get('dnd-players-handbook.spells');
-      if (!pack) return { error: 'dnd-players-handbook.spells not found', itemPacks: Array.from(game.packs.values()).filter(p => p.metadata.type === 'Item').map(p => p.metadata.id) };
+      if (!pack)
+        return {
+          error: 'dnd-players-handbook.spells not found',
+          itemPacks: Array.from(game.packs.values())
+            .filter(p => p.metadata.type === 'Item')
+            .map(p => p.metadata.id),
+        };
       if (!pack.indexed) await pack.getIndex({});
       const entry = Array.from(pack.index.values()).find(e => /fireball/i.test(e.name || ''));
-      if (!entry) return { note: 'no Fireball in PHB spells index', sampleNames: Array.from(pack.index.values()).slice(0, 5).map(e => e.name) };
+      if (!entry)
+        return {
+          note: 'no Fireball in PHB spells index',
+          sampleNames: Array.from(pack.index.values())
+            .slice(0, 5)
+            .map(e => e.name),
+        };
       const doc = await pack.getDocument(entry._id);
       const src = doc.toObject();
       const acts = src.system?.activities || {};
       const damage = Object.values(acts).map(a => ({
         type: a.type,
-        parts: (a.damage?.parts || []).map(pt => ({ types: pt.types, formula: pt.number ? `${pt.number}d${pt.denomination}` : pt.custom?.formula })),
+        parts: (a.damage?.parts || []).map(pt => ({
+          types: pt.types,
+          formula: pt.number ? `${pt.number}d${pt.denomination}` : pt.custom?.formula,
+        })),
       }));
-      return { spell: doc.name, level: src.system?.level, school: src.system?.school, activityDamage: damage };
+      return {
+        spell: doc.name,
+        level: src.system?.level,
+        school: src.system?.school,
+        activityDamage: damage,
+      };
     });
 
     return out;
