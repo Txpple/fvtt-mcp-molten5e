@@ -5,6 +5,7 @@ import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
+import { DEFAULT_SPELL_PACKS } from '../../utils/compendium-sources.js';
 
 // ---------------------------------------------------------------------------
 // Canonical value sets for soft validation (warnings, not errors)
@@ -324,11 +325,11 @@ const AddFeatureSchema = z.object({
     ),
   compendiumPacks: z
     .array(z.string().min(1))
-    .default(['dnd5e.spells24'])
+    .default([...DEFAULT_SPELL_PACKS])
     .describe(
-      'Compendium pack IDs to search, in priority order (first match wins). ' +
-        'Default: ["dnd5e.spells24"] (SRD 2024). Prefer the premium ["dnd-players-handbook.spells"] ' +
-        'when present; pass ["dnd5e.spells"] for 2014. Used by: spells.'
+      'Premium-book pack IDs to search, in priority order (first match wins). ' +
+        'Default: ["dnd-players-handbook.spells"] (PHB). SOURCE ONLY from the premium MM/PHB/DMG ' +
+        'books — NEVER the dnd5e.* SRD packs (design.md §2.3). Used by: spells.'
     ),
 
   // ── Feat widening (passive) ───────────────────────────────────────
@@ -500,7 +501,7 @@ export class DnD5eAddFeatureTool {
           'cleric/druid/ranger→WIS, sorcerer/warlock/bard/paladin→CHA), sourceRules\n\n' +
           '• spells — import EXISTING named spells from compendium. Names must be in English.\n' +
           '  Required: actorIdentifier, spellNames (max 50)\n' +
-          '  Optional: compendiumPacks (default ["dnd5e.spells24"]; prefer ["dnd-players-handbook.spells"] when present)\n\n' +
+          '  Optional: compendiumPacks (default ["dnd-players-handbook.spells"] — premium PHB; never the dnd5e.* SRD)\n\n' +
           '• homebrew-spell — author a NEW spell from scratch (vs "spells" which imports).\n' +
           '  Required: actorIdentifier, featureName, spellLevel\n' +
           '  Optional: description, spellSchool, spellMethod (atwill/innate/ritual/pact/spell), ' +
@@ -1135,7 +1136,7 @@ export class DnD5eAddFeatureTool {
       featureType: z.literal('spells'),
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       spellNames: z.array(z.string().min(1)).min(1).max(50),
-      compendiumPacks: z.array(z.string().min(1)).default(['dnd5e.spells24']),
+      compendiumPacks: z.array(z.string().min(1)).default([...DEFAULT_SPELL_PACKS]),
     });
 
     const parsed = schema.parse(args);

@@ -502,7 +502,7 @@ describe('handleAddFeature — spells', () => {
 
     const [method, payload] = bridgeMethodFrom(calls);
     expect(method).toBe('addSpellsToActor');
-    expect(payload.compendiumPacks).toEqual(['dnd5e.spells24']);
+    expect(payload.compendiumPacks).toEqual(['dnd-players-handbook.spells']);
     expect(out.summary).toBe('✅ Spells imported to "Wizard" — 1 added');
     expect(out.message).toContain('  - Fireball *(Spells, item `s1`)*');
   });

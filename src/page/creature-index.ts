@@ -7,6 +7,8 @@
 // SHAPES exactly match what the old data-access.ts queries produced, which is what the
 // Node tools (src/tools/compendium.ts) and their tests expect.
 
+import { packPriority } from '../utils/compendium-sources.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -73,6 +75,9 @@ export async function listCreaturesByCriteria(args?: CreatureCriteria): Promise<
 
   // Sort by Challenge Rating, then name, for stable ordering.
   filtered.sort((a, b) => {
+    // Premium books first, SRD (dnd5e.*) last — we author only from the books (design.md §2.3).
+    const pri = packPriority(a.pack) - packPriority(b.pack);
+    if (pri !== 0) return pri;
     if (a.challengeRating !== b.challengeRating) {
       return a.challengeRating - b.challengeRating;
     }

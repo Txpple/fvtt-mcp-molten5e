@@ -4,6 +4,7 @@
 // Faithful port of data-access.ts addFeaturesFromCompendium (oracle 6603-6793, v0.9.3).
 
 import { resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
+import { DEFAULT_FEATURE_PACKS } from '../../utils/compendium-sources.js';
 
 // ---------------------------------------------------------------------------
 // Add features from compendium packs to an actor
@@ -24,10 +25,7 @@ export async function addFeaturesFromCompendium(args: {
   }
 
   const featureNames: string[] = args.featureNames;
-  const compendiumPacks: string[] = args.compendiumPacks ?? [
-    'dnd5e.monsterfeatures',
-    'dnd5e.classfeatures',
-  ];
+  const compendiumPacks: string[] = args.compendiumPacks ?? [...DEFAULT_FEATURE_PACKS];
   const warnings: string[] = [];
 
   // ── Phase A: deduplicate input (case-insensitive) ─────────────────────
@@ -83,9 +81,9 @@ export async function addFeaturesFromCompendium(args: {
   if (packMaps.length === 0) {
     throw new Error(
       'No valid compendium packs available — check the compendiumPacks parameter. ' +
-        'Valid pack IDs for D&D 5e: "dnd5e.monsterfeatures" or "dnd5e.classfeatures" (2014), ' +
-        '"dnd5e.monsterfeatures24" (2024 monster features). ' +
-        'Note: 2024 class features are embedded in class items and cannot be imported with this tool.'
+        'Valid pack IDs are the premium book packs: "dnd-monster-manual.features" (monster features) ' +
+        'and "dnd-players-handbook.classes" (class features live alongside the class items). ' +
+        'NEVER the dnd5e.* SRD packs (design.md §2.3).'
     );
   }
 

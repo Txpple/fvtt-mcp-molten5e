@@ -5,6 +5,7 @@ import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
+import { DEFAULT_FEATURE_PACKS } from '../../utils/compendium-sources.js';
 
 // Single source of truth for this tool's input contract: the handler parses with this schema and
 // getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised and
@@ -23,14 +24,13 @@ const AddFeaturesFromCompendiumSchema = z.object({
     ),
   compendiumPacks: z
     .array(z.string().min(1))
-    .default(['dnd5e.monsterfeatures24', 'dnd5e.classes24', 'dnd5e.classfeatures'])
+    .default([...DEFAULT_FEATURE_PACKS])
     .describe(
-      'Compendium pack IDs to search, in priority order (first match wins). ' +
-        'Defaults to ["dnd5e.monsterfeatures24", "dnd5e.classes24", "dnd5e.classfeatures"] — 2024 monster ' +
-        'features, then 2024 CLASS features (the classes pack also holds the individual feature feats), ' +
-        'falling back to 2014 SRD class features. Prefer premium packs ("dnd-monster-manual.features", ' +
-        '"dnd-players-handbook.classes") when present; pass ["dnd5e.monsterfeatures"] for 2014 monsters. ' +
-        'CAVEAT: a 2024 class/racial feature copied onto an NPC may carry an unresolved @scale.* damage/' +
+      'Premium-book pack IDs to search, in priority order (first match wins). ' +
+        'Defaults to ["dnd-monster-manual.features", "dnd-players-handbook.classes"] — MM monster ' +
+        'features, then PHB class features (the classes pack also holds the individual feature feats). ' +
+        'SOURCE ONLY from the premium MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3). ' +
+        'CAVEAT: a class/racial feature copied onto an NPC may carry an unresolved @scale.* damage/' +
         'uses formula (its ScaleValue comes from the PC class/species advancement, absent on an NPC) — ' +
         'verify and replace the formula with an explicit value after import.'
     ),
@@ -80,13 +80,12 @@ export class DnD5eFeaturesFromCompendiumTools {
           '  - Example: "add Spellcasting, Font of Magic and Metamagic to this sorcerer NPC"\n\n' +
           '⚠️ IMPORTANT — feature names must be in English: the compendium uses English names. ' +
           'Translate BEFORE calling if the user provided names in another language.\n\n' +
-          'compendiumPacks controls which pack(s) to search (priority order, first match wins):\n' +
-          '  - Default ["dnd5e.monsterfeatures24", "dnd5e.classes24", "dnd5e.classfeatures"] → 2024 ' +
-          'monsters, then 2024 class features, then 2014 SRD class features\n' +
-          '  - ["dnd-monster-manual.features"] / ["dnd-players-handbook.classes"] → premium 2024 packs\n' +
-          '  - ["dnd5e.monsterfeatures"]                                          → 2014 SRD monsters\n\n' +
-          'NOTE: 2024 CLASS features ARE importable — the individual feature feats live in the classes ' +
-          'pack (dnd5e.classes24 / dnd-players-handbook.classes) alongside the class items. But a 2024 ' +
+          'compendiumPacks controls which premium-book pack(s) to search (priority order, first match wins):\n' +
+          '  - Default ["dnd-monster-manual.features", "dnd-players-handbook.classes"] → MM monster ' +
+          'features, then PHB class features\n' +
+          '  - SOURCE ONLY from the premium MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3)\n\n' +
+          'NOTE: CLASS features ARE importable — the individual feature feats live in the classes ' +
+          'pack (dnd-players-handbook.classes) alongside the class items. But a ' +
           'class/racial feature copied onto an NPC may carry an unresolved @scale.* formula (its ' +
           'ScaleValue comes from the absent PC class/species advancement) — verify + fix it after import.\n\n' +
           'DO NOT USE THIS TOOL for:\n' +

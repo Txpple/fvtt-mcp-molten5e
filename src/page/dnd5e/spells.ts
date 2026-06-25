@@ -10,6 +10,7 @@
 
 import { resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
 import { buildActivity } from './activities.js';
+import { DEFAULT_SPELL_PACKS } from '../../utils/compendium-sources.js';
 
 // =============================================================================
 // Spellcasting slot tables — used by setActorSpellcasting.
@@ -244,7 +245,7 @@ export async function addSpellsToActor(data: any): Promise<unknown> {
   }
 
   const spellNames: string[] = data.spellNames;
-  const compendiumPacks: string[] = data.compendiumPacks ?? ['dnd5e.spells'];
+  const compendiumPacks: string[] = data.compendiumPacks ?? [...DEFAULT_SPELL_PACKS];
   const warnings: string[] = [];
 
   // ── Phase A: deduplicate input (case-insensitive) ─────────────────────
@@ -300,7 +301,7 @@ export async function addSpellsToActor(data: any): Promise<unknown> {
   if (packMaps.length === 0) {
     throw new Error(
       'No valid compendium packs available — check the compendiumPacks parameter. ' +
-        'Valid pack IDs for D&D 5e: "dnd5e.spells" (2014) or "dnd5e.spells24" (2024).'
+        'Valid pack ID is the premium PHB: "dnd-players-handbook.spells". NEVER the dnd5e.* SRD (design.md §2.3).'
     );
   }
 

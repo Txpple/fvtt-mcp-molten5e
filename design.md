@@ -49,7 +49,11 @@ These are not aspirations; they are the rules we hold each other to.
    `dnd-dungeon-masters-guide.*` packs), assumed always installed.
    **The SRD packs — both the 2024 SRD (`dnd5e.*24`, e.g. `dnd5e.spells24`, `dnd5e.monsterfeatures24`,
    `dnd5e.classes24`) and the older `dnd5e.*` SRD — are NEVER a source. The MM/PHB/DMG supersede them
-   in ALL cases.** (The books are supersets of the SRD, so this loses nothing.) We build new content by
+   in ALL cases.** (The books are supersets of the SRD, so this loses nothing.) **This premium-book set is
+   extensible:** today it is the MM/PHB/DMG, but a future premium book release can be *brought into
+   scope* by adding it to the **one** definition that names the library — the set lives in a single
+   place, never as scattered hard-coded pack ids. **Extensibility applies to premium books ONLY — the
+   SRD packs are never brought into scope, no matter what ships.** We build new content by
    **copying and recombining existing book entries** (correct stats *and* art) — mixing and matching is
    the *normal* way we create. We do **not** create net-new items by default. Going ad hoc — authoring
    from scratch, **or editing an original entry in place** — is a **last resort**, permitted only when

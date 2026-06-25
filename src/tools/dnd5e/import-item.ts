@@ -19,7 +19,7 @@ const ImportItemSchema = z.object({
     .min(1, 'packId cannot be empty')
     .describe(
       'Compendium pack id holding the item (e.g. "dnd-players-handbook.equipment", ' +
-        '"dnd-dungeon-masters-guide.equipment", "dnd5e.equipment24"). Find it with list-compendium-packs / search-compendium.'
+        '"dnd-dungeon-masters-guide.equipment"). Premium MM/PHB/DMG books ONLY — never the dnd5e.* SRD (design.md §2.3). Find it with list-compendium-packs / search-compendium.'
     ),
   itemId: z
     .string()
@@ -83,7 +83,7 @@ export class DnD5eImportItemTool {
           'a magic weapon: copying brings the correct PHB/DMG 2024 stats AND the graphic, where ' +
           'authoring from scratch does not.\n\n' +
           'WORKFLOW: 1) find the item with search-compendium (prefer the 2024 packs: ' +
-          '"dnd-players-handbook.equipment", "dnd-dungeon-masters-guide.equipment", "dnd5e.equipment24"); ' +
+          '"dnd-players-handbook.equipment", "dnd-dungeon-masters-guide.equipment" — premium books ONLY, never the dnd5e.* SRD); ' +
           '2) import-item with its packId + itemId; 3) for a CUSTOM item, copy the closest base then ' +
           'refine it with update-actor-item / manage-activity / manage-effect and rename via `name`.\n\n' +
           'Optional on-copy tweaks: name (rename), quantity, equipped, identified, container (nest in a ' +

@@ -7,6 +7,7 @@
 // expect (faithful to the old data-access.ts oracle).
 
 import { toSource, sanitizeDocData } from './_shared.js';
+import { packPriority } from '../utils/compendium-sources.js';
 
 interface CompendiumSearchArgs {
   query: string;
@@ -196,6 +197,11 @@ export async function searchCompendium(
 
   // Relevance ranking: exact name, then filter score, then alphabetical.
   results.sort((a, b) => {
+    // Premium books first, SRD (dnd5e.*) always last — we author only from the books (design.md §2.3).
+    const aPri = packPriority(a.pack);
+    const bPri = packPriority(b.pack);
+    if (aPri !== bPri) return aPri - bPri;
+
     const aExact = a.name.toLowerCase() === query.toLowerCase();
     const bExact = b.name.toLowerCase() === query.toLowerCase();
     if (aExact && !bExact) return -1;

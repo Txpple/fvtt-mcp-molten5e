@@ -31,7 +31,10 @@ const CreateActorSchema = z.object({
   packId: z
     .string()
     .optional()
-    .describe('ID of the compendium pack containing the creature (e.g., "dnd5e.monsters")'),
+    .describe(
+      'ID of the premium-book pack containing the creature (e.g., "dnd-monster-manual.actors"). ' +
+        'Premium MM/PHB/DMG only — never the dnd5e.* SRD (design.md §2.3).'
+    ),
   itemId: z
     .string()
     .optional()

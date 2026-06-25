@@ -48,9 +48,9 @@ last resort only), **`update-actor`** (actor `currency`/coins), **`update-actor-
 
 ## Step 0 — Find it in the compendium (the default path)
 
-`search-compendium` for the item by name, preferring the 2024 packs:
-**`dnd-players-handbook.equipment`** (PHB gear), **`dnd-dungeon-masters-guide.equipment`** (DMG magic
-items), **`dnd5e.equipment24`** (system SRD-2024). Confirm the match with `get-compendium-entry`, then
+`search-compendium` for the item by name in the **premium books ONLY** — never the `dnd5e.*` SRD
+(design.md §2.3): **`dnd-players-handbook.equipment`** (PHB gear), **`dnd-dungeon-masters-guide.equipment`**
+(DMG magic items). Confirm the match with `get-compendium-entry`, then
 copy it with **`import-item`** (`packId` + `itemId`, plus `actorIdentifier` or `folder`). On-copy you
 can `name`-rename, set `quantity`, `equipped`, `identified`, or nest in a `container`. Done — it has the
 right stats and art.

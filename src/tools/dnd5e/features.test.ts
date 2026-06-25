@@ -88,7 +88,7 @@ describe('handleAddFeaturesFromCompendium — bridge forwarding & formatting', (
     expect(bridgeCall![1]).toMatchObject({
       actorIdentifier: 'Goblin Boss',
       featureNames: ['Pack Tactics'],
-      compendiumPacks: ['dnd5e.monsterfeatures24', 'dnd5e.classes24', 'dnd5e.classfeatures'],
+      compendiumPacks: ['dnd-monster-manual.features', 'dnd-players-handbook.classes'],
     });
 
     expect(out.success).toBe(true);

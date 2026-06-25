@@ -103,14 +103,15 @@ Immediately `update-actor` for anything the base builder doesn't cover or that y
 
 For official, named traits/features **prefer importing** them so the real text/mechanics + art come in,
 via `add-feature` mode `compendium-features` (first-match-wins across the packs you pass):
-- **Monster traits** (Pack Tactics, Nimble Escape, Magic Resistance, Multiattack) → default
-  `dnd5e.monsterfeatures24`; prefer premium `dnd-monster-manual.features` when present.
-- **Class features** (Lay on Hands, Channel Divinity, Fighting Style, …) → **2024 class features ARE
-  importable**: the individual feature feats live in the **classes pack** (`dnd5e.classes24`, or premium
-  `dnd-players-handbook.classes`), alongside the class items. The default now includes `dnd5e.classes24`.
+**Premium books ONLY — never the `dnd5e.*` SRD packs (design.md §2.3).**
+- **Monster traits** (Pack Tactics, Nimble Escape, Magic Resistance, Multiattack) →
+  `dnd-monster-manual.features`.
+- **Class features** (Lay on Hands, Channel Divinity, Fighting Style, …) → **class features ARE
+  importable**: the individual feature feats live in the **classes pack**
+  (`dnd-players-handbook.classes`), alongside the class items.
   This is the pattern the official 2024 sample PCs use (each feature is its own `feat`).
 - **Racial abilities** (a dragonborn's Breath Weapon, etc.) → copy from the **origins pack**
-  (`dnd-players-handbook.origins` / `dnd5e.origins24`). E.g. a breath weapon is a `<Element> Breath
+  (`dnd-players-handbook.origins`). E.g. a breath weapon is a `<Element> Breath
   Weapon` feat (`Fire Breath Weapon`, `Cold Breath Weapon`, …) — `import-item` it (it carries the real
   cone+line save activities, type, uses), then **fix its `@scale.*` damage formula** to an explicit die
   for the creature's level (see the @scale gotcha above). Don't author racial abilities by hand.
@@ -154,8 +155,8 @@ Conditions the creature *starts* with (rare) → `apply-condition`.
 
 Build the rest of what the creature carries and drops — COPY from the 2024 PHB/DMG compendiums first;
 defer item judgment to [[physical-item-builder]]:
-- **Find then copy:** `search-compendium` the gear (prefer `dnd-players-handbook.equipment`,
-  `dnd-dungeon-masters-guide.equipment`, `dnd5e.equipment24`) → `import-item` (`packId` + `itemId`,
+- **Find then copy:** `search-compendium` the gear in the premium books only — never the `dnd5e.*` SRD
+  (`dnd-players-handbook.equipment`, `dnd-dungeon-masters-guide.equipment`) → `import-item` (`packId` + `itemId`,
   `actorIdentifier`). Copies bring correct stats AND art.
 - **Worn armor / shield** → `import-item` the real armor/shield. Copied armor doesn't auto-drive AC; set
   the actor's AC with `update-actor` if needed (a shield's bonus applies under any calc). When you must

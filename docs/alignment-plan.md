@@ -63,14 +63,14 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   asserts the authored-NPC default is 2024 and an explicit 2014 override still works. Gate green (625
   tests). *(Minor follow-up noted: `addSaveFeatureToActor` is hard-2024 — can't be overridden to 2014
   because its mode doesn't thread `sourceRules`; not a 2024-default issue.)*
-- [ ] **0.1b — Premium books only, NEVER the SRD** (Inv. 2, tool+skill, M). The books supersede the
-  SRD in all cases (they're supersets, so nothing is lost). Strip every `dnd5e.*24` / `dnd5e.*` SRD
-  pack from authoring tool defaults (`add-feature` spell/feature pack defaults → premium
-  `dnd-players-handbook.*` / `dnd-monster-manual.*`); order creature/item **search** premium-first so
-  `create-actor` / `import-item` land on `dnd-monster-manual.*` / `dnd-players-handbook.*` /
-  `dnd-dungeon-masters-guide.*`; remove the "prefer premium when present, else SRD" prose from the
-  builder skills; if content genuinely isn't in the books → STOP and ASK (never SRD). *Done when:* no
-  authoring path defaults to OR falls back to an SRD pack, asserted by a test.
+- [x] **0.1b — Premium books only, NEVER the SRD** (Inv. 2, tool+skill, M) — **landed `master`.**
+  Single source-of-truth `src/utils/compendium-sources.ts` (SRD deny-list `dnd5e.*` + the extensible
+  premium-book set MM/PHB/DMG — a future book is a one-line add there; never SRD). Flipped every
+  authoring default to premium (`add-feature` spell/feature schemas + the page-side fallbacks in
+  `features`/`spells`/`compendium-features` that defaulted to 2014 SRD); added premium-first ranking to
+  both searches (`compendium.ts`, `creature-index.ts`); rewrote every tool description + both builder
+  skills to premium-only / never-SRD; test asserts the defaults are SRD-free + premium-first ordering.
+  Full sweep confirms zero SRD-pull paths remain. Gate green (648 tests).
 - [ ] **0.2 — One copy primitive** (Inv. 2, tool, M). Whole-doc copy → `importFromCompendium`; keep
   the centralized hand-roll for embedded-item copy. *Done when:* each copy path routes through one
   primitive; **parity verified live**.
