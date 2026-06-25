@@ -1,11 +1,11 @@
 // Page-side: D&D 5e creature index. Runs INSIDE the headless Foundry page.
 //
 // Replaces the old persistent, file-cached creature index (FilePicker fingerprints +
-// hooks + world-flag persistence). This version scans the Actor compendium packs on
-// demand and extracts a flat per-creature index record. Correctness over performance:
-// every call re-scans the packs (see perf caveat in the handoff notes). The RETURNED
-// SHAPES exactly match what the old data-access.ts queries produced, which is what the
-// Node tools (src/tools/compendium.ts) and their tests expect.
+// hooks + world-flag persistence). This version reads the premium Actor packs' compendium
+// INDEX on demand (cheap — requesting only the creature-stat fields it needs, never the full
+// documents) and projects a flat per-creature record. The RETURNED SHAPES exactly match what
+// the old data-access.ts queries produced, which is what the Node tools (src/tools/compendium.ts)
+// and their tests expect.
 
 import { excludeSrdPacks, packPriority } from '../utils/compendium-sources.js';
 
@@ -143,19 +143,41 @@ export async function listCreaturesByCriteria(args?: CreatureCriteria): Promise<
 }
 
 // ---------------------------------------------------------------------------
-// Local helpers (non-exported)
+// Local helpers (non-exported unless tested)
 // ---------------------------------------------------------------------------
 
 /**
- * Scan every Actor compendium pack and build a flat creature index. Loads full
- * documents per pack so the system-data extraction below has the real stat block.
- * Pack-level and document-level failures are isolated so one bad pack/doc cannot
- * sink the whole scan.
+ * The `system.*` field paths we pull into the compendium INDEX for creature discovery.
+ *
+ * dnd5e registers NO index fields on Actor packs (only Item), so the default index carries only
+ * core fields (`_id`/`name`/`img`/`type`) — every creature stat must be requested explicitly here.
+ * All paths are scalar dot-paths into stored `_source` data (confirmed populated live on the 2024
+ * MM pack). Two known limits (see [[fvtt-mcp-compendium-lookup-facts]]): `ac.value` is DERIVED and
+ * NOT indexable (we read `ac.flat`, approximate); true spellcasting / legendary actions live in
+ * embedded items/activities (not indexable) so we approximate them from `spell.level` / `legact.max`.
+ */
+const CREATURE_INDEX_FIELDS = [
+  'system.details.cr',
+  'system.details.type.value',
+  'system.traits.size',
+  'system.attributes.hp.max',
+  'system.attributes.ac.flat',
+  'system.attributes.spell.level',
+  'system.resources.legact.max',
+  'system.details.alignment',
+] as const;
+
+/**
+ * Scan every premium Actor compendium pack and build a flat creature index from the pack INDEX
+ * (cheap) rather than full documents. SRD (`dnd5e.*`) packs are excluded outright (design.md §2.3);
+ * dropping them up front also reserves the result `limit` budget for the books. Pack-level failures
+ * are isolated so one bad pack cannot sink the whole scan.
+ *
+ * This replaces the former `getDocuments()` full-load: loading every actor document on every call
+ * was the single heaviest path in the lookup surface; the index read carries everything the
+ * discovery contract needs (see CREATURE_INDEX_FIELDS).
  */
 async function buildCreatureIndex(): Promise<CreatureIndexEntry[]> {
-  // SRD (`dnd5e.*`) packs are excluded outright (design.md §2.3). Dropping them before we load
-  // documents also avoids paying the (expensive) full-document scan on the large SRD monster pack
-  // and keeps the result `limit` budget reserved for the premium books.
   const actorPacks: any[] = excludeSrdPacks(
     Array.from(game.packs.values()) as any[],
     (pack: any) => pack?.metadata?.id
@@ -165,20 +187,17 @@ async function buildCreatureIndex(): Promise<CreatureIndexEntry[]> {
 
   for (const pack of actorPacks) {
     try {
-      const documents = await pack.getDocuments();
-      for (const doc of documents) {
+      const index = await pack.getIndex({ fields: [...CREATURE_INDEX_FIELDS] });
+      for (const entry of index.values() as IterableIterator<any>) {
         // Only index NPCs, characters, and creatures.
-        if (doc.type !== 'npc' && doc.type !== 'character' && doc.type !== 'creature') {
+        if (entry.type !== 'npc' && entry.type !== 'character' && entry.type !== 'creature') {
           continue;
         }
-        const entry = extractCreatureEntry(doc, pack);
-        if (entry) {
-          creatures.push(entry);
-        }
+        creatures.push(projectIndexEntry(entry, pack.metadata.id, pack.metadata.label));
       }
     } catch (error) {
-      // Skip packs that fail to load; keep scanning the rest.
-      console.warn(`[creature-index] Failed to load pack ${pack?.metadata?.label}:`, error);
+      // Skip packs that fail to index; keep scanning the rest.
+      console.warn(`[creature-index] Failed to index pack ${pack?.metadata?.label}:`, error);
     }
   }
 
@@ -186,52 +205,40 @@ async function buildCreatureIndex(): Promise<CreatureIndexEntry[]> {
 }
 
 /**
- * Extract a single flat creature-index entry from a Foundry actor document.
- * Uses comprehensive D&D 5e fallback paths (system data layouts vary by source).
- * On extraction failure returns a safe fallback record rather than dropping the
- * creature, matching the old behavior.
+ * Project a single compendium INDEX entry (an `{ _id, name, type, img, system }` record carrying
+ * only CREATURE_INDEX_FIELDS) into the flat CreatureIndexEntry contract.
+ *
+ * Exported for offline unit testing — pure, no Foundry globals. The CR/type/size/hp/alignment
+ * helpers normalize the corresponding index field; armorClass / hasSpells / hasLegendaryActions
+ * read the index-specific paths directly (and are APPROXIMATE — see CREATURE_INDEX_FIELDS):
+ *   - armorClass ← `ac.flat` (the only stored AC; `ac.value` is derived/unavailable), default 10.
+ *   - hasSpells ← `spell.level > 0` (real spellcasting lives in embedded spell items / activities).
+ *   - hasLegendaryActions ← `legact.max > 0` (the legact schema object exists even when max is 0,
+ *     so we must test the number, not the object's presence).
  */
-function extractCreatureEntry(doc: any, pack: any): CreatureIndexEntry {
-  try {
-    const system = doc.system ?? {};
-
-    return {
-      id: doc._id,
-      name: doc.name,
-      type: doc.type,
-      pack: pack.metadata.id,
-      packLabel: pack.metadata.label,
-      challengeRating: extractChallengeRating(system),
-      creatureType: extractCreatureType(system),
-      size: extractSize(system),
-      hitPoints: extractHitPoints(system),
-      armorClass: extractArmorClass(system),
-      hasSpells: extractHasSpells(system),
-      hasLegendaryActions: extractHasLegendaryActions(system),
-      alignment: extractAlignment(system),
-      description: extractDescription(doc),
-      img: doc.img,
-    };
-  } catch (error) {
-    console.warn(`[creature-index] Failed to extract data from ${doc?.name}:`, error);
-    return {
-      id: doc._id,
-      name: doc.name,
-      type: doc.type,
-      pack: pack.metadata.id,
-      packLabel: pack.metadata.label,
-      challengeRating: 0,
-      creatureType: 'unknown',
-      size: 'medium',
-      hitPoints: 1,
-      armorClass: 10,
-      hasSpells: false,
-      hasLegendaryActions: false,
-      alignment: 'unaligned',
-      description: 'Data extraction failed',
-      img: doc.img ?? '',
-    };
-  }
+export function projectIndexEntry(
+  entry: any,
+  packId: string,
+  packLabel: string
+): CreatureIndexEntry {
+  const system = entry?.system ?? {};
+  return {
+    id: entry?._id,
+    name: entry?.name,
+    type: entry?.type,
+    pack: packId,
+    packLabel,
+    challengeRating: extractChallengeRating(system),
+    creatureType: extractCreatureType(system),
+    size: extractSize(system),
+    hitPoints: extractHitPoints(system),
+    armorClass: Number(system.attributes?.ac?.flat) || 10,
+    hasSpells: Number(system.attributes?.spell?.level) > 0,
+    hasLegendaryActions: Number(system.resources?.legact?.max) > 0,
+    alignment: extractAlignment(system),
+    description: '', // not in the index; unused by the Node formatter (kept for shape parity)
+    img: entry?.img ?? '',
+  };
 }
 
 /** Resolve Challenge Rating across the known D&D 5e data layouts; handle fractions. */
@@ -283,21 +290,10 @@ function extractCreatureType(system: any): string {
   return creatureType.toLowerCase();
 }
 
-/** Resolve size (lowercased), defaulting to 'medium'. */
+/** Resolve size from the index field `system.traits.size` — a bare dnd5e key (e.g. 'med'), lowercased. */
 function extractSize(system: any): string {
-  let size =
-    system.traits?.size?.value ||
-    system.traits?.size ||
-    system.size?.value ||
-    system.size ||
-    system.details?.size ||
-    'medium';
-
-  if (typeof size !== 'string') {
-    size = String(size || 'medium');
-  }
-
-  return size.toLowerCase();
+  const size = system.traits?.size;
+  return typeof size === 'string' && size ? size.toLowerCase() : 'med';
 }
 
 /** Resolve max (then current) hit points, defaulting to 0. */
@@ -313,70 +309,31 @@ function extractHitPoints(system: any): number {
   );
 }
 
-/** Resolve armor class, defaulting to 10. */
-function extractArmorClass(system: any): number {
-  return (
-    system.attributes?.ac?.value ||
-    system.ac?.value ||
-    system.attributes?.ac ||
-    system.ac ||
-    system.armor?.value ||
-    system.armor ||
-    10
-  );
-}
-
-/** Resolve alignment (lowercased), defaulting to 'unaligned'. */
+/** Resolve alignment from the index field `system.details.alignment` — a bare string, lowercased. */
 function extractAlignment(system: any): string {
-  let alignment =
-    system.details?.alignment?.value ||
-    system.details?.alignment ||
-    system.alignment?.value ||
-    system.alignment ||
-    'unaligned';
-
-  if (typeof alignment !== 'string') {
-    alignment = String(alignment || 'unaligned');
-  }
-
-  return alignment.toLowerCase();
-}
-
-/** Detect spellcasting across several D&D 5e markers. */
-function extractHasSpells(system: any): boolean {
-  return !!(
-    system.spells ||
-    system.attributes?.spellcasting ||
-    (system.details?.spellLevel && system.details.spellLevel > 0) ||
-    (system.resources?.spell && system.resources.spell.max > 0) ||
-    system.spellcasting ||
-    system.traits?.spellcasting ||
-    system.details?.spellcaster
-  );
-}
-
-/** Detect legendary actions across several D&D 5e markers. */
-function extractHasLegendaryActions(system: any): boolean {
-  return !!(
-    system.resources?.legact ||
-    system.legendary ||
-    (system.resources?.legres && system.resources.legres.value > 0) ||
-    system.details?.legendary ||
-    system.traits?.legendary ||
-    (system.resources?.legendary && system.resources.legendary.max > 0)
-  );
-}
-
-/** Resolve a description string (biography or generic description), defaulting to ''. */
-function extractDescription(doc: any): string {
-  return doc.system?.details?.biography || doc.system?.description || '';
+  const alignment = system.details?.alignment;
+  return typeof alignment === 'string' && alignment ? alignment.toLowerCase() : 'unaligned';
 }
 
 /**
- * Check whether a creature passes all specified criteria. Comparisons use the
- * already-normalized (lowercased) index fields, matching the old passesDnD5eCriteria.
+ * Map the tool's friendly size enum (medium/large/…) to the dnd5e stored size KEY (med/lg/…),
+ * which is what `system.traits.size` (and thus the index + a creature's `size`) actually holds.
+ * Without this, a `size: "medium"` filter never matched an index value of `"med"`.
  */
-function passesCriteria(creature: CreatureIndexEntry, criteria: CreatureCriteria): boolean {
+const SIZE_TO_DND5E: Record<string, string> = {
+  tiny: 'tiny',
+  small: 'sm',
+  medium: 'med',
+  large: 'lg',
+  huge: 'huge',
+  gargantuan: 'grg',
+};
+
+/**
+ * Check whether a creature passes all specified criteria. Comparisons use the already-normalized
+ * (lowercased) index fields. Exported for offline unit testing — pure, no Foundry globals.
+ */
+export function passesCriteria(creature: CreatureIndexEntry, criteria: CreatureCriteria): boolean {
   // Challenge Rating filter (exact number or {min,max} range).
   if (criteria.challengeRating !== undefined) {
     if (typeof criteria.challengeRating === 'number') {
@@ -401,9 +358,10 @@ function passesCriteria(creature: CreatureIndexEntry, criteria: CreatureCriteria
     }
   }
 
-  // Size filter (case-insensitive).
+  // Size filter — map the friendly enum to the dnd5e key before comparing.
   if (criteria.size) {
-    if (creature.size.toLowerCase() !== criteria.size.toLowerCase()) {
+    const wanted = SIZE_TO_DND5E[criteria.size.toLowerCase()] ?? criteria.size.toLowerCase();
+    if (creature.size.toLowerCase() !== wanted) {
       return false;
     }
   }
