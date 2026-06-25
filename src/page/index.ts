@@ -78,6 +78,7 @@ import { createFolder, moveDocuments, bulkDelete, deleteFolder } from './organiz
 import { manageEffect } from './effects.js';
 import { findAssetReferences, relinkAsset, setActorArt, addJournalImage } from './assets.js';
 import { getEnhancedCreatureIndex, listCreaturesByCriteria } from './creature-index.js';
+import { searchCompendiumFaceted } from './compendium-facets.js';
 import { createNpcActor } from './dnd5e/npc.js';
 import { applyCondition } from './dnd5e/conditions.js';
 import { addSaveFeatureToActor, addPassiveFeatureToActor } from './dnd5e/features.js';
@@ -113,6 +114,7 @@ const api: Window['__fvtt'] = {
   getCompendiumDocumentFull,
   getEnhancedCreatureIndex,
   listCreaturesByCriteria,
+  searchCompendiumFaceted,
   // journals
   listJournals,
   getJournalContent,

@@ -10,6 +10,7 @@ declare const Hooks: any;
 declare const foundry: any;
 declare const fromUuid: (uuid: string) => Promise<any>;
 declare const Roll: any;
+declare const dnd5e: any;
 
 interface Window {
   // The injected domain API. Tools reach it via foundry.call(name, args).
