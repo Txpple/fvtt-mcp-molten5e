@@ -13,16 +13,13 @@ export interface ActorCreationToolsOptions {
 
 // Single source of truth for each tool's input contract: the handlers parse with these schemas
 // and getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised
-// and enforced contracts cannot drift. Descriptions are copied verbatim from the previous
-// hand-written JSON Schema definitions; only `.describe()` is added (validation is unchanged).
+// and enforced contracts cannot drift.
 //
-// NOTE on create-actor: this tool fronts TWO handlers (index.ts dispatches on `source`):
-// source='compendium' → handleCreateActorFromCompendium (stricter inline schema below requires
-// packId/itemId/names) and source='authored' → dnd5eNpcTools.handleCreateNpc (parses statBlock).
-// So the ADVERTISED umbrella schema must keep every field optional (required: []) exactly as the
-// previous hand-written JSON did — the per-path required-ness is enforced inside each handler.
-// CreateActorSchema therefore mirrors the advertised contract; the compendium handler keeps its
-// own stricter schema (validation behavior unchanged).
+// NOTE on create-actor (DEPRECATED one-release alias): the canonical tools are
+// `create-actor-from-compendium` (CreateActorFromCompendiumSchema — strict: packId/itemId/names
+// required) and `author-npc` (dnd5e/npc.ts). The legacy `create-actor` umbrella still dispatches on
+// `source` (registry.ts), so its advertised CreateActorSchema keeps every field optional
+// (required: []) — the per-path required-ness lives in each canonical tool's own schema.
 const CreateActorSchema = z.object({
   source: z
     .enum(['compendium', 'authored'])
@@ -95,6 +92,69 @@ const CreateActorSchema = z.object({
     ),
 });
 
+// create-actor-from-compendium contract (the §6 step-1 + step-2 path). Stricter than the legacy
+// CreateActorSchema umbrella — packId/itemId/names ARE required because this serves ONLY the
+// compendium-pull path. Single source of truth: the handler parses with it and getToolDefinitions()
+// advertises toInputSchema(...) of it.
+const CreateActorFromCompendiumSchema = z.object({
+  packId: z
+    .string()
+    .min(1, 'Pack ID cannot be empty')
+    .describe(
+      'ID of the premium-book pack containing the creature (e.g., "dnd-monster-manual.actors"). ' +
+        'Premium MM/PHB/DMG only — never the dnd5e.* SRD (design.md §2.3).'
+    ),
+  itemId: z
+    .string()
+    .min(1, 'Item ID cannot be empty')
+    .describe(
+      'ID of the specific creature entry within the pack (get this from search-compendium results)'
+    ),
+  names: z
+    .array(z.string().min(1))
+    .min(1, 'At least one name is required')
+    .describe('Custom names for the created actors (e.g., ["Flameheart", "Sneak", "Peek"])'),
+  quantity: z
+    .number()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe('Number of actors to create (default: based on names array length)'),
+  addToScene: z
+    .boolean()
+    .default(false)
+    .describe('Whether to add created actors to the current scene as tokens'),
+  placement: z
+    .object({
+      type: z
+        .enum(['random', 'grid', 'center', 'coordinates'])
+        .default('grid')
+        .describe('Placement strategy'),
+      coordinates: z
+        .array(
+          z.object({
+            x: z.number().describe('X coordinate in pixels'),
+            y: z.number().describe('Y coordinate in pixels'),
+          })
+        )
+        .optional()
+        .describe('Specific coordinates for each token (required when type is "coordinates")'),
+    })
+    .optional()
+    .describe('Token placement options (only used when addToScene is true)'),
+  modifications: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe(
+      'PREFAB-AS-BASE bridge: stat edits to layer onto the instantiated WORLD COPY — copy a ' +
+        'close-matching Monster Manual creature, then customize it in one call (the §6 step-2 path). ' +
+        'Same shape as update-actor, e.g. {cr, hp:{value,max,formula}, ac:{calc,flat}, ' +
+        'abilities:{str,…}, skills:[{skill,proficiency}], damageResistances:{values}, biography, ' +
+        'currency:{mode,gp,…}}. Applied to the copy ONLY — the source compendium entry is never ' +
+        'modified. Use names[] for the name, not this. Applies to every copy when quantity > 1.'
+    ),
+});
+
 const DeleteActorSchema = z.object({
   identifiers: z
     .array(z.string().min(1))
@@ -147,11 +207,26 @@ export class ActorCreationTools {
   getToolDefinitions() {
     return [
       {
+        name: 'create-actor-from-compendium',
+        description:
+          'Copy one or more actors from a premium-book compendium pack — the DEFAULT, preferred path ' +
+          'for official content (e.g. pull the Owlbear from the Monster Manual). Find the entry with ' +
+          'search-compendium / get-compendium-entry, then pass its packId + itemId plus names[] for ' +
+          'the new actors. PREFAB-AS-BASE (the §6 step-2 bridge): to make a CUSTOM creature, copy the ' +
+          'closest Monster Manual match and pass `modifications` (update-actor-shaped stat edits — ' +
+          'cr/hp/ac/abilities/skills/defenses/biography/currency) to layer onto the world copy in the ' +
+          'SAME call; the edits land on the copy only, never the source entry. For a fully ' +
+          'hand-authored NPC with no compendium base, use author-npc (last resort).',
+        inputSchema: toInputSchema(CreateActorFromCompendiumSchema),
+      },
+      {
         name: 'create-actor',
         description:
-          "Create one or more actors (NPCs/monsters/characters). source='compendium' (DEFAULT, preferred): copy an existing entry from a compendium pack — the normal path for official content (e.g. pull the Owlbear from the Monster Manual). Find the entry with search-compendium / get-compendium-entry, then pass its packId + itemId plus names[] for the new actors. " +
-          'PREFAB-AS-BASE (the §6 step-2 bridge): to make a CUSTOM creature, copy the closest Monster Manual match and pass `modifications` (update-actor-shaped stat edits — cr/hp/ac/abilities/skills/defenses/biography/currency) to layer onto the world copy in the SAME call; the edits land on the copy only, never the source entry. ' +
-          "source='authored': build an NPC from scratch via the statBlock object — the LAST resort, used ONLY when nothing in the premium MM/PHB/DMG books is a workable base; if it's missing, tell the user and ask before authoring rather than inventing content.",
+          'DEPRECATED (one-release alias) — use create-actor-from-compendium (copy a pack entry, the ' +
+          'default) or author-npc (hand-authored stat block, last resort). This umbrella still works ' +
+          "for now: it branches on `source` ('compendium' → create-actor-from-compendium, 'authored' " +
+          '→ author-npc via the statBlock object). It will be removed next release; prefer the two ' +
+          'dedicated tools.',
         inputSchema: toInputSchema(CreateActorSchema),
       },
       {
@@ -180,36 +255,9 @@ export class ActorCreationTools {
    * Handle actor creation from specific compendium entry
    */
   async handleCreateActorFromCompendium(args: any): Promise<any> {
-    // Stricter than the advertised CreateActorSchema on purpose: this handler serves only the
-    // source='compendium' path, where packId/itemId/names ARE required. The advertised umbrella
-    // schema keeps them optional because the source='authored' path (handleCreateNpc) doesn't use
-    // them. This is the one tool whose single advertised contract fronts two distinct handlers.
-    const schema = z.object({
-      packId: z.string().min(1, 'Pack ID cannot be empty'),
-      itemId: z.string().min(1, 'Item ID cannot be empty'),
-      names: z.array(z.string().min(1)).min(1, 'At least one name is required'),
-      quantity: z.number().min(1).max(10).optional(),
-      addToScene: z.boolean().default(false),
-      placement: z
-        .object({
-          type: z.enum(['random', 'grid', 'center', 'coordinates']).default('grid'),
-          coordinates: z
-            .array(
-              z.object({
-                x: z.number(),
-                y: z.number(),
-              })
-            )
-            .optional(),
-        })
-        .optional(),
-      // Prefab-as-base bridge: optional update-actor-shaped edits layered onto the world copy.
-      modifications: z.record(z.string(), z.any()).optional(),
-    });
-
     const { packId, itemId, names, quantity, addToScene, placement, modifications } =
-      schema.parse(args);
-    assertNoSrdPacks(packId, 'create-actor (compendium source)');
+      CreateActorFromCompendiumSchema.parse(args);
+    assertNoSrdPacks(packId, 'create-actor-from-compendium');
     const finalQuantity = quantity || names.length;
 
     this.logger.info('Creating actors from specific compendium entry', {
@@ -260,7 +308,7 @@ export class ActorCreationTools {
         customNames.slice(0, finalQuantity)
       );
     } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-actor', 'actor creation');
+      this.errorHandler.handleToolError(error, 'create-actor-from-compendium', 'actor creation');
     }
   }
 

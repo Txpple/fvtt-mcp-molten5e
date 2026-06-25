@@ -56,9 +56,14 @@ beforeEach(() => {
 });
 
 describe('DnD5eNpcTools.getToolDefinitions', () => {
-  it('exposes no tool definitions (registered under create-actor)', () => {
+  it('exposes the author-npc tool definition with an object input schema', () => {
     const { tools } = build();
-    expect(tools.getToolDefinitions()).toEqual([]);
+    const defs = tools.getToolDefinitions();
+    expect(defs.map(d => d.name)).toEqual(['author-npc']);
+    // The hoisted AuthorNpcSchema ends in .superRefine(); confirm toInputSchema still emits a clean
+    // object schema with the required fields derived (not swallowed by the ZodEffects wrapper).
+    expect(defs[0].inputSchema.type).toBe('object');
+    expect(defs[0].inputSchema.required).toContain('creatureType');
   });
 });
 

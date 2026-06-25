@@ -179,7 +179,7 @@ asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the 
 | `set-actor-art`         | Set an actor's portrait (+ prototype token) from an image path               |
 | `add-journal-image`     | Append an image page to a journal entry                                      |
 
-The remaining Plane A tools cover world CRUD (`create-actor`, `add-feature` (features / compendium
+The remaining Plane A tools cover world CRUD (`create-actor-from-compendium`/`author-npc`, `add-feature` (features / compendium
 features / spells), `import-item` (copy a real PHB/DMG item — art + stats — onto an actor or the
 sidebar), `add-item` (author structured weapons/armor/consumables/loot/containers), `create-item`,
 `create-journal`/`create-quest-journal`, `create-rolltable`, `create-cards`, …), listing/search

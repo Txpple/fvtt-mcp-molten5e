@@ -30,10 +30,17 @@ describe('ErrorHandler.toUserMessage — enriches bridge/permission/validation f
     expect(msg).toContain('Permission denied for this operation');
   });
 
-  it('adds the create-actor tip on validation errors for that tool', () => {
-    const msg = eh.toUserMessage(new Error('actor not found'), 'create-actor');
-    expect(msg).toContain('Invalid request or missing data');
-    expect(msg).toContain('search-compendium');
+  it('adds the search-compendium tip on validation errors across the actor-creation family', () => {
+    // The tip fires for the whole family — both split tools and the deprecated create-actor alias.
+    // (The base message differs by branch: 'create-actor-from-compendium' contains the substring
+    // "compendium", so the classifier picks the more-specific "Creature not found" wording — fine.)
+    for (const tool of ['create-actor', 'create-actor-from-compendium', 'author-npc']) {
+      const msg = eh.toUserMessage(new Error('actor not found'), tool);
+      expect(msg).toContain('use search-compendium first to see available creatures');
+    }
+    // ...but not for an unrelated tool.
+    const other = eh.toUserMessage(new Error('actor not found'), 'update-actor');
+    expect(other).not.toContain('use search-compendium first');
   });
 });
 

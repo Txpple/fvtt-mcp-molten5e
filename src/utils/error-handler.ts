@@ -1,5 +1,13 @@
 import { Logger } from '../logger.js';
 
+// The actor-creation tool family — a validation failure on any of these earns the "search-compendium
+// first" tip. Covers the split tools and the deprecated create-actor alias (one-release).
+const ACTOR_CREATION_TOOLS = new Set([
+  'create-actor',
+  'create-actor-from-compendium',
+  'author-npc',
+]);
+
 export interface MCPError {
   type: 'user' | 'system' | 'permission' | 'validation' | 'connection';
   message: string;
@@ -180,7 +188,7 @@ export class ErrorHandler {
       message += ` Try: ${mcpError.suggestions.join('; ')}.`;
     }
 
-    if (mcpError.type === 'validation' && toolName === 'create-actor') {
+    if (mcpError.type === 'validation' && ACTOR_CREATION_TOOLS.has(toolName)) {
       message += ' Tip: use search-compendium first to see available creatures.';
     }
 

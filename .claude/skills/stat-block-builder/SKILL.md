@@ -7,7 +7,7 @@ description: >-
   a finishing pass (art, ownership, folder). Use when the user wants to "build this monster", "make an
   NPC from this stat block", "stat out <creature>", "create a creature from this text", "build the boss
   with its gear and loot", or pastes a Monster-Manual-style block. Composes the actor-authoring tools
-  (create-actor, update-actor, add-feature, manage-activity, manage-effect, apply-condition, add-item,
+  (create-actor-from-compendium, author-npc, update-actor, add-feature, manage-activity, manage-effect, apply-condition, add-item,
   set-actor-art, set-actor-ownership, move-documents) into one coherent build with dnd5e judgment. The
   tools own correctness (field paths, activity/effect/item shapes, name→id, soft validation); this skill
   owns the parse, the orchestration, and the house rules.
@@ -21,7 +21,7 @@ defenses, senses, special traits, actions, spellcasting, effects, **its full inv
 biography, and a finishing pass — by sequencing the right tool calls. It adds NO new mechanics; every
 tool it calls holds its own correctness.
 
-Tools used: `create-actor` (prefab copy · prefab-as-base via `modifications` · authored), `update-actor`, `add-feature` (features /
+Tools used: `create-actor-from-compendium` (prefab copy · prefab-as-base via `modifications`), `author-npc` (authored from scratch), `update-actor`, `add-feature` (features /
 compendium-features / spells), **`import-item`** (COPY gear from a compendium — the default for
 inventory), `add-item` (author homebrew gear — last resort), `manage-activity`, `manage-effect`,
 `apply-condition`, `set-actor-art`, `set-actor-ownership`, `move-documents`, `update-actor-item`
@@ -33,8 +33,8 @@ each searches the premium books only and never the SRD, so you don't reason abou
 
 > **Faceted discovery returns minimal hits.** `search-compendium-creatures` / `-spells` / `-items`
 > each return `results: [{ id, name, type, uuid, pack, packLabel, img, facets }]`, premium-first
-> ranked. Pick a hit by name, then feed its **`pack` + `id`** straight into `create-actor`
-> (source: compendium), `import-item`, or `get-compendium-entry` — no pack-id guesswork.
+> ranked. Pick a hit by name, then feed its **`pack` + `id`** straight into
+> `create-actor-from-compendium`, `import-item`, or `get-compendium-entry` — no pack-id guesswork.
 
 > **`add-feature` invocation shape.** It takes a top-level `mode` — only `feature`,
 > `compendium-features`, or `items` — plus nested params. Authoring any single
@@ -72,17 +72,17 @@ Decide HOW to create before building anything. Try the rungs **in order** — th
 preference:
 
 1. **Prefab — the default.** Search the Monster Manual with `search-compendium-creatures`. If a
-   suitable actor exists and the user just wants it in the world, `create-actor` (source: compendium,
-   feeding the hit's `pack` + `id`) and you're done — jump to the finishing pass (Step 10). Real stats
+   suitable actor exists and the user just wants it in the world, `create-actor-from-compendium`
+   (feeding the hit's `pack` + `id`) and you're done — jump to the finishing pass (Step 10). Real stats
    *and* art, zero authoring.
 2. **Prefab-as-base — custom from a copy.** No exact match but a close one exists? Copy that MM
    creature and pass **`modifications`** (update-actor-shaped stat edits — cr/hp/ac/abilities/skills/
-   defenses/biography/currency) in the SAME `create-actor` call to layer your changes onto the world
+   defenses/biography/currency) in the SAME `create-actor-from-compendium` call to layer your changes onto the world
    copy; then add the distinguishing features/gear in the steps below. The edits land on the copy — the
    compendium entry is never touched. **This is the normal way to build a custom NPC:** start from real
    stats + art, then diverge. Parse the block (Step 1) to know what to change.
 3. **Authored — last resort.** Only when nothing in the premium MM/PHB/DMG books is a workable base do
-   you author from scratch (Step 2, source: authored). Per the [shared authoring policy](../_shared/authoring-policy.md),
+   you author from scratch (Step 2, `author-npc`). Per the [shared authoring policy](../_shared/authoring-policy.md),
    if there's no 2024 match, **STOP and ASK** before inventing content.
 
 ## Step 1 — Parse the stat block into sections
@@ -108,8 +108,9 @@ If you took rung 1 (prefab) or rung 2 (prefab-as-base) in Step 0, the actor alre
 ahead to layer on its distinguishing parts (Step 4+). This step is **rung 3 only** (authored from
 scratch, after the books had no workable base):
 
-`create-actor` with `source: "authored"` and the `statBlock` (the NPC builder sets abilities, saves,
-HP, AC, movement, senses, CR, type, size, skills, languages, defenses in one call).
+`author-npc` with the flat stat-block fields (name, creatureType, size, cr, abilities, hpAverage,
+hpFormula, acMode, … — the NPC builder sets abilities, saves, HP, AC, movement, senses, CR, type,
+size, skills, languages, defenses in one call).
 
 ## Step 3 — Actor-level edits (`update-actor`)
 

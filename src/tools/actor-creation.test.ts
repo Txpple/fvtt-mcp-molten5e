@@ -22,13 +22,18 @@ function build(response: any = {}) {
 }
 
 describe('ActorCreationTools.getToolDefinitions', () => {
-  it('exposes exactly the three actor tools', () => {
+  it('exposes the compendium-pull tool, the deprecated create-actor alias, and the delete tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['create-actor', 'delete-actor', 'delete-folder']);
+    expect(names).toEqual([
+      'create-actor',
+      'create-actor-from-compendium',
+      'delete-actor',
+      'delete-folder',
+    ]);
   });
 
   it('every definition has an object inputSchema', () => {

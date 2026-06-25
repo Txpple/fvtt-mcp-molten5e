@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildToolRegistry } from '../registry.js';
+import { clearSystemCache } from '../utils/system-detection.js';
 import { makeFoundry, makeLogger } from './test-helpers.js';
 
 function build() {
@@ -44,11 +45,19 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 80 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 82 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(80);
+    expect(names.length).toBe(82);
+  });
+
+  it('advertises the actor-creation split and keeps create-actor as a deprecated alias', () => {
+    const { tools } = build();
+    const names = new Set(tools.map(t => t.name));
+    expect(names.has('create-actor-from-compendium')).toBe(true);
+    expect(names.has('author-npc')).toBe(true);
+    expect(names.has('create-actor')).toBe(true); // deprecated one-release alias, still advertised
   });
 
   it('advertises the actor-editing tools by name', () => {
@@ -124,5 +133,45 @@ describe('tool registry', () => {
     expect(calls.some(([op]) => op === 'getWorldInfo')).toBe(true);
 
     await expect(dispatch('no-such-tool', {})).rejects.toThrow(/Unknown tool/);
+  });
+
+  it('dispatches the actor-creation split and the create-actor alias to the right page ops', async () => {
+    // The deprecation alias must keep working BOTH ways, and the sharpest trap is the arg asymmetry:
+    // author-npc takes a FLAT stat block, while the alias's source='authored' branch unwraps
+    // args.statBlock. Exercise all four routes and assert which page op each reaches.
+    clearSystemCache(); // author-npc → assertDnd5e probes getWorldInfo (cached module-globally)
+    const { foundry, calls } = makeFoundry((name: string) => {
+      if (name === 'getWorldInfo') return { system: 'dnd5e' };
+      if (name === 'createActorFromCompendium')
+        return { success: true, totalCreated: 1, totalRequested: 1, actors: [{ name: 'X' }] };
+      if (name === 'createNpcActor') return { actor: { id: 'a1', name: 'Goblin' } };
+      return {};
+    });
+    const { dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
+
+    const compendiumArgs = {
+      packId: 'dnd-monster-manual.actors',
+      itemId: 'owlbear',
+      names: ['Hoot'],
+    };
+    const statBlock = {
+      name: 'Goblin',
+      creatureType: 'humanoid',
+      size: 'small',
+      cr: '1/4',
+      hpAverage: 7,
+      hpFormula: '2d6',
+      acMode: 'default',
+      abilities: { str: 8, dex: 14, con: 10, int: 10, wis: 8, cha: 8 },
+    };
+
+    await dispatch('create-actor-from-compendium', compendiumArgs);
+    await dispatch('author-npc', statBlock); // FLAT
+    await dispatch('create-actor', { source: 'compendium', ...compendiumArgs }); // alias → compendium
+    await dispatch('create-actor', { source: 'authored', statBlock }); // alias unwraps statBlock
+
+    const ops = calls.map(([op]) => op);
+    expect(ops.filter(op => op === 'createActorFromCompendium').length).toBe(2);
+    expect(ops.filter(op => op === 'createNpcActor').length).toBe(2);
   });
 });

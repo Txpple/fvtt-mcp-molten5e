@@ -70,7 +70,7 @@ try {
   const bio = `${TAG} customized from ${cHit.name}`;
 
   // --- 1. Prefab-as-base: copy + layer modifications in one call ---
-  console.log('\n# create-actor (compendium) + modifications');
+  console.log('\n# create-actor-from-compendium + modifications');
   const out = await f.call('createActorFromCompendium', {
     packId: cHit.pack,
     itemId: cHit.id,
