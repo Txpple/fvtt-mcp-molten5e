@@ -31,8 +31,9 @@ const AddFeaturesFromCompendiumSchema = z.object({
         'features, then PHB class features (the classes pack also holds the individual feature feats). ' +
         'SOURCE ONLY from the premium MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3). ' +
         'CAVEAT: a class/racial feature copied onto an NPC may carry an unresolved @scale.* damage/' +
-        'uses formula (its ScaleValue comes from the PC class/species advancement, absent on an NPC) — ' +
-        'verify and replace the formula with an explicit value after import.'
+        'uses formula (its ScaleValue comes from the PC class/species advancement, absent on an NPC). ' +
+        'This tool now REPORTS those tokens as a fact — each added feature lists its unresolvedScale ' +
+        '[{path, formula}] — so you can set an explicit die; it does not pick the value for you.'
     ),
 });
 
@@ -87,7 +88,9 @@ export class DnD5eFeaturesFromCompendiumTools {
           'NOTE: CLASS features ARE importable — the individual feature feats live in the classes ' +
           'pack (dnd-players-handbook.classes) alongside the class items. But a ' +
           'class/racial feature copied onto an NPC may carry an unresolved @scale.* formula (its ' +
-          'ScaleValue comes from the absent PC class/species advancement) — verify + fix it after import.\n\n' +
+          'ScaleValue comes from the absent PC class/species advancement). The report flags these as ' +
+          'a fact (unresolvedScale: [{path, formula}] per added feature) — set an explicit die for ' +
+          'the creature; the tool reports the token but never chooses the value (design.md §2.1).\n\n' +
           'DO NOT USE THIS TOOL for:\n' +
           '  - Importing spell items → use add-feature with featureType "spells" instead\n' +
           '  - Setting up spellcasting class or spell slots → use add-feature with featureType "spellcasting"\n' +

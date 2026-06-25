@@ -26,6 +26,26 @@ export function formatDeletionResult(result: any, noun: string): string {
 }
 
 /**
+ * Render the shared "unresolved @scale" advisory from a flat list of occurrences the copy tools
+ * REPORT as a fact (design.md §2.1). Each occurrence is `{ label, path, formula }` — what carried
+ * the token, where it lives, and the dangling formula. This advises the reader to set an explicit
+ * die; it deliberately proposes NO value (the die is the skill's/DM's judgment, never the tool's).
+ * Returns '' when there are none. `label` already names the feature/item (and actor, where copying
+ * many) so the same renderer serves features, items, and actor copies.
+ */
+export function formatUnresolvedScale(
+  occurrences: Array<{ label: string; path: string; formula: string }>
+): string {
+  if (!occurrences || occurrences.length === 0) return '';
+  const lines = occurrences.map(o => `  - ${o.label} — \`${o.path}\` = \`${o.formula}\``);
+  return (
+    `\n\n⚠️ **${occurrences.length} unresolved \`@scale\` token(s)** — these are fed by PC class/` +
+    `species advancement and dangle to 0 on an NPC. Set an explicit die for this creature (the tool ` +
+    `reports the token as a fact; it does not choose the value):\n${lines.join('\n')}`
+  );
+}
+
+/**
  * Render the result of a compendium import (spells or features) into the standard
  * actor-import report: an icon + summary line, a Requested/Added/Skipped/Not-found
  * tally, and per-bucket sections. `noun` is the capitalised content word in the
@@ -38,6 +58,7 @@ export function formatImportReport(result: any, totalRequested: number, noun: st
     packId: string;
     packLabel: string;
     itemId: string;
+    unresolvedScale?: Array<{ path: string; formula: string }>;
   }>;
   const skipped = result.skipped as Array<{ name: string; reason: string }>;
   const notFound = result.notFound as string[];
@@ -77,6 +98,14 @@ export function formatImportReport(result: any, totalRequested: number, noun: st
     lines.push('\n⚠️ **Warnings:**');
     for (const w of warnings) lines.push(`  - ${w}`);
   }
+
+  // Surface any unresolved @scale tokens the page reported on the copied features (advancement-fed;
+  // dangle on an NPC). The tool reports them; the skill sets the die.
+  const unresolvedScale = added.flatMap(a =>
+    (a.unresolvedScale ?? []).map(t => ({ label: a.name, path: t.path, formula: t.formula }))
+  );
+  const message = `${summary}\n\n${lines.join('\n')}${formatUnresolvedScale(unresolvedScale)}`;
+
   return {
     summary,
     success: added.length > 0 || (notFound.length === 0 && failed.length === 0),
@@ -86,6 +115,7 @@ export function formatImportReport(result: any, totalRequested: number, noun: st
     notFound,
     failed,
     warnings,
-    message: `${summary}\n\n${lines.join('\n')}`,
+    ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
+    message,
   };
 }

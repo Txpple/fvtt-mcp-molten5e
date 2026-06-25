@@ -109,6 +109,49 @@ export async function importFromCompendium(
   return { pack, source, data };
 }
 
+/**
+ * Deep-scan plain SOURCE data for unresolved dnd5e `@scale.*` roll-data tokens — the
+ * advancement-fed scaling references a copied 2024 class/racial feature carries (e.g. a
+ * dragonborn Breath Weapon's `@scale.dragonborn.breath-damage`). On a PC these resolve through
+ * class/species ADVANCEMENT; dropped onto an NPC (which has none) they dangle to 0. This REPORTS
+ * each occurrence as a fact — `{ path, formula }` — so a caller/skill can set an explicit die; it
+ * NEVER guesses the value (design.md §2.1: tools do correctness, skills decide judgment).
+ *
+ * It matches the literal `@scale.` token across every string value rather than knowing the
+ * shape: the token hides in activity damage `bonus`, `custom.formula`, `scaling.formula`, healing
+ * formulas, and `uses.max` / recovery formulas — scanning by field would miss one, scanning by
+ * token does not. Pass SOURCE data (`toObject()` / `toSource(doc)`), where dnd5e activity Maps are
+ * already plain objects (a live `system` would hide them). `path` is the dot-path to the offending
+ * string within `data` (e.g. `system.activities.<id>.damage.parts.0.bonus`). Returns [] when clean.
+ */
+export function findUnresolvedScaleTokens(data: unknown): Array<{ path: string; formula: string }> {
+  const out: Array<{ path: string; formula: string }> = [];
+  const seen = new WeakSet<object>();
+  const HAS_SCALE = /@scale\./;
+
+  const walk = (node: unknown, path: string): void => {
+    if (typeof node === 'string') {
+      if (HAS_SCALE.test(node)) out.push({ path, formula: node });
+      return;
+    }
+    if (node === null || typeof node !== 'object') return;
+    if (seen.has(node)) return; // guard cycles (a live doc can self-reference)
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        walk(node[i], path ? `${path}.${i}` : String(i));
+      }
+      return;
+    }
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      walk(v, path ? `${path}.${k}` : k);
+    }
+  };
+
+  walk(data, '');
+  return out;
+}
+
 // --- document sanitizer (single source of truth) ----------------------------
 // Hoisted from the byte-identical copies in actors.ts (`sanitize`) and items.ts
 // (`sanitizeData`/`removeSensitiveFields`). This is the page layer's single

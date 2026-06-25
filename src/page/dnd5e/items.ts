@@ -13,7 +13,12 @@
 // (a deterministic FormulaField stored as a STRING); weapon base damage lives in system.damage.base;
 // container membership is stored on the CHILD (child.system.container = container _id).
 
-import { resolveActorFuzzy, importFromCompendium } from '../_shared.js';
+import {
+  resolveActorFuzzy,
+  importFromCompendium,
+  toSource,
+  findUnresolvedScaleTokens,
+} from '../_shared.js';
 import { buildActivity } from './activities.js';
 import { createWorldItems } from '../items.js';
 
@@ -439,11 +444,13 @@ export async function importItemFromCompendium(data: any): Promise<unknown> {
     if (!created) {
       throw new Error(`Failed to copy item "${doc.name}" onto actor "${actor.name}"`);
     }
+    const unresolvedScale = findUnresolvedScaleTokens(toSource(created));
     return {
       success: true,
       source: { packId: data.packId, itemId: data.itemId, name: sourceName },
       target: { type: 'actor', id: actor.id, name: actor.name },
       item: { id: created.id, name: created.name, type: created.type },
+      ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
     };
   }
 
@@ -461,10 +468,13 @@ export async function importItemFromCompendium(data: any): Promise<unknown> {
   const created = res?.created?.[0];
   if (!created) throw new Error(`Failed to copy world item "${doc.name}"`);
 
+  // The world Item carries the same data as `doc`, which is already plain source — scan it directly.
+  const unresolvedScale = findUnresolvedScaleTokens(doc);
   return {
     success: true,
     source: { packId: data.packId, itemId: data.itemId, name: sourceName },
     target: { type: 'world', folderId: res.folderId, folderName: res.folderName },
     item: created,
+    ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
   };
 }

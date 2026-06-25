@@ -3,7 +3,11 @@
 // source documents, and createEmbeddedDocuments('Item', ...) onto the resolved actor.
 // Faithful port of data-access.ts addFeaturesFromCompendium (oracle 6603-6793, v0.9.3).
 
-import { resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
+import {
+  resolveActorFuzzy as findActorByIdentifier,
+  toSource,
+  findUnresolvedScaleTokens,
+} from '../_shared.js';
 import { DEFAULT_FEATURE_PACKS } from '../../utils/compendium-sources.js';
 
 // ---------------------------------------------------------------------------
@@ -88,7 +92,15 @@ export async function addFeaturesFromCompendium(args: {
   }
 
   // ── Phase C: per-feature search + import ─────────────────────────────
-  const added: Array<{ name: string; packId: string; packLabel: string; itemId: string }> = [];
+  const added: Array<{
+    name: string;
+    packId: string;
+    packLabel: string;
+    itemId: string;
+    // Unresolved @scale.* tokens this copied feature carries (advancement-fed; dangle to 0 on an
+    // NPC). REPORTED as a fact — the skill sets an explicit die; this code never guesses one.
+    unresolvedScale?: Array<{ path: string; formula: string }>;
+  }> = [];
   const notFound: string[] = [];
   const failed: Array<{ name: string; error: string }> = [];
 
@@ -140,11 +152,16 @@ export async function addFeaturesFromCompendium(args: {
     // 5. Embed individually — per-feature error isolation
     try {
       const [created] = (await actor.createEmbeddedDocuments('Item', [featureData])) as any[];
+      // Detect (don't resolve) any @scale.* tokens the copied feature carries: a 2024 class/racial
+      // feature's scaling comes from PC advancement the NPC lacks, so the token dangles to 0. Report
+      // it so the skill can patch an explicit die (design.md §6 NPC-with-PC-race workaround).
+      const unresolvedScale = findUnresolvedScaleTokens(toSource(created));
       added.push({
         name,
         packId: found.packId,
         packLabel: found.packLabel,
         itemId: created.id,
+        ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       });
     } catch (embedErr) {
       failed.push({

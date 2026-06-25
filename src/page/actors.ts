@@ -12,6 +12,7 @@ import {
   resolveActorFuzzy as resolveActor,
   getOrCreateFolder as getOrCreateFolderShared,
   importFromCompendium,
+  findUnresolvedScaleTokens,
   MCP_FLAG_SCOPE,
   toSource,
   sanitizeDocData as sanitize,
@@ -952,11 +953,27 @@ export async function createActorFromCompendium(request: {
         throw new Error(`Failed to create actor "${customName}"`);
       }
 
+      // Report (don't resolve) any @scale.* tokens the copied embedded items carry. A pure MM
+      // prefab is clean, but a humanoid built from PC class/racial features dangles them to 0 on an
+      // NPC — surface the token + its item so the skill can patch an explicit die (design.md §2.1/§6).
+      const unresolvedScale: Array<{
+        itemId: string;
+        itemName: string;
+        path: string;
+        formula: string;
+      }> = [];
+      for (const item of newActor.items ?? []) {
+        for (const t of findUnresolvedScaleTokens(toSource(item))) {
+          unresolvedScale.push({ itemId: item.id, itemName: item.name, ...t });
+        }
+      }
+
       createdActors.push({
         id: newActor.id,
         name: newActor.name,
         originalName: sourceActor.name,
         sourcePackLabel: pack.metadata.label,
+        ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       });
     } catch (error) {
       const errorMsg = `Failed to create actor ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`;

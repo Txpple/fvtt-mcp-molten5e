@@ -91,6 +91,26 @@ describe('handleImportItem — forwarding + formatting', () => {
     );
   });
 
+  it('surfaces an unresolved @scale token the page reports on the copy', async () => {
+    const { tools } = build({
+      success: true,
+      source: { packId: 'dnd-dungeon-masters-guide.equipment', itemId: 'staff1', name: 'Staff X' },
+      target: { type: 'actor', id: 'a1', name: 'Rhogar' },
+      item: { id: 'i4', name: 'Staff X', type: 'weapon' },
+      unresolvedScale: [{ path: 'system.uses.max', formula: '@scale.wizard.arcane-recovery' }],
+    });
+    const out = await tools.handleImportItem({
+      packId: 'dnd-dungeon-masters-guide.equipment',
+      itemId: 'staff1',
+      actorIdentifier: 'Rhogar',
+    });
+    expect(out.message).toContain('1 unresolved');
+    expect(out.message).toContain('@scale.wizard.arcane-recovery');
+    expect(out.unresolvedScale).toEqual([
+      { label: 'Staff X', path: 'system.uses.max', formula: '@scale.wizard.arcane-recovery' },
+    ]);
+  });
+
   it('formats a world-target copy', async () => {
     const { tools } = build({
       success: true,

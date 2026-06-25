@@ -5,6 +5,7 @@ import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { assertNoSrdPacks } from '../../utils/compendium-sources.js';
+import { formatUnresolvedScale } from '../../utils/format.js';
 
 /**
  * import-item — COPY a physical item from a compendium pack onto an actor (or into the world Items
@@ -130,13 +131,21 @@ export class DnD5eImportItemTool {
       `**Source:** \`${src.packId ?? '?'}\` / \`${src.itemId ?? '?'}\``,
       `**Target:** ${target}`,
     ].join('\n');
+    // The page reports any unresolved @scale tokens the copy carries (rare for gear, but a magic-item
+    // feature rider can); surface them so the skill sets the die.
+    const unresolvedScale = (result?.unresolvedScale ?? []).map((t: any) => ({
+      label: item.name ?? '?',
+      path: t.path,
+      formula: t.formula,
+    }));
     return {
       summary,
       success: true,
       item,
       source: result?.source,
       target: result?.target,
-      message: `${summary}\n\n${details}`,
+      ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
+      message: `${summary}\n\n${details}${formatUnresolvedScale(unresolvedScale)}`,
     };
   }
 }

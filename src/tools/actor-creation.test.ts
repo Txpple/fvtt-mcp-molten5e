@@ -125,6 +125,44 @@ describe('handleCreateActorFromCompendium', () => {
     expect(out.message).not.toContain('Issues');
   });
 
+  it('surfaces unresolved @scale tokens the page reports on a copied actor', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [
+        {
+          name: 'Drako',
+          id: 'a1',
+          unresolvedScale: [
+            {
+              itemId: 'i1',
+              itemName: 'Fire Breath Weapon',
+              path: 'system.activities.b.damage.parts.0.bonus',
+              formula: '@scale.dragonborn.breath-damage',
+            },
+          ],
+        },
+      ],
+      tokensPlaced: 0,
+    });
+    const out = await tools.handleCreateActorFromCompendium({
+      packId: 'dnd-monster-manual.actors',
+      itemId: 'drako-id',
+      names: ['Drako'],
+    });
+    expect(out.message).toContain('1 unresolved');
+    expect(out.message).toContain('Drako → Fire Breath Weapon');
+    expect(out.message).toContain('@scale.dragonborn.breath-damage');
+    expect(out.details.unresolvedScale).toEqual([
+      {
+        label: 'Drako → Fire Breath Weapon',
+        path: 'system.activities.b.damage.parts.0.bonus',
+        formula: '@scale.dragonborn.breath-damage',
+      },
+    ]);
+  });
+
   it('appends scene placement and error info when present', async () => {
     const { tools } = build({
       success: true,

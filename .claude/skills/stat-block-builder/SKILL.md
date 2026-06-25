@@ -56,11 +56,15 @@ with the actor-authoring tools.
 - **⚠️ @scale gotcha when copying PC features onto an NPC.** 2024 class features (from the classes pack)
   and racial features (from the origins pack) are authored for PCs: their damage/uses often use a
   `@scale.*` formula whose value comes from the PC's class/species ADVANCEMENT — which an NPC doesn't
-  have, so it resolves to nothing (0 damage). After importing such a feature onto an NPC, READ IT BACK
-  (`get-actor-entity`) and replace any `@scale.*` damage formula with an explicit die for the creature's
-  level (e.g. a level-3 dragonborn breath weapon → `1d10`). `@prof` resolves fine on NPCs; only
-  advancement-fed `@scale.*` dangles. (The full advancement-driven experience belongs to the future
-  PC-actor builder — see project notes.)
+  have, so it resolves to nothing (0 damage). **The copy tools now REPORT this for you as a fact** — a
+  feature imported with an unresolved token comes back with `unresolvedScale: [{path, formula}]` (and
+  the message flags it), so you don't have to hunt for it. **You** then set an explicit die sized to the
+  creature's CR/level: `update-actor-item` with a `patch` that sets that `path` to a literal die (e.g. a
+  CR-5 dragonborn's breath weapon → `2d6`). The token typically sits at
+  `system.activities.<id>.damage.parts.0.custom.formula` (a 2024 Breath Weapon has TWO activities — a
+  cone and a line — patch both). `@prof` resolves fine on NPCs; only advancement-fed `@scale.*` dangles.
+  The tool reports the token; **the die is your judgment, never the tool's** (design.md §2.1). (The full
+  advancement-driven experience belongs to the future PC-actor builder — see project notes.)
 
 ## Step 0 — Compendium first, then author
 
@@ -111,10 +115,12 @@ all**, just the feature names:
   PCs use).
 - **Racial abilities** (a dragonborn's Breath Weapon, etc.) live in the **origins** pack, which is *not*
   a default — so this is the one case you override `compendiumPacks: ["dnd-players-handbook.origins"]`.
-  E.g. a breath weapon is a `<Element> Breath Weapon` feat (`Fire Breath Weapon`, `Cold Breath Weapon`,
-  …) — import it (it carries the real cone+line save activities, type, uses), then **fix its `@scale.*`
-  damage formula** to an explicit die for the creature's level (see the @scale gotcha above). Don't
-  author racial abilities by hand.
+  E.g. in the 2024 PHB it is a single feat named **`Breath Weapon`** (the damage type follows the
+  dragonborn's Draconic Ancestry; set it to match) — import it by that name (it carries the real cone +
+  line save activities, type, uses), then **set its dangling `@scale` die** to an explicit value for the
+  creature's CR. The import REPORTS the token for you (`unresolvedScale` on the result, at
+  `system.activities.<id>.damage.parts.0.custom.formula = @scale.breath-weapon.die` on BOTH activities)
+  — patch each with `update-actor-item` (see the @scale gotcha above). Don't author racial abilities by hand.
 
 Only author from scratch with `add-feature` mode `feature` / `featureType: "passive"` (`featType:
 "monster"`, prerequisite in `requirements`) for genuinely homebrew traits with no compendium source.

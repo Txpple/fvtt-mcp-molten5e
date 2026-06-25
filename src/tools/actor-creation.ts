@@ -4,6 +4,7 @@ import { Logger } from '../logger.js';
 import { ErrorHandler } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
 import { assertNoSrdPacks } from '../utils/compendium-sources.js';
+import { formatUnresolvedScale } from '../utils/format.js';
 
 export interface ActorCreationToolsOptions {
   foundry: FoundryBridge;
@@ -387,6 +388,17 @@ export class ActorCreationTools {
 
     const errorInfo = result.errors?.length > 0 ? `\n⚠️ Issues: ${result.errors.join(', ')}` : '';
 
+    // A pure MM prefab copy is clean, but a humanoid built from PC class/racial features carries
+    // @scale tokens that dangle on an NPC — the page reports them per created actor/item. Surface
+    // them so the skill sets explicit dice on the world copy (the tool never picks the value).
+    const unresolvedScale = (result.actors ?? []).flatMap((a: any) =>
+      (a.unresolvedScale ?? []).map((t: any) => ({
+        label: `${a.name} → ${t.itemName}`,
+        path: t.path,
+        formula: t.formula,
+      }))
+    );
+
     return {
       summary,
       success: result.success,
@@ -398,8 +410,9 @@ export class ActorCreationTools {
         },
         tokensPlaced: result.tokensPlaced || 0,
         errors: result.errors,
+        ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       },
-      message: `${summary}\n\n${details}${sceneInfo}${errorInfo}`,
+      message: `${summary}\n\n${details}${sceneInfo}${errorInfo}${formatUnresolvedScale(unresolvedScale)}`,
     };
   }
 }

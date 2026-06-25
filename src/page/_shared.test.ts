@@ -16,6 +16,7 @@ import {
   toSource,
   sanitizeDocData,
   importFromCompendium,
+  findUnresolvedScaleTokens,
 } from './_shared.js';
 
 describe('normalizeAssetPath', () => {
@@ -207,5 +208,65 @@ describe('importFromCompendium', () => {
       },
     });
     await expect(importFromCompendium('pack.id', 'missing')).rejects.toThrow(/not found in pack/);
+  });
+});
+
+describe('findUnresolvedScaleTokens', () => {
+  it('finds an @scale token in a nested activity damage formula and reports its dot-path', () => {
+    // The real shape of the live 2024 PHB Breath Weapon feat (toObject form: activities is a plain
+    // object) — the token lives in damage.parts[].custom.formula, NOT in `bonus` (verified live on
+    // sandbox), which is exactly why the scan walks every string field rather than known fields.
+    const feat = {
+      name: 'Breath Weapon',
+      system: {
+        activities: {
+          abc123: {
+            type: 'save',
+            damage: {
+              parts: [
+                { types: ['fire'], custom: { enabled: true, formula: '@scale.breath-weapon.die' } },
+              ],
+            },
+          },
+        },
+      },
+    };
+    expect(findUnresolvedScaleTokens(feat)).toEqual([
+      {
+        path: 'system.activities.abc123.damage.parts.0.custom.formula',
+        formula: '@scale.breath-weapon.die',
+      },
+    ]);
+  });
+
+  it('catches @scale in uses.max and in mid-string formulas alike', () => {
+    const tokens = findUnresolvedScaleTokens({
+      system: {
+        uses: { max: '@scale.monk.martial-arts' },
+        activities: { x: { healing: { bonus: '2 + @scale.cleric.channel-divinity' } } },
+      },
+    });
+    expect(tokens).toEqual([
+      { path: 'system.uses.max', formula: '@scale.monk.martial-arts' },
+      { path: 'system.activities.x.healing.bonus', formula: '2 + @scale.cleric.channel-divinity' },
+    ]);
+  });
+
+  it('returns [] for a clean creature whose formulas are explicit dice (e.g. an MM prefab)', () => {
+    expect(
+      findUnresolvedScaleTokens({
+        system: {
+          activities: { a: { damage: { parts: [{ formula: '2d6 + 3', bonus: '@prof' }] } } },
+        },
+      })
+    ).toEqual([]); // @prof resolves fine on an NPC; only @scale dangles
+  });
+
+  it('does not loop on a circular reference', () => {
+    const node: any = { system: { uses: { max: '@scale.barbarian.rage-damage' } } };
+    node.self = node;
+    expect(findUnresolvedScaleTokens(node)).toEqual([
+      { path: 'system.uses.max', formula: '@scale.barbarian.rage-damage' },
+    ]);
   });
 });
