@@ -4,6 +4,7 @@ import { Logger } from '../../logger.js';
 import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
+import { assertNoSrdPacks } from '../../utils/compendium-sources.js';
 
 /**
  * import-item — COPY a physical item from a compendium pack onto an actor (or into the world Items
@@ -97,6 +98,7 @@ export class DnD5eImportItemTool {
   async handleImportItem(args: any): Promise<any> {
     try {
       const parsed = ImportItemSchema.parse(args ?? {});
+      assertNoSrdPacks(parsed.packId, 'import-item');
       await assertDnd5e(this.foundry, this.logger, 'import-item');
 
       this.logger.info('Copying item from compendium', {

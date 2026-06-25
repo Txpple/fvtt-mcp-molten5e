@@ -488,7 +488,14 @@ describe('handleAddFeature — spells', () => {
   it('forwards addSpellsToActor with default packs and formats an added report', async () => {
     const { tools, calls } = build({
       actor: { id: 'a1', name: 'Wizard' },
-      added: [{ name: 'Fireball', packId: 'dnd5e.spells24', packLabel: 'Spells', itemId: 's1' }],
+      added: [
+        {
+          name: 'Fireball',
+          packId: 'dnd-players-handbook.spells',
+          packLabel: 'Spells',
+          itemId: 's1',
+        },
+      ],
       skipped: [],
       notFound: [],
       failed: [],

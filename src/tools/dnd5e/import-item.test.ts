@@ -94,11 +94,18 @@ describe('handleImportItem — forwarding + formatting', () => {
   it('formats a world-target copy', async () => {
     const { tools } = build({
       success: true,
-      source: { packId: 'dnd5e.equipment24', itemId: 'potion1', name: 'Potion of Healing' },
+      source: {
+        packId: 'dnd-dungeon-masters-guide.equipment',
+        itemId: 'potion1',
+        name: 'Potion of Healing',
+      },
       target: { type: 'world', folderName: 'Loot' },
       item: { id: 'i3', name: 'Potion of Healing', type: 'consumable' },
     });
-    const out = await tools.handleImportItem({ packId: 'dnd5e.equipment24', itemId: 'potion1' });
+    const out = await tools.handleImportItem({
+      packId: 'dnd-dungeon-masters-guide.equipment',
+      itemId: 'potion1',
+    });
     expect(out.summary).toBe('✅ Copied "Potion of Healing" onto world Items (folder "Loot")');
   });
 });

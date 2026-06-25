@@ -5,7 +5,7 @@ import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
-import { DEFAULT_FEATURE_PACKS } from '../../utils/compendium-sources.js';
+import { DEFAULT_FEATURE_PACKS, assertNoSrdPacks } from '../../utils/compendium-sources.js';
 
 // Single source of truth for this tool's input contract: the handler parses with this schema and
 // getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised and
@@ -103,6 +103,7 @@ export class DnD5eFeaturesFromCompendiumTools {
 
   async handleAddFeaturesFromCompendium(args: any): Promise<any> {
     const parsed = AddFeaturesFromCompendiumSchema.parse(args);
+    assertNoSrdPacks(parsed.compendiumPacks, 'add-feature compendium-features');
 
     this.logger.info('Adding features to D&D 5e actor from compendium', {
       actorIdentifier: parsed.actorIdentifier,

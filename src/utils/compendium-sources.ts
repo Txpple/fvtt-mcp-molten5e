@@ -37,6 +37,25 @@ export function isPremiumBookPack(packId: string): boolean {
   );
 }
 
+/**
+ * Throw if any supplied pack id is an SRD (`dnd5e.*`) pack. The PULL tools (create-actor from
+ * compendium, import-item, add-feature's compendium modes) call this on the caller-supplied
+ * pack(s), so "books only, never SRD" (design.md §2.3) is enforced BY CONSTRUCTION — not just by
+ * defaults / ranking / skill prose. A manual call or skill slip that names an SRD pack is refused
+ * with a message pointing at the premium equivalent.
+ */
+export function assertNoSrdPacks(packIds: string | readonly string[], context?: string): void {
+  const ids = typeof packIds === 'string' ? [packIds] : packIds;
+  const srd = ids.filter(isSrdPack);
+  if (srd.length > 0) {
+    throw new Error(
+      `Refusing to source from SRD pack(s) [${srd.join(', ')}]${context ? ` in ${context}` : ''}: ` +
+        'per design.md §2.3 we author ONLY from the premium MM/PHB/DMG books, never the dnd5e.* SRD. ' +
+        'Use the premium equivalent (dnd-monster-manual.*, dnd-players-handbook.*, dnd-dungeon-masters-guide.*).'
+    );
+  }
+}
+
 // --- Authoring tool pack defaults (premium books only; never SRD) -----------------------------
 // What the tools fall back to when the caller/skill doesn't name packs explicitly.
 

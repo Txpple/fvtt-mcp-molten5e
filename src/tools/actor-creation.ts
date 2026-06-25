@@ -3,6 +3,7 @@ import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
 import { ErrorHandler } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
+import { assertNoSrdPacks } from '../utils/compendium-sources.js';
 
 export interface ActorCreationToolsOptions {
   foundry: FoundryBridge;
@@ -191,6 +192,7 @@ export class ActorCreationTools {
     });
 
     const { packId, itemId, names, quantity, addToScene, placement } = schema.parse(args);
+    assertNoSrdPacks(packId, 'create-actor (compendium source)');
     const finalQuantity = quantity || names.length;
 
     this.logger.info('Creating actors from specific compendium entry', {

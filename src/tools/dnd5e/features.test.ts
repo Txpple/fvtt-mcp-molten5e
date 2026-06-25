@@ -71,7 +71,7 @@ describe('handleAddFeaturesFromCompendium — bridge forwarding & formatting', (
         added: [
           {
             name: 'Pack Tactics',
-            packId: 'dnd5e.monsterfeatures',
+            packId: 'dnd-monster-manual.features',
             packLabel: 'Monster Features',
             itemId: 'i1',
           },
@@ -103,10 +103,10 @@ describe('handleAddFeaturesFromCompendium — bridge forwarding & formatting', (
     await tools.handleAddFeaturesFromCompendium({
       actorIdentifier: 'X',
       featureNames: ['Multiattack'],
-      compendiumPacks: ['dnd5e.monsterfeatures24'],
+      compendiumPacks: ['dnd-monster-manual.features'],
     });
     const bridgeCall = calls.find(c => c[0] === 'addFeaturesFromCompendium');
-    expect(bridgeCall![1].compendiumPacks).toEqual(['dnd5e.monsterfeatures24']);
+    expect(bridgeCall![1].compendiumPacks).toEqual(['dnd-monster-manual.features']);
   });
 
   it('uses the 🔍 icon and lists not-found features when none failed', async () => {

@@ -49,13 +49,13 @@ describe('handleCreateActorFromCompendium', () => {
       tokensPlaced: 0,
     });
     await tools.handleCreateActorFromCompendium({
-      packId: 'dnd5e.monsters',
+      packId: 'dnd-monster-manual.actors',
       itemId: 'owlbear-id',
       names: ['Flameheart'],
     });
     expect(calls[0][0]).toBe('createActorFromCompendium');
     expect(calls[0][1]).toMatchObject({
-      packId: 'dnd5e.monsters',
+      packId: 'dnd-monster-manual.actors',
       itemId: 'owlbear-id',
       customNames: ['Flameheart'],
       quantity: 1,
@@ -113,14 +113,14 @@ describe('handleCreateActorFromCompendium', () => {
       tokensPlaced: 0,
     });
     const out = await tools.handleCreateActorFromCompendium({
-      packId: 'dnd5e.monsters',
+      packId: 'dnd-monster-manual.actors',
       itemId: 'goblin-id',
       names: ['Sneak', 'Peek'],
     });
     expect(out.summary).toBe('✅ Created 2 of 2 requested actors');
     expect(out.message).toContain('✅ Created 2 of 2 requested actors');
-    expect(out.message).toContain('• **Sneak** (from dnd5e.monsters)');
-    expect(out.message).toContain('• **Peek** (from dnd5e.monsters)');
+    expect(out.message).toContain('• **Sneak** (from dnd-monster-manual.actors)');
+    expect(out.message).toContain('• **Peek** (from dnd-monster-manual.actors)');
     expect(out.message).not.toContain('Added');
     expect(out.message).not.toContain('Issues');
   });

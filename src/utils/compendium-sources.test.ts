@@ -3,6 +3,7 @@ import {
   isSrdPack,
   isPremiumBookPack,
   packPriority,
+  assertNoSrdPacks,
   PREMIUM_BOOK_PREFIXES,
   DEFAULT_SPELL_PACKS,
   DEFAULT_FEATURE_PACKS,
@@ -88,6 +89,29 @@ describe('compendium-sources — library policy (design.md §2.3: books only, ne
       for (const prefix of PREMIUM_BOOK_PREFIXES) {
         expect(prefix.startsWith('dnd5e.')).toBe(false);
       }
+    });
+  });
+
+  describe('assertNoSrdPacks (the active pull guard — design.md §2.3 by construction)', () => {
+    it('throws on a single SRD pack id', () => {
+      expect(() => assertNoSrdPacks('dnd5e.spells24', 'import-item')).toThrow(/SRD/);
+    });
+
+    it('throws if ANY pack in a list is SRD, naming the offender', () => {
+      expect(() => assertNoSrdPacks(['dnd-players-handbook.spells', 'dnd5e.spells24'])).toThrow(
+        /dnd5e\.spells24/
+      );
+    });
+
+    it('points at the premium equivalent in the message', () => {
+      expect(() => assertNoSrdPacks('dnd5e.monsters')).toThrow(/premium/i);
+    });
+
+    it('passes for premium-only packs (single or list)', () => {
+      expect(() => assertNoSrdPacks('dnd-dungeon-masters-guide.equipment')).not.toThrow();
+      expect(() =>
+        assertNoSrdPacks(['dnd-monster-manual.features', 'dnd-players-handbook.classes'])
+      ).not.toThrow();
     });
   });
 });

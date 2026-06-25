@@ -71,6 +71,11 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   both searches (`compendium.ts`, `creature-index.ts`); rewrote every tool description + both builder
   skills to premium-only / never-SRD; test asserts the defaults are SRD-free + premium-first ordering.
   Full sweep confirms zero SRD-pull paths remain. Gate green (648 tests).
+- [x] **0.1c — Active SRD-rejection guard** (Inv. 1+2, tool, S) — **landed `master`.** `assertNoSrdPacks`
+  in `compendium-sources.ts`, wired into all four PULL entry points (`create-actor` compendium,
+  `import-item`, `add-feature` spells + compendium-features) — a caller/skill that names an SRD pack is
+  now *refused* with a message pointing at the premium equivalent. "Never SRD" is enforced BY
+  CONSTRUCTION, not just by defaults/ranking/prose. Tests cover the guard; gate green (652).
 - [ ] **0.2 — One copy primitive** (Inv. 2, tool, M). Whole-doc copy → `importFromCompendium`; keep
   the centralized hand-roll for embedded-item copy. *Done when:* each copy path routes through one
   primitive; **parity verified live**.

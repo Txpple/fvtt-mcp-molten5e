@@ -5,7 +5,7 @@ import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
-import { DEFAULT_SPELL_PACKS } from '../../utils/compendium-sources.js';
+import { DEFAULT_SPELL_PACKS, assertNoSrdPacks } from '../../utils/compendium-sources.js';
 
 // ---------------------------------------------------------------------------
 // Canonical value sets for soft validation (warnings, not errors)
@@ -1140,6 +1140,7 @@ export class DnD5eAddFeatureTool {
     });
 
     const parsed = schema.parse(args);
+    assertNoSrdPacks(parsed.compendiumPacks, 'add-feature spells');
 
     this.logger.info('Adding spells to D&D 5e actor', {
       actorIdentifier: parsed.actorIdentifier,
