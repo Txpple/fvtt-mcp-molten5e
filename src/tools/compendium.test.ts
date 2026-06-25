@@ -78,7 +78,7 @@ describe('CompendiumTools.getToolDefinitions', () => {
 });
 
 describe('handleSearchCompendium', () => {
-  it('forwards query + packType + filters to searchCompendium and shapes the result', async () => {
+  it('forwards query + packType to searchCompendium (name-only) and shapes the result', async () => {
     const bridgeResults = [
       { id: 'i1', name: 'Goblin', type: 'npc', pack: 'p1', packLabel: 'Monsters' },
       { id: 'i2', name: 'Goblin Boss', type: 'npc', pack: 'p1', packLabel: 'Monsters' },
@@ -90,18 +90,16 @@ describe('handleSearchCompendium', () => {
       packType: 'Actor',
     });
 
-    // getWorldInfo (detection) then the search call.
+    // getWorldInfo (detection) then the search call — name-only, no filters forwarded.
     const searchCall = calls.find(c => c[0] === 'searchCompendium');
     expect(searchCall).toBeDefined();
     expect(searchCall![1]).toEqual({
       query: 'goblin',
       packType: 'Actor',
-      filters: undefined,
     });
 
     expect(out.query).toBe('goblin');
     expect(out.gameSystem).toBe('dnd5e');
-    expect(out.filterDescription).toBe('no filters');
     expect(out.totalFound).toBe(2);
     expect(out.showing).toBe(2);
     expect(out.hasMore).toBe(false);
@@ -112,21 +110,6 @@ describe('handleSearchCompendium', () => {
       type: 'npc',
       pack: { id: 'p1', label: 'Monsters' },
     });
-  });
-
-  it('describes filters and includes them in the bridge payload', async () => {
-    const { tools, calls } = build('dnd5e', []);
-    const out = await tools.handleSearchCompendium({
-      query: 'dragon',
-      filters: { challengeRating: 12, creatureType: 'dragon' },
-    });
-
-    const searchCall = calls.find(c => c[0] === 'searchCompendium');
-    expect(searchCall![1].filters).toEqual({
-      challengeRating: 12,
-      creatureType: 'dragon',
-    });
-    expect(out.filterDescription).toBe('CR 12, dragon');
   });
 
   it('reports an empty result set cleanly', async () => {

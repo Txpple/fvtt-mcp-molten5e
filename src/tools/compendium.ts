@@ -7,7 +7,6 @@ import {
   getCreatureType,
   type GameSystem,
 } from '../utils/system-detection.js';
-import { GenericFiltersSchema, describeFilters } from '../utils/compendium-filters.js';
 import { assertNoSrdPacks, isSrdPack } from '../utils/compendium-sources.js';
 import { toInputSchema } from '../utils/schema.js';
 
@@ -28,9 +27,6 @@ const SearchCompendiumSchema = z.object({
     .string()
     .optional()
     .describe('Optional filter by pack type (e.g., "Item", "Actor", "JournalEntry")'),
-  filters: GenericFiltersSchema.optional().describe(
-    'LIMITED FUNCTIONALITY: Only works on Actor packs using name-based heuristics. challengeRating searches for keywords like "ancient" (CR 15+), "adult" (CR 10+), "captain" (CR 5+). creatureType searches for type keywords in names. Does NOT check actual system data. For accurate filtering, use search-compendium-creatures instead.'
-  ),
   limit: z
     .number()
     .min(1)
@@ -319,7 +315,7 @@ export class CompendiumTools {
       {
         name: 'search-compendium',
         description:
-          'Search the premium book compendium packs by name. The SRD (dnd5e.*) packs are NOT searched and never appear in results — the authoring library is the premium books only (design.md §2.3). IMPORTANT LIMITATIONS: (1) Text search only matches entity NAMES - descriptions and traits are NOT searchable. (2) Filters use name heuristics only (not actual system data) and only work on Actor packs - challengeRating and creatureType filters search for keywords like "ancient", "legendary", "humanoid", etc. in entity names. For accurate filtering by level/CR, traits, or rarity, use search-compendium-creatures instead. For best results, use broad name-based searches (e.g., "dragon", "knight") and inspect individual items with get-compendium-entry.',
+          'Broad NAME search across the premium book compendium packs (any document type). The SRD (dnd5e.*) packs are NOT searched and never appear in results — the authoring library is the premium books only (design.md §2.3). Matches entity NAMES only (all whitespace-separated terms must appear); descriptions and traits are NOT searchable. Premium-first ranked, exact-name first. For faceted discovery by real system data (CR/type/size, spell level/school, item rarity/type), use the type-specific tools instead: search-compendium-creatures, search-compendium-spells, search-compendium-items. Use this for a quick name lookup, then inspect with get-compendium-entry.',
         inputSchema: toInputSchema(SearchCompendiumSchema),
       },
       {
@@ -394,20 +390,14 @@ export class CompendiumTools {
       }
     }
 
-    const { query, packType, filters, limit } = parsedArgs;
+    const { query, packType, limit } = parsedArgs;
 
-    // Log system detection and filters
-    this.logger.info('Compendium search with system detection', {
-      gameSystem,
-      query,
-      filters: filters ? describeFilters(filters, gameSystem) : 'none',
-    });
+    this.logger.info('Compendium name search', { gameSystem, query, packType });
 
     try {
       const results = await this.foundry.call('searchCompendium', {
         query,
         packType,
-        filters,
       });
 
       // Enforced backstop to the page-side exclusion: an SRD (`dnd5e.*`) hit is never a result
@@ -428,7 +418,6 @@ export class CompendiumTools {
       return {
         query,
         gameSystem, // Include detected system in response
-        filterDescription: filters ? describeFilters(filters, gameSystem) : 'no filters',
         results: limitedResults.map((item: any) => this.formatCompendiumItem(item, gameSystem)),
         totalFound: visibleResults.length,
         showing: limitedResults.length,

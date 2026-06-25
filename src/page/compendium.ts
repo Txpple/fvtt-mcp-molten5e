@@ -12,14 +12,6 @@ import { excludeSrdPacks, packPriority } from '../utils/compendium-sources.js';
 interface CompendiumSearchArgs {
   query: string;
   packType?: string;
-  filters?: {
-    challengeRating?: number | { min?: number; max?: number };
-    creatureType?: string;
-    size?: string;
-    alignment?: string;
-    hasLegendaryActions?: boolean;
-    spellcaster?: boolean;
-  };
 }
 
 interface CompendiumSearchResult {
@@ -71,10 +63,11 @@ interface CompendiumEntryFull {
 const RESULT_LIMIT = 100;
 
 /**
- * Search every (non-Scene) compendium pack's index for entries whose NAME
- * matches all whitespace-separated terms in the query. Name-only matching —
- * descriptions/traits are not indexed. Results are ranked (exact-name first,
- * then optional filter relevance, then alphabetical) and capped at 50.
+ * Search every (non-Scene) premium compendium pack's index for entries whose NAME matches all
+ * whitespace-separated terms in the query. Name-only matching — descriptions/traits are not
+ * indexed, and there is no faceted/heuristic filtering (use search-compendium-creatures/-spells/
+ * -items for real-system-data facets). Results are ranked (premium-first, exact-name, then
+ * alphabetical) and capped at 50.
  *
  * The Node tool re-applies its own limit on top of this; we return the same
  * CompendiumSearchResult[] shape it forwards from the bridge.
@@ -84,7 +77,6 @@ export async function searchCompendium(
 ): Promise<CompendiumSearchResult[]> {
   const query = args?.query;
   const packType = args?.packType;
-  const filters = args?.filters;
 
   if (!query || typeof query !== 'string' || query.trim().length < 2) {
     throw new Error('Search query must be a string with at least 2 characters');
@@ -139,43 +131,6 @@ export async function searchCompendium(
             continue;
           }
 
-          // Optional name-heuristic filtering, Actor packs only.
-          if (
-            filters &&
-            shouldApplyFilters(typedEntry, filters) &&
-            pack.metadata.type === 'Actor'
-          ) {
-            const searchCriteria: { searchTerms?: string[] } = {};
-
-            if (filters.challengeRating) {
-              const crTerms: string[] = [];
-              if (typeof filters.challengeRating === 'number') {
-                if (filters.challengeRating >= 15) {
-                  crTerms.push('ancient', 'legendary', 'elder', 'greater');
-                } else if (filters.challengeRating >= 10) {
-                  crTerms.push('adult', 'warlord', 'champion', 'master');
-                } else if (filters.challengeRating >= 5) {
-                  crTerms.push('captain', 'knight', 'priest', 'mage');
-                } else {
-                  crTerms.push('guard', 'soldier', 'warrior', 'scout');
-                }
-              }
-              searchCriteria.searchTerms = crTerms;
-            }
-
-            if (filters.creatureType) {
-              const typeTerms = [filters.creatureType];
-              if (filters.creatureType.toLowerCase() === 'humanoid') {
-                typeTerms.push('human', 'elf', 'dwarf', 'orc', 'goblin');
-              }
-              searchCriteria.searchTerms = [...(searchCriteria.searchTerms || []), ...typeTerms];
-            }
-
-            if (!matchesSearchCriteria(typedEntry, searchCriteria)) {
-              continue;
-            }
-          }
-
           results.push({
             id: typedEntry._id || '',
             name: typedEntry.name,
@@ -200,7 +155,7 @@ export async function searchCompendium(
     if (results.length >= RESULT_LIMIT) break;
   }
 
-  // Relevance ranking: exact name, then filter score, then alphabetical.
+  // Relevance ranking: premium-first, then exact name, then alphabetical.
   results.sort((a, b) => {
     // Premium books first, SRD (dnd5e.*) always last — we author only from the books (design.md §2.3).
     const aPri = packPriority(a.pack);
@@ -211,12 +166,6 @@ export async function searchCompendium(
     const bExact = b.name.toLowerCase() === query.toLowerCase();
     if (aExact && !bExact) return -1;
     if (!aExact && bExact) return 1;
-
-    if (filters) {
-      const aScore = calculateRelevanceScore(a, filters, query);
-      const bScore = calculateRelevanceScore(b, filters, query);
-      if (aScore !== bScore) return bScore - aScore;
-    }
 
     return a.name.localeCompare(b.name);
   });
@@ -301,80 +250,6 @@ export async function getCompendiumDocumentFull(
 }
 
 // --- local helpers -------------------------------------------------------
-
-/** Only NPC/character/creature entries are eligible for name-heuristic filtering. */
-function shouldApplyFilters(entry: any, filters: any): boolean {
-  if (entry.type !== 'npc' && entry.type !== 'character' && entry.type !== 'creature') {
-    return false;
-  }
-  return Object.keys(filters).some(key => filters[key] !== undefined);
-}
-
-/** Name-based heuristic: pass if the entry name contains any of the derived terms. */
-function matchesSearchCriteria(entry: any, criteria: { searchTerms?: string[] }): boolean {
-  const terms = criteria.searchTerms;
-  if (!terms || terms.length === 0) {
-    return true;
-  }
-  const nameLower = (entry.name || '').toLowerCase();
-  return terms.some(term => nameLower.includes(term.toLowerCase()));
-}
-
-/** Heuristic relevance score used to rank filtered Actor searches. */
-function calculateRelevanceScore(entry: any, filters: any, query: string): number {
-  let score = 0;
-  const system = entry.system || {};
-
-  if (filters.creatureType) {
-    const entryType = system.details?.type?.value || system.type?.value || '';
-    if (entryType.toLowerCase() === filters.creatureType.toLowerCase()) {
-      score += 20;
-    }
-  }
-
-  if (filters.challengeRating !== undefined) {
-    const entryCR = system.details?.cr || system.cr || 0;
-    if (typeof filters.challengeRating === 'number') {
-      if (entryCR === filters.challengeRating) score += 15;
-    } else if (typeof filters.challengeRating === 'object') {
-      const { min, max } = filters.challengeRating;
-      if (min !== undefined && max !== undefined) {
-        if (entryCR >= min && entryCR <= max) {
-          score += 10;
-          const rangeMid = (min + max) / 2;
-          const distFromMid = Math.abs(entryCR - rangeMid);
-          score += Math.max(0, 5 - distFromMid);
-        }
-      }
-    }
-  }
-
-  const commonNames = [
-    'knight',
-    'warrior',
-    'guard',
-    'soldier',
-    'mage',
-    'priest',
-    'bandit',
-    'orc',
-    'goblin',
-    'dragon',
-  ];
-  const lowerName = (entry.name || '').toLowerCase();
-  if (commonNames.some(name => lowerName.includes(name))) {
-    score += 5;
-  }
-
-  const queryTerms = query.toLowerCase().split(' ');
-  for (const term of queryTerms) {
-    if (term.length > 2 && lowerName.includes(term)) {
-      score += 3;
-    }
-  }
-
-  return score;
-}
 
 /**
  * JSON-safe sanitize: strips sensitive/problematic/deprecated fields and most

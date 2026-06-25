@@ -69,10 +69,15 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
   orphaned `hasSpellcasting`/`formatCreatureListItem`. Repointed the 4 live harnesses (reads +
   write-cycle integration tests, verify-reads + verify-write-tools scripts) to
   `searchCompendiumFaceted`. Gate green (690 tests). Skill prose realign → 3a. **Live verify → Phase 4.**
-- [ ] **2d — Reduce `search-compendium` to name-only** (#3): delete the name-heuristic `filters`
-  (`GenericFiltersSchema` usage) + the keyword-guess code in `src/page/compendium.ts`; keep the
-  premium-only name-index scan. Update the tool description.
-- [ ] **2e — Registry + counts**: register 2a/2b; update `registry.test.ts` / advertised tool count.
+- [x] **2d — Reduce `search-compendium` to name-only** (#3): removed the name-heuristic `filters`
+  (schema field + `GenericFiltersSchema`/`describeFilters` imports) and the keyword-guess code in
+  `src/page/compendium.ts` (the CR/type term-guessing + `calculateRelevanceScore`/`matchesSearchCriteria`/
+  `shouldApplyFilters` helpers). **Deleted the now-dead `src/utils/compendium-filters.ts` module.**
+  Kept the premium-only name-index scan + premium-first/exact-name ranking. Tool description rewritten
+  to point faceted queries at the type-specific tools. Gate green (689 tests).
+- [x] **2e — Registry + counts**: 2a/2b were registered in `registry.ts` and `registry.test.ts` count
+  bumped to **78** in their own commits; the `CompendiumTools` "six tools" test covers the surface. No
+  separate change needed.
 
 ### Phase 3 — Skills (ship with their tools)
 - [ ] **3a — `stat-block-builder`**: discover via `search-compendium-creatures` / `-spells` by
