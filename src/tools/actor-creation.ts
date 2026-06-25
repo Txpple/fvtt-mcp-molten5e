@@ -76,6 +76,17 @@ const CreateActorSchema = z.object({
     })
     .optional()
     .describe('Token placement options (only used when addToScene is true)'),
+  modifications: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe(
+      "PREFAB-AS-BASE bridge (source='compendium' only): stat edits to layer onto the instantiated " +
+        'WORLD COPY — copy a close-matching Monster Manual creature, then customize it in one call ' +
+        '(the §6 step-2 path). Same shape as update-actor, e.g. {cr, hp:{value,max,formula}, ' +
+        'ac:{calc,flat}, abilities:{str,…}, skills:[{skill,proficiency}], damageResistances:{values}, ' +
+        'biography, currency:{mode,gp,…}}. Applied to the copy ONLY — the source compendium entry is ' +
+        'never modified. Use names[] for the name, not this. Applies to every copy when quantity > 1.'
+    ),
   statBlock: z
     .record(z.string(), z.any())
     .optional()
@@ -138,7 +149,9 @@ export class ActorCreationTools {
       {
         name: 'create-actor',
         description:
-          "Create one or more actors (NPCs/monsters/characters). source='compendium' (DEFAULT, preferred): copy an existing entry from a compendium pack — the normal path for official content (e.g. pull the Owlbear from the Monster Manual). Find the entry with search-compendium / get-compendium-entry, then pass its packId + itemId plus names[] for the new actors. source='authored': build an NPC from scratch via the statBlock object — use ONLY when the creature is not available in the installed PHB/DMG/MM compendiums; if it's missing, tell the user and ask before authoring rather than inventing content.",
+          "Create one or more actors (NPCs/monsters/characters). source='compendium' (DEFAULT, preferred): copy an existing entry from a compendium pack — the normal path for official content (e.g. pull the Owlbear from the Monster Manual). Find the entry with search-compendium / get-compendium-entry, then pass its packId + itemId plus names[] for the new actors. " +
+          'PREFAB-AS-BASE (the §6 step-2 bridge): to make a CUSTOM creature, copy the closest Monster Manual match and pass `modifications` (update-actor-shaped stat edits — cr/hp/ac/abilities/skills/defenses/biography/currency) to layer onto the world copy in the SAME call; the edits land on the copy only, never the source entry. ' +
+          "source='authored': build an NPC from scratch via the statBlock object — the LAST resort, used ONLY when nothing in the premium MM/PHB/DMG books is a workable base; if it's missing, tell the user and ask before authoring rather than inventing content.",
         inputSchema: toInputSchema(CreateActorSchema),
       },
       {
@@ -190,9 +203,12 @@ export class ActorCreationTools {
             .optional(),
         })
         .optional(),
+      // Prefab-as-base bridge: optional update-actor-shaped edits layered onto the world copy.
+      modifications: z.record(z.string(), z.any()).optional(),
     });
 
-    const { packId, itemId, names, quantity, addToScene, placement } = schema.parse(args);
+    const { packId, itemId, names, quantity, addToScene, placement, modifications } =
+      schema.parse(args);
     assertNoSrdPacks(packId, 'create-actor (compendium source)');
     const finalQuantity = quantity || names.length;
 
@@ -225,6 +241,8 @@ export class ActorCreationTools {
               coordinates: placement.coordinates,
             }
           : undefined,
+        // Prefab-as-base: layer these edits onto the world copy (never the compendium source).
+        ...(modifications ? { modifications } : {}),
       });
 
       this.logger.info('Actor creation completed', {
@@ -388,6 +406,19 @@ export class ActorCreationTools {
 
     const errorInfo = result.errors?.length > 0 ? `\n⚠️ Issues: ${result.errors.join(', ')}` : '';
 
+    // Prefab-as-base: report which stat edits were layered onto the world copy (same on every copy),
+    // plus any soft-validation warnings update-actor raised. Confirms the bridge touched the COPY.
+    const firstMod = (result.actors ?? []).find((a: any) => a.modifications)?.modifications;
+    const modApplied: string[] = firstMod?.applied ?? [];
+    const modWarnings: string[] = Array.from(
+      new Set((result.actors ?? []).flatMap((a: any) => a.modifications?.warnings ?? []))
+    );
+    const modInfo =
+      modApplied.length > 0
+        ? `\n🔧 Layered onto the copy: ${modApplied.join(', ')}` +
+          (modWarnings.length > 0 ? `\n⚠️ Modification warnings: ${modWarnings.join('; ')}` : '')
+        : '';
+
     // A pure MM prefab copy is clean, but a humanoid built from PC class/racial features carries
     // @scale tokens that dangle on an NPC — the page reports them per created actor/item. Surface
     // them so the skill sets explicit dice on the world copy (the tool never picks the value).
@@ -410,9 +441,12 @@ export class ActorCreationTools {
         },
         tokensPlaced: result.tokensPlaced || 0,
         errors: result.errors,
+        ...(modApplied.length > 0
+          ? { modifications: { applied: modApplied, warnings: modWarnings } }
+          : {}),
         ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       },
-      message: `${summary}\n\n${details}${sceneInfo}${errorInfo}${formatUnresolvedScale(unresolvedScale)}`,
+      message: `${summary}\n\n${details}${modInfo}${sceneInfo}${errorInfo}${formatUnresolvedScale(unresolvedScale)}`,
     };
   }
 }

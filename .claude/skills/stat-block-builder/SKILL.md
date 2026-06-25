@@ -21,7 +21,7 @@ defenses, senses, special traits, actions, spellcasting, effects, **its full inv
 biography, and a finishing pass — by sequencing the right tool calls. It adds NO new mechanics; every
 tool it calls holds its own correctness.
 
-Tools used: `create-actor` (compendium pull or authored), `update-actor`, `add-feature` (features /
+Tools used: `create-actor` (prefab copy · prefab-as-base via `modifications` · authored), `update-actor`, `add-feature` (features /
 compendium-features / spells), **`import-item`** (COPY gear from a compendium — the default for
 inventory), `add-item` (author homebrew gear — last resort), `manage-activity`, `manage-effect`,
 `apply-condition`, `set-actor-art`, `set-actor-ownership`, `move-documents`, `update-actor-item`
@@ -66,11 +66,24 @@ with the actor-authoring tools.
   The tool reports the token; **the die is your judgment, never the tool's** (design.md §2.1). (The full
   advancement-driven experience belongs to the future PC-actor builder — see project notes.)
 
-## Step 0 — Compendium first, then author
+## Step 0 — Walk the §6 ladder (prefab first, author last)
 
-Before building by hand, check if the creature is in a compendium (`search-compendium-creatures`). If
-it is and the user just wants it in the world, `create-actor` (source: compendium) and you're nearly
-done — only fall through to authoring for tweaks, added gear, or genuinely homebrew creatures.
+Decide HOW to create before building anything. Try the rungs **in order** — this is the spine, not a
+preference:
+
+1. **Prefab — the default.** Search the Monster Manual with `search-compendium-creatures`. If a
+   suitable actor exists and the user just wants it in the world, `create-actor` (source: compendium,
+   feeding the hit's `pack` + `id`) and you're done — jump to the finishing pass (Step 10). Real stats
+   *and* art, zero authoring.
+2. **Prefab-as-base — custom from a copy.** No exact match but a close one exists? Copy that MM
+   creature and pass **`modifications`** (update-actor-shaped stat edits — cr/hp/ac/abilities/skills/
+   defenses/biography/currency) in the SAME `create-actor` call to layer your changes onto the world
+   copy; then add the distinguishing features/gear in the steps below. The edits land on the copy — the
+   compendium entry is never touched. **This is the normal way to build a custom NPC:** start from real
+   stats + art, then diverge. Parse the block (Step 1) to know what to change.
+3. **Authored — last resort.** Only when nothing in the premium MM/PHB/DMG books is a workable base do
+   you author from scratch (Step 2, source: authored). Per the [shared authoring policy](../_shared/authoring-policy.md),
+   if there's no 2024 match, **STOP and ASK** before inventing content.
 
 ## Step 1 — Parse the stat block into sections
 
@@ -91,12 +104,18 @@ If a section is missing or unreadable, ask before guessing.
 
 ## Step 2 — Create the base actor
 
+If you took rung 1 (prefab) or rung 2 (prefab-as-base) in Step 0, the actor already exists — skip
+ahead to layer on its distinguishing parts (Step 4+). This step is **rung 3 only** (authored from
+scratch, after the books had no workable base):
+
 `create-actor` with `source: "authored"` and the `statBlock` (the NPC builder sets abilities, saves,
 HP, AC, movement, senses, CR, type, size, skills, languages, defenses in one call).
 
 ## Step 3 — Actor-level edits (`update-actor`)
 
-Immediately `update-actor` for anything the base builder doesn't cover or that you want to set precisely:
+For a **prefab-as-base** build (rung 2), the bulk of your stat changes already went in the
+`modifications` at create time — use this step only for what's left. Otherwise `update-actor` for
+anything the base builder doesn't cover or that you want to set precisely:
 `telepathy`, `legendaryActions`, `legendaryResistances`, `lair`, 2024 `habitat` / `treasure`,
 `biography`, `source`, and **`currency`** (the creature's coin purse — `{mode:"set", gp, sp, …}`). Use
 `update-actor` for ALL later actor-level corrections too (Set fields take `mode: replace|add|remove`).

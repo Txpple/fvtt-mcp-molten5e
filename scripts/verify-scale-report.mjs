@@ -123,7 +123,9 @@ try {
     featureNames: [scaleFeat.name],
     compendiumPacks: [scaleFeat.pack],
   });
-  const addedFeat = (fr?.added ?? []).find(a => a.name.toLowerCase() === scaleFeat.name.toLowerCase());
+  const addedFeat = (fr?.added ?? []).find(
+    a => a.name.toLowerCase() === scaleFeat.name.toLowerCase()
+  );
   assert(Boolean(addedFeat), `feat "${scaleFeat.name}" was added`);
   const tokens = addedFeat?.unresolvedScale ?? [];
   assert(tokens.length > 0, `tool REPORTED ${tokens.length} unresolved @scale token(s)`);
@@ -134,7 +136,7 @@ try {
   // The tool reports the literal token; it must NOT invent a die anywhere in the report.
   assert(
     !tokens.some(t => /\b\d+d\d+\b/.test(t.formula) && !/@scale/.test(t.formula)),
-    'report contains the @scale token, not a fabricated die',
+    'report contains the @scale token, not a fabricated die'
   );
   for (const t of tokens) console.log(`        ${t.path} = ${t.formula}`);
 
@@ -149,7 +151,10 @@ try {
     assert(Boolean(sys), 'read the live feat item back');
     for (const t of tokens) {
       const live = getByPath(sys, t.path);
-      assert(live === t.formula, `path "${t.path}" resolves to the reported formula on the live item`);
+      assert(
+        live === t.formula,
+        `path "${t.path}" resolves to the reported formula on the live item`
+      );
     }
   }
 
@@ -163,7 +168,7 @@ try {
   if (cleanAdded) {
     assert(
       !cleanAdded.unresolvedScale || cleanAdded.unresolvedScale.length === 0,
-      'a clean MM feature has no unresolvedScale fact',
+      'a clean MM feature has no unresolvedScale fact'
     );
   } else {
     console.log('  SKIP  "Pack Tactics" not added (already present / not found) — control skipped');

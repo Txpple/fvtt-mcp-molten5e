@@ -887,8 +887,15 @@ export async function createActorFromCompendium(request: {
     type: 'random' | 'grid' | 'center' | 'coordinates';
     coordinates?: { x: number; y: number }[];
   };
+  // Prefab-as-base bridge (design.md §6 step 2): update-actor-shaped stat edits to layer onto each
+  // instantiated WORLD COPY (never the source compendium doc). Applied via the same updateActor
+  // correctness; same edits applied to every copy.
+  modifications?: Record<string, any>;
 }): Promise<unknown> {
   const { packId, itemId, customNames, quantity = 1, addToScene = false, placement } = request;
+  const modifications = request.modifications;
+  const hasMods =
+    !!modifications && typeof modifications === 'object' && Object.keys(modifications).length > 0;
 
   // Resolve + fetch through the shared whole-document copy primitive (validates
   // inputs, resolves the pack, fetches the document). Actor-specific validation
@@ -968,12 +975,38 @@ export async function createActorFromCompendium(request: {
         }
       }
 
+      // Prefab-as-base bridge: layer the requested stat edits onto THIS world copy via the same
+      // updateActor correctness (resolves game.actors by id, so the source compendium doc is never
+      // touched). Best-effort: a mod failure is recorded but doesn't lose the created actor.
+      let modifications_applied: string[] | undefined;
+      const modifications_warnings: string[] = [];
+      if (hasMods) {
+        try {
+          // Force the target to THIS fresh copy last, so a stray `actorIdentifier` in modifications
+          // can never redirect the edit to another actor (updateActor only resolves world actors, so
+          // it can't touch the compendium source either — this pins it to the intended copy).
+          const res: any = await updateActor({
+            ...modifications,
+            actorIdentifier: newActor.id,
+          });
+          modifications_applied = res?.applied;
+          if (Array.isArray(res?.warnings)) modifications_warnings.push(...res.warnings);
+        } catch (modErr) {
+          errors.push(
+            `Modifications on "${customName}" failed: ${modErr instanceof Error ? modErr.message : 'Unknown error'}`
+          );
+        }
+      }
+
       createdActors.push({
         id: newActor.id,
         name: newActor.name,
         originalName: sourceActor.name,
         sourcePackLabel: pack.metadata.label,
         ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
+        ...(modifications_applied
+          ? { modifications: { applied: modifications_applied, warnings: modifications_warnings } }
+          : {}),
       });
     } catch (error) {
       const errorMsg = `Failed to create actor ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`;

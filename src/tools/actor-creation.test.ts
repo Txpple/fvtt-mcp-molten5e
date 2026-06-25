@@ -125,6 +125,86 @@ describe('handleCreateActorFromCompendium', () => {
     expect(out.message).not.toContain('Issues');
   });
 
+  it('forwards modifications to the page for the prefab-as-base bridge', async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'Veteran Captain', id: 'a1' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({
+      packId: 'dnd-monster-manual.actors',
+      itemId: 'veteran-id',
+      names: ['Veteran Captain'],
+      modifications: { cr: 4, hp: { value: 90, max: 90 } },
+    });
+    const call = calls.find(c => c[0] === 'createActorFromCompendium');
+    expect(call![1].modifications).toEqual({ cr: 4, hp: { value: 90, max: 90 } });
+  });
+
+  it('omits modifications from the page call when none are given', async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'X' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({ packId: 'p', itemId: 'i', names: ['X'] });
+    expect(calls[0][1]).not.toHaveProperty('modifications');
+  });
+
+  it('surfaces the layered modifications the page applied to the world copy', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [
+        {
+          name: 'Veteran Captain',
+          id: 'a1',
+          modifications: { applied: ['cr', 'hp'], warnings: [] },
+        },
+      ],
+      tokensPlaced: 0,
+    });
+    const out = await tools.handleCreateActorFromCompendium({
+      packId: 'p',
+      itemId: 'i',
+      names: ['Veteran Captain'],
+      modifications: { cr: 4 },
+    });
+    expect(out.message).toContain('🔧 Layered onto the copy: cr, hp');
+    expect(out.details.modifications).toEqual({ applied: ['cr', 'hp'], warnings: [] });
+  });
+
+  it('surfaces modification warnings update-actor raised on the copy', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [
+        {
+          name: 'X',
+          id: 'a1',
+          modifications: {
+            applied: ['damageResistances'],
+            warnings: ['Unknown damage type "lazer"'],
+          },
+        },
+      ],
+      tokensPlaced: 0,
+    });
+    const out = await tools.handleCreateActorFromCompendium({
+      packId: 'p',
+      itemId: 'i',
+      names: ['X'],
+      modifications: { damageResistances: { values: ['lazer'] } },
+    });
+    expect(out.message).toContain('⚠️ Modification warnings: Unknown damage type "lazer"');
+  });
+
   it('surfaces unresolved @scale tokens the page reports on a copied actor', async () => {
     const { tools } = build({
       success: true,
