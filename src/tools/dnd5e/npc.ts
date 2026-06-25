@@ -211,7 +211,7 @@ export class DnD5eNpcTools {
         biography: z.string().default(''),
         sourceBook: z.string().default(''),
         sourcePage: z.string().default(''),
-        sourceRules: z.enum(['2014', '2024']).default('2014'),
+        sourceRules: z.enum(['2014', '2024']).default('2024'),
       })
       .superRefine((data, ctx) => {
         if (data.acMode === 'flat' && data.acValue === undefined) {

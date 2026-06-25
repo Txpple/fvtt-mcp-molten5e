@@ -92,6 +92,20 @@ describe('handleCreateNpc — bridge forwarding & formatting', () => {
     );
   });
 
+  it('defaults sourceRules to "2024" when none is given (2024-by-default doctrine)', async () => {
+    const { tools, calls } = build(bridgeResult());
+    await tools.handleCreateNpc(validArgs()); // validArgs() omits sourceRules
+    const bridgeCall = calls.find(c => c[0] === 'createNpcActor');
+    expect(bridgeCall![1].sourceRules).toBe('2024');
+  });
+
+  it('still honors an explicit legacy sourceRules override', async () => {
+    const { tools, calls } = build(bridgeResult());
+    await tools.handleCreateNpc(validArgs({ sourceRules: '2014' }));
+    const bridgeCall = calls.find(c => c[0] === 'createNpcActor');
+    expect(bridgeCall![1].sourceRules).toBe('2014');
+  });
+
   it('prefers the bridge-supplied CR string over the normalized fallback', async () => {
     const { tools } = build(bridgeResult({ cr: '1/4' }));
     const out = await tools.handleCreateNpc(validArgs({ cr: '1/4' }));

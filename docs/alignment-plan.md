@@ -56,9 +56,12 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
 ## Plan (check off as landed)
 
 ### Phase 0 — Foundations (make the invariants real)
-- [ ] **0.1 — 2024 by default** (Inv. 2, tool, S). Flip every `sourceRules` 2014→2024 default;
-  reconcile the disagreeing feature-add paths; regression test. *Done when:* an authored NPC/feature
-  is born 2024 with no skill override, asserted by a test.
+- [x] **0.1 — 2024 by default** (Inv. 2, tool, S) — **landed `master`.** Flipped every `sourceRules`
+  2014→2024 default (create-actor authored schema, `addPassiveFeature`, 3 attack builders, spell +
+  weapon-item builders); reconciled the two feature-add paths (both default 2024); regression test
+  asserts the authored-NPC default is 2024 and an explicit 2014 override still works. Gate green (625
+  tests). *(Minor follow-up noted: `addSaveFeatureToActor` is hard-2024 — can't be overridden to 2014
+  because its mode doesn't thread `sourceRules`; not a 2024-default issue.)*
 - [ ] **0.2 — One copy primitive** (Inv. 2, tool, M). Whole-doc copy → `importFromCompendium`; keep
   the centralized hand-roll for embedded-item copy. *Done when:* each copy path routes through one
   primitive; **parity verified live**.

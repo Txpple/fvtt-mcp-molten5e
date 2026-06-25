@@ -143,7 +143,7 @@ export async function addAttackToActor(data: any): Promise<unknown> {
   const rangeObj = buildAttackRange(data);
 
   // 7. Conditional 2024-only fields
-  const sourceRules: string = data.sourceRules ?? '2014';
+  const sourceRules: string = data.sourceRules ?? '2024';
   const masteryField = sourceRules === '2024' ? { mastery: '' } : {};
   const classification = sourceRules === '2014' ? 'weapon' : '';
 
@@ -303,7 +303,7 @@ export async function addAuraToActor(data: any): Promise<unknown> {
       identifier,
       source: {
         revision: 1,
-        rules: data.sourceRules ?? '2014',
+        rules: data.sourceRules ?? '2024',
         custom: '',
         book: data.sourceBook ?? '',
         page: data.sourcePage ?? '',
@@ -451,7 +451,7 @@ export async function addAttackWithSaveToActor(data: any): Promise<unknown> {
       : { value: data.rangeFt, long: data.longRangeFt ?? null, units: 'ft' };
 
   // 8. Conditional 2024-only fields (same rules as Tipo A)
-  const sourceRules: string = data.sourceRules ?? '2014';
+  const sourceRules: string = data.sourceRules ?? '2024';
   const masteryField = sourceRules === '2024' ? { mastery: '' } : {};
   const classification = sourceRules === '2014' ? 'weapon' : '';
 

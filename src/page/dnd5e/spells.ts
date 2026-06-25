@@ -432,7 +432,7 @@ export async function addHomebrewSpellToActor(args: {
     properties: args.components ?? [],
     description: { value: args.description ?? '', chat: '' },
     activation: { type: args.activationType ?? 'action', value: 1, condition: '' },
-    source: { rules: args.sourceRules ?? '2014' },
+    source: { rules: args.sourceRules ?? '2024' },
   };
   if (args.materials) {
     system.materials = { value: args.materials, consumed: false, cost: 0, supply: 0 };

@@ -266,7 +266,7 @@ export async function addItem(data: any): Promise<unknown> {
   let activities: Record<string, any> | undefined;
   if (data.itemType === 'weapon' && data.withAttack && data.damage) {
     const id = foundry.utils.randomID(16);
-    const sourceRules: string = data.sourceRules ?? '2014';
+    const sourceRules: string = data.sourceRules ?? '2024';
     activities = {
       [id]: buildActivity('attack', {
         id,

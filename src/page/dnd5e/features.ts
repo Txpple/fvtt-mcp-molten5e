@@ -186,7 +186,7 @@ export async function addPassiveFeatureToActor(args: any): Promise<unknown> {
       identifier,
       source: {
         revision: 1,
-        rules: args.sourceRules ?? '2014',
+        rules: args.sourceRules ?? '2024',
         custom: '',
         book: args.sourceBook ?? '',
         page: args.sourcePage ?? '',
