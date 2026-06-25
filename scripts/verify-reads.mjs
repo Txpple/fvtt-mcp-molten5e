@@ -96,11 +96,10 @@ try {
   if (t0) await check('rollOnTable', () => f.call('rollOnTable', { identifier: t0.id }));
   await check('listCards', () => f.call('listCards'));
 
-  // Creature index — scans Actor packs on demand; may be slow.
-  await check('listCreaturesByCriteria', () =>
-    f.call('listCreaturesByCriteria', { challengeRating: 1 })
+  // Faceted discovery (dnd5e CompendiumBrowser.fetch) — may be slow on first call.
+  await check('searchCompendiumFaceted(creature)', () =>
+    f.call('searchCompendiumFaceted', { documentType: 'creature', challengeRating: 1 })
   );
-  await check('getEnhancedCreatureIndex', () => f.call('getEnhancedCreatureIndex'));
 } finally {
   await f.dispose();
 }

@@ -5,7 +5,6 @@ import {
   detectGameSystem,
   getCreatureLevel,
   getCreatureType,
-  hasSpellcasting,
   type GameSystem,
 } from '../utils/system-detection.js';
 import { GenericFiltersSchema, describeFilters } from '../utils/compendium-filters.js';
@@ -332,7 +331,7 @@ export class CompendiumTools {
       {
         name: 'search-compendium-creatures',
         description:
-          'D&D 5e CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria (Challenge Rating, type, size, spellcasting, legendary actions). Searches the premium book Actor packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features premium-book pack prioritization and high result limits for complete surveys.',
+          'D&D 5e CREATURE DISCOVERY: find creatures matching faceted criteria (Challenge Rating, type, size, spellcasting, legendary actions) across the premium book Actor packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Backed by the system Compendium Browser, so CR/type/size check real system data (not name heuristics); hasSpells/hasLegendaryActions are approximate index flags. Returns minimal hits ({id,name,type,uuid,pack,packLabel,img,facets}) premium-first ranked — identify candidates by name, then pull full stat blocks with get-compendium-entry. High result limits for complete encounter-building surveys.',
         inputSchema: toInputSchema(ListCreaturesByCriteriaSchema),
       },
       {
@@ -507,16 +506,9 @@ export class CompendiumTools {
   }
 
   async handleListCreaturesByCriteria(args: any): Promise<any> {
-    // Detect game system for appropriate filtering
-    const gameSystem = await this.getGameSystem();
-
-    // Use generic filters schema to support both systems
-    const schema = ListCreaturesByCriteriaSchema;
-
-    let params: z.infer<typeof schema>;
+    let params: z.infer<typeof ListCreaturesByCriteriaSchema>;
     try {
-      params = schema.parse(args);
-      this.logger.debug('Parsed creature criteria parameters successfully', params);
+      params = ListCreaturesByCriteriaSchema.parse(args);
     } catch (parseError) {
       this.logger.error('Failed to parse creature criteria parameters', { args, parseError });
       if (parseError instanceof z.ZodError) {
@@ -530,56 +522,33 @@ export class CompendiumTools {
       throw parseError;
     }
 
-    // Log system detection and criteria
     const criteriaDescription = this.describeCriteria(params);
-    this.logger.info('Creature criteria search with system detection', {
-      gameSystem,
-      criteria: criteriaDescription,
-    });
+    this.logger.info('Creature faceted search', { criteria: criteriaDescription });
 
     try {
-      const results = await this.foundry.call('listCreaturesByCriteria', params);
-
-      this.logger.debug('Creature criteria search completed', {
-        gameSystem,
-        criteriaCount: Object.keys(params).length,
-        totalFound: results.response?.creatures?.length || 0,
+      // Re-backed on the one faceted engine (documentType:'creature'); CR/type/size are index
+      // filters, hasSpells/hasLegendaryActions are engine post-filters on approximate index facets.
+      const hits = await this.foundry.call('searchCompendiumFaceted', {
+        documentType: 'creature',
+        challengeRating: params.challengeRating,
+        creatureType: params.creatureType,
+        size: params.size,
+        hasSpells: params.hasSpells,
+        hasLegendaryActions: params.hasLegendaryActions,
         limit: params.limit,
-        packsSearched: results.response?.searchSummary?.packsSearched || 0,
       });
 
-      // Extract search summary for transparency
-      const searchSummary = results.response?.searchSummary || {
-        packsSearched: 0,
-        topPacks: [],
-        totalCreaturesFound: results.response?.creatures?.length || 0,
-      };
-
-      // Bridge returns either { response: { creatures: [...] } } or a bare array.
-      // Use nullish coalescing so an empty creatures array is preserved (an empty
-      // result must report totalFound: 0, not fall through to the wrapper's length).
-      const rawCreatureList: any[] = results.response?.creatures ?? results ?? [];
-
-      // Enforced backstop to the page-side exclusion: an SRD (`dnd5e.*`) creature is never a result
-      // (design.md §2.3). The creature index already skips SRD packs; re-drop here so the contract
-      // holds (and counts stay book-only) even if one slips past that filter.
-      const creatureList = rawCreatureList.filter((creature: any) => !isSrdPack(creature?.pack));
+      // Enforced backstop to the engine's by-uuid SRD exclusion (design.md §2.3); see the spell facade.
+      const list: any[] = Array.isArray(hits) ? hits : [];
+      const results = list.filter(hit => !isSrdPack(hit?.pack));
 
       return {
-        gameSystem, // Include detected system
-        criteriaDescription, // Human-readable criteria
-        creatures: creatureList.map((creature: any) =>
-          this.formatCreatureListItem(creature, gameSystem)
-        ),
-        totalFound: creatureList.length,
+        documentType: 'creature',
+        criteriaDescription,
+        results,
+        totalFound: results.length,
         criteria: params,
-        searchSummary: {
-          ...searchSummary,
-          searchStrategy: `Prioritized pack search - D&D 5e content first, then modules, then campaign-specific`,
-          note: 'Packs searched in priority order to find most relevant creatures first',
-        },
-        optimizationNote:
-          'Use creature names to identify suitable options, then call get-compendium-entry for final details only',
+        note: 'Premium book creatures only — the SRD is never a source (design.md §2.3). Use creature names to pick candidates, then get-compendium-entry for full stat blocks.',
       };
     } catch (error) {
       this.logger.error('Failed to list creatures by criteria', error);
@@ -913,77 +882,6 @@ export class CompendiumTools {
     }
 
     return parts.join(' • ');
-  }
-
-  private formatCreatureListItem(creature: any, gameSystem?: GameSystem): any {
-    const system = creature.system || {};
-    const formatted: any = {
-      name: creature.name,
-      id: creature.id,
-      pack: { id: creature.pack, label: creature.packLabel },
-    };
-
-    if (gameSystem === 'dnd5e') {
-      const level = getCreatureLevel(creature, gameSystem);
-      if (level !== undefined) formatted.challengeRating = level;
-
-      const creatureType = getCreatureType(creature, gameSystem);
-      if (creatureType && typeof creatureType === 'string') {
-        formatted.creatureType = creatureType;
-      }
-
-      const size = system.traits?.size?.value || system.traits?.size || system.size || 'medium';
-      formatted.size = size;
-
-      const hasSpells = hasSpellcasting(creature, gameSystem);
-      const hasLegendary = !!(
-        system.resources?.legact ||
-        system.legendary ||
-        (system.resources?.legres && system.resources.legres.value > 0)
-      );
-      const typeStr = typeof creatureType === 'string' ? creatureType.toLowerCase() : '';
-      formatted.flags = {
-        spellcaster: hasSpells,
-        legendary: hasLegendary,
-        undead: typeStr === 'undead',
-        dragon: typeStr === 'dragon',
-        fiend: typeStr === 'fiend',
-      };
-    } else {
-      // Legacy fallback (D&D 5e assumptions)
-      const challengeRating = creature.challengeRating ?? system.details?.cr ?? system.cr ?? 0;
-      const creatureType =
-        creature.creatureType ?? system.details?.type?.value ?? system.type?.value ?? 'unknown';
-      const size = creature.size ?? system.traits?.size ?? system.size ?? 'medium';
-
-      const hasSpells =
-        creature.hasSpells ??
-        !!(
-          system.spells ||
-          system.attributes?.spellcasting ||
-          (system.details?.spellLevel && system.details.spellLevel > 0)
-        );
-      const hasLegendary =
-        creature.hasLegendaryActions ??
-        !!(
-          system.resources?.legact ||
-          system.legendary ||
-          (system.resources?.legres && system.resources.legres.value > 0)
-        );
-
-      formatted.challengeRating = challengeRating;
-      formatted.creatureType = creatureType;
-      formatted.size = size;
-      formatted.flags = {
-        spellcaster: hasSpells,
-        legendary: hasLegendary,
-        undead: creatureType.toLowerCase() === 'undead',
-        dragon: creatureType.toLowerCase() === 'dragon',
-        fiend: creatureType.toLowerCase() === 'fiend',
-      };
-    }
-
-    return formatted;
   }
 
   /**

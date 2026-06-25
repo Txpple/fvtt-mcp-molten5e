@@ -155,17 +155,3 @@ export function getCreatureType(actorData: any, system: GameSystem): string | st
 
   return undefined;
 }
-
-/**
- * Check if creature has spellcasting based on system (D&D 5e)
- */
-export function hasSpellcasting(actorData: any, system: GameSystem): boolean {
-  if (system === 'dnd5e') {
-    // D&D 5e: Check for spells object or spellcasting level
-    const spells = extractSystemValue(actorData, SystemPaths.dnd5e.spells);
-    const spellLevel = extractSystemValue(actorData, 'system.details.spellLevel');
-    return !!(spells || spellLevel);
-  }
-
-  return false;
-}

@@ -298,64 +298,62 @@ describe('handleGetCompendiumItem', () => {
 });
 
 describe('handleListCreaturesByCriteria', () => {
-  it('forwards parsed criteria to listCreaturesByCriteria and shapes the result', async () => {
-    const bridgeResult = {
-      response: {
-        creatures: [
-          {
-            id: 'c1',
-            name: 'Adult Red Dragon',
-            pack: 'p1',
-            packLabel: 'Monsters',
-            system: { details: { cr: 17, type: { value: 'dragon' } } },
-          },
-        ],
-        searchSummary: { packsSearched: 3, topPacks: ['Monsters'] },
-      },
-    };
-    const { tools, calls } = build('dnd5e', bridgeResult);
+  // Re-backed on the faceted engine: searchCompendiumFaceted returns a bare CompendiumHit[].
+  const hit = (over: any = {}) => ({
+    id: 'c1',
+    name: 'Adult Red Dragon',
+    type: 'npc',
+    uuid: 'Compendium.dnd-monster-manual.actors.Actor.c1',
+    pack: 'dnd-monster-manual.actors',
+    packLabel: 'MM',
+    img: 'icons/dragon.png',
+    facets: { challengeRating: 17, creatureType: 'dragon', size: 'huge' },
+    ...over,
+  });
+
+  it('forwards documentType:creature + facets to searchCompendiumFaceted and shapes the result', async () => {
+    const { tools, calls } = build('dnd5e', [hit()]);
 
     const out = await tools.handleListCreaturesByCriteria({
       challengeRating: 17,
       creatureType: 'dragon',
     });
 
-    const listCall = calls.find(c => c[0] === 'listCreaturesByCriteria');
-    expect(listCall).toBeDefined();
-    expect(listCall![1]).toMatchObject({
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call).toBeDefined();
+    expect(call![1]).toMatchObject({
+      documentType: 'creature',
       challengeRating: 17,
       creatureType: 'dragon',
-      limit: 500,
+      limit: 500, // schema default
     });
 
-    expect(out.gameSystem).toBe('dnd5e');
+    expect(out.documentType).toBe('creature');
     expect(out.criteriaDescription).toBe('CR 17, dragon');
     expect(out.totalFound).toBe(1);
-    expect(out.creatures).toHaveLength(1);
-    expect(out.creatures[0]).toMatchObject({
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({
       id: 'c1',
       name: 'Adult Red Dragon',
-      pack: { id: 'p1', label: 'Monsters' },
+      pack: 'dnd-monster-manual.actors',
     });
-    expect(out.searchSummary.packsSearched).toBe(3);
   });
 
   it('describes a CR range and defaults the limit', async () => {
-    const { tools, calls } = build('dnd5e', { response: { creatures: [] } });
+    const { tools, calls } = build('dnd5e', []);
     const out = await tools.handleListCreaturesByCriteria({
       challengeRating: { min: 10, max: 15 },
     });
     expect(out.criteriaDescription).toBe('CR 10-15');
-    // An empty result must report a real count, not undefined (regression guard
-    // for the nullish-coalescing fix in handleListCreaturesByCriteria).
+    // An empty result must report a real count, not undefined.
     expect(out.totalFound).toBe(0);
-    expect(out.creatures).toEqual([]);
-    const listCall = calls.find(c => c[0] === 'listCreaturesByCriteria');
-    expect(listCall![1].limit).toBe(500);
+    expect(out.results).toEqual([]);
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call![1].limit).toBe(500);
   });
 
   it('reports "no criteria" when called with no filters', async () => {
-    const { tools } = build('dnd5e', { response: { creatures: [] } });
+    const { tools } = build('dnd5e', []);
     const out = await tools.handleListCreaturesByCriteria({});
     expect(out.criteriaDescription).toBe('no criteria');
   });
@@ -371,26 +369,14 @@ describe('handleListCreaturesByCriteria', () => {
   });
 
   it('drops SRD (dnd5e.*) creatures and counts only book results (enforced backstop)', async () => {
-    const bridgeResult = {
-      response: {
-        creatures: [
-          {
-            id: 'b1',
-            name: 'Adult Red Dragon',
-            pack: 'dnd-monster-manual.actors',
-            packLabel: 'MM',
-          },
-          { id: 's1', name: 'Adult Red Dragon', pack: 'dnd5e.monsters', packLabel: 'SRD' },
-        ],
-        searchSummary: { packsSearched: 2 },
-      },
-    };
-    const { tools } = build('dnd5e', bridgeResult);
-
+    const { tools } = build('dnd5e', [
+      hit(),
+      hit({ id: 's1', pack: 'dnd5e.monsters', packLabel: 'SRD' }),
+    ]);
     const out = await tools.handleListCreaturesByCriteria({ creatureType: 'dragon' });
     expect(out.totalFound).toBe(1);
-    expect(out.creatures).toHaveLength(1);
-    expect(out.creatures[0]).toMatchObject({ id: 'b1', pack: { id: 'dnd-monster-manual.actors' } });
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({ id: 'c1', pack: 'dnd-monster-manual.actors' });
   });
 });
 

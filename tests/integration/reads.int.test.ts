@@ -179,14 +179,10 @@ describe.skipIf(!LIVE)('read-side page library (live)', () => {
     await expect(foundry.call('listCards')).resolves.toBeDefined();
   });
 
-  // --- Creature index (scans Actor packs on demand; may be slow) ---
-  it('listCreaturesByCriteria(CR 1)', async () => {
+  // --- Faceted discovery (dnd5e CompendiumBrowser.fetch; may be slow on first call) ---
+  it('searchCompendiumFaceted(creature, CR 1)', async () => {
     await expect(
-      foundry.call('listCreaturesByCriteria', { challengeRating: 1 })
+      foundry.call('searchCompendiumFaceted', { documentType: 'creature', challengeRating: 1 })
     ).resolves.toBeDefined();
-  });
-
-  it('getEnhancedCreatureIndex', async () => {
-    await expect(foundry.call('getEnhancedCreatureIndex')).resolves.toBeDefined();
   });
 });

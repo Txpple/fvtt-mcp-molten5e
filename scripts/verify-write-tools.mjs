@@ -243,8 +243,11 @@ try {
 
   // --- Actor from compendium: create -> add item -> remove item -> delete (best-effort) ---
   try {
-    const idx = await foundry.call('listCreaturesByCriteria', { limit: 1 });
-    const creatures = idx?.response?.creatures ?? idx?.creatures ?? (Array.isArray(idx) ? idx : []);
+    const idx = await foundry.call('searchCompendiumFaceted', {
+      documentType: 'creature',
+      limit: 1,
+    });
+    const creatures = Array.isArray(idx) ? idx : [];
     const c = creatures?.[0];
     if (c?.pack && c?.id) {
       const ca = await check(

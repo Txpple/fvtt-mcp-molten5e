@@ -62,10 +62,13 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
   `CompendiumTools`; SRD backstop; premium-only description; 78 tools. Engine: added
   `RARITY_TO_DND5E` so friendly "very rare" normalizes to the camelCase `veryRare` key. Gate green
   (698 tests). **Live verify deferred to Phase 4.**
-- [ ] **2c — Re-back `search-compendium-creatures` on the engine** (`documentType: creature`); switch
-  output to the uniform `CompendiumHit` shape; **remove the now-redundant `src/page/creature-index.ts`
-  path** (buildCreatureIndex/projectIndexEntry/passesCriteria/listCreaturesByCriteria) + its test once
-  unused; update `stat-block-builder` consumers in lockstep.
+- [x] **2c — Re-back `search-compendium-creatures` on the engine** (`documentType: creature`);
+  output is now the uniform `CompendiumHit` shape. **Deleted `src/page/creature-index.ts` + its test**
+  (buildCreatureIndex/projectIndexEntry/passesCriteria/listCreaturesByCriteria **and** the unused
+  `getEnhancedCreatureIndex`); removed both bridge registrations from `page/index.ts`; dropped the
+  orphaned `hasSpellcasting`/`formatCreatureListItem`. Repointed the 4 live harnesses (reads +
+  write-cycle integration tests, verify-reads + verify-write-tools scripts) to
+  `searchCompendiumFaceted`. Gate green (690 tests). Skill prose realign → 3a. **Live verify → Phase 4.**
 - [ ] **2d — Reduce `search-compendium` to name-only** (#3): delete the name-heuristic `filters`
   (`GenericFiltersSchema` usage) + the keyword-guess code in `src/page/compendium.ts`; keep the
   premium-only name-index scan. Update the tool description.

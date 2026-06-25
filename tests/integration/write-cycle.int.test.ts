@@ -275,11 +275,11 @@ describe.skipIf(!LIVE)('write cycles (live)', () => {
 
   // --- Actor from compendium: create -> add item -> remove item -> delete ---
   it('createActorFromCompendium', async ctx => {
-    const idx = await foundry.call<{
-      response?: { creatures?: Array<{ pack?: string; id?: string; name?: string }> };
-      creatures?: Array<{ pack?: string; id?: string; name?: string }>;
-    }>('listCreaturesByCriteria', { limit: 1 });
-    const creatures = idx?.response?.creatures ?? idx?.creatures ?? (Array.isArray(idx) ? idx : []);
+    const idx = await foundry.call<Array<{ pack?: string; id?: string; name?: string }>>(
+      'searchCompendiumFaceted',
+      { documentType: 'creature', limit: 1 }
+    );
+    const creatures = Array.isArray(idx) ? idx : [];
     const c = creatures?.[0];
     if (!c?.pack || !c?.id) return ctx.skip();
     const out = await foundry.call<{ totalCreated?: number; actors?: Array<{ id?: string }> }>(
