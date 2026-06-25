@@ -72,6 +72,46 @@ If the exact item isn't in a compendium but a close base IS (the common case for
 > NPC case. Set an explicit value at the reported `path` with `update-actor-item`; the tool reports the
 > token, you choose the die (design.md §2.1).
 
+## Items that cast a spell → a `cast` activity that LINKS the real spell (NOT a hand-rolled one)
+
+A wand/weapon/wondrous item that casts a spell (a Wand of Fireballs, a sword that casts *fireball*, a
+shield that casts *shield*) must model the spell as a **`cast` activity that links the REAL book spell** —
+**never** a hand-rolled `save`/`damage`/`utility` activity that re-implements it. The cast activity makes
+Foundry cast the genuine spell, so its **measured template (sphere/line/cube), save/attack, scaling and
+effects all come from the spell for free**. A hand-rolled stand-in has none of that — it shows in the use
+menu but does **NOT** actually cast (no template pops). This is the #1 magic-item mistake; don't make it.
+
+- **The spell is compendium-first too.** It MUST be a real 2024 book spell. If a named spell isn't in the
+  books (e.g. *Snilloc's Snowball Swarm*), **STOP and ASK** — substitute a real spell, drop it, or get
+  explicit homebrew permission. NEVER fabricate a fake activity to stand in for an off-book spell (same
+  rule as a monster's off-book feature — see `_shared/authoring-policy.md`, design.md §2.3).
+- **Build it by mirroring the DMG Wand of Fireballs (`dmgWandOfFirebal`).** `manage-activity` has **no
+  `cast` type**, so write the activity JSON via **`update-item`** `system.activities.<16-char-id>` (it
+  deep-merges — the weapon's base Attack is preserved). Get the spell uuid from `search-compendium`
+  (it's `Compendium.<pack>.Item.<id>`). Minimal shape:
+  ```
+  system.activities.<id> = {
+    type:"cast", _id:"<16char>", name:"Cast <Spell> (<lvl>, DC <n>)", sort:0,
+    spell:{ uuid:"Compendium.dnd-players-handbook.spells.Item.<spellId>",
+            challenge:{ save:<DC>, attack:<+N|null>, override:true },  // override:true pins the item's fixed DC/attack; false = defer to the caster
+            level:<slot lvl>, properties:[<components>], spellbook:true },
+    activation:{ type:"action"|"bonus"|"reaction", value:null, override:false },
+    consumption:{ spellSlot:false, scaling:{allowed:false,max:""},
+                  targets:[{ type:"itemUses", value:"<charges>", target:"", scaling:{mode:"",formula:""} }] },  // []  == at-will (cantrip)
+    range:{units:"self",override:false}, duration:{units:"inst",concentration:false,override:false},
+    target:{ template:{contiguous:false,units:"ft",stationary:false}, affects:{choice:false}, override:false, prompt:true },
+    uses:{spent:0,recovery:[],max:""}, description:{chatFlavor:""}, img:"", flags:{},
+    visibility:{level:{},requireAttunement:false,requireIdentification:false,requireMagic:false} }
+  ```
+  Charges live on the ITEM (`system.uses.max` + `recovery:[{period:"dawn",type:"recoverAll"|"formula",formula}]`);
+  the cast activity's `consumption.targets` spends them. The `save` DC is set but **sanitized from
+  read-back** (data is correct; `attack` shows). To swap a wrong activity for a cast: `manage-activity
+  remove` the old, then `update-item` add the cast.
+- **⚠️ Placed copies do NOT auto-update.** Dragging an item onto an actor makes an independent COPY;
+  editing the world item afterward does not touch copies already on actors — they go stale. After any
+  fix, **re-drag** the item (or edit the on-actor copy directly). Tell-tale that you're looking at a
+  stale copy: the on-sheet activity shows an OLD name/behaviour. Always test on a freshly-placed copy.
+
 ## Step 2 — True homebrew with no compendium base (last resort — ASK first)
 
 Only when nothing in any compendium fits, author from scratch with **`add-item`** (pick `itemType`,
