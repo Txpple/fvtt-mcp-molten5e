@@ -52,10 +52,15 @@ inventory), `add-item` (author homebrew gear — last resort), `manage-activity`
   `import-item` the closest base, then `update-actor-item` / `manage-activity` / `manage-effect`, then
   rename. (See [[physical-item-builder]].)
 - **If you can't find a workable 2024 match, STOP and ASK** — never silently fall back to 2014 or invent
-  a value (a made-up CR, an invented damage type, a guessed price/rarity, a fabricated save DC). Note:
-  2024 *class features* aren't individually importable (they live inside class items), so for an NPC's
-  class features tell the user and confirm the approach (copy 2014-SRD equivalents, or author) rather
-  than guessing.
+  a value (a made-up CR, an invented damage type, a guessed price/rarity, a fabricated save DC).
+- **⚠️ @scale gotcha when copying PC features onto an NPC.** 2024 class features (from the classes pack)
+  and racial features (from the origins pack) are authored for PCs: their damage/uses often use a
+  `@scale.*` formula whose value comes from the PC's class/species ADVANCEMENT — which an NPC doesn't
+  have, so it resolves to nothing (0 damage). After importing such a feature onto an NPC, READ IT BACK
+  (`get-actor-entity`) and replace any `@scale.*` damage formula with an explicit die for the creature's
+  level (e.g. a level-3 dragonborn breath weapon → `1d10`). `@prof` resolves fine on NPCs; only
+  advancement-fed `@scale.*` dangles. (The full advancement-driven experience belongs to the future
+  PC-actor builder — see project notes.)
 - This is AUTHORING. Don't place tokens on a scene, roll dice, spend charges, or run combat — those are
   out of scope (the prototype-token config travels with the actor, but dropping a token is play).
 
@@ -94,14 +99,24 @@ Immediately `update-actor` for anything the base builder doesn't cover or that y
 `biography`, `source`, and **`currency`** (the creature's coin purse — `{mode:"set", gp, sp, …}`). Use
 `update-actor` for ALL later actor-level corrections too (Set fields take `mode: replace|add|remove`).
 
-## Step 4 — Special traits (prefer compendium import)
+## Step 4 — Special traits, class features & racial abilities (prefer compendium import)
 
-For official, named traits **prefer importing** them so the real text/mechanics come in:
-`add-feature` mode `compendium-features` (e.g. Pack Tactics, Nimble Escape, Magic Resistance,
-Multiattack). The default packs are 2024-leaning (`dnd5e.monsterfeatures24` + 2014-SRD class features);
-pass premium packs (`dnd-monster-manual.features`) when present. Only author from scratch with
-`add-feature` mode `feature` / `featureType: "passive"` (`featType: "monster"`, prerequisite in
-`requirements`) for homebrew traits or ones not in a compendium.
+For official, named traits/features **prefer importing** them so the real text/mechanics + art come in,
+via `add-feature` mode `compendium-features` (first-match-wins across the packs you pass):
+- **Monster traits** (Pack Tactics, Nimble Escape, Magic Resistance, Multiattack) → default
+  `dnd5e.monsterfeatures24`; prefer premium `dnd-monster-manual.features` when present.
+- **Class features** (Lay on Hands, Channel Divinity, Fighting Style, …) → **2024 class features ARE
+  importable**: the individual feature feats live in the **classes pack** (`dnd5e.classes24`, or premium
+  `dnd-players-handbook.classes`), alongside the class items. The default now includes `dnd5e.classes24`.
+  This is the pattern the official 2024 sample PCs use (each feature is its own `feat`).
+- **Racial abilities** (a dragonborn's Breath Weapon, etc.) → copy from the **origins pack**
+  (`dnd-players-handbook.origins` / `dnd5e.origins24`). E.g. a breath weapon is a `<Element> Breath
+  Weapon` feat (`Fire Breath Weapon`, `Cold Breath Weapon`, …) — `import-item` it (it carries the real
+  cone+line save activities, type, uses), then **fix its `@scale.*` damage formula** to an explicit die
+  for the creature's level (see the @scale gotcha above). Don't author racial abilities by hand.
+
+Only author from scratch with `add-feature` mode `feature` / `featureType: "passive"` (`featType:
+"monster"`, prerequisite in `requirements`) for genuinely homebrew traits with no compendium source.
 
 ## Step 5 — Actions, attacks, and abilities
 
@@ -113,7 +128,9 @@ Map each action to the right tool:
   from it — not a generic natural strike.
 - **Natural attacks** (claws/bite/etc.) → `add-feature` `attack` (`weaponClass: "natural"`).
 - **Attack that also forces a save** (e.g. Stinger: pierce + CON save) → `add-feature` `attack-with-save`.
-- **Save-or-suffer ability** (breath weapon, frightful presence) → `add-feature` `save` (+ `areaType`).
+- **Save-or-suffer ability** (frightful presence, a homebrew breath) → `add-feature` `save` (+ `areaType`).
+  But a **racial breath weapon** (dragonborn) should be COPIED from the origins pack (Step 4) — copy the
+  `<Element> Breath Weapon` feat, then fix its `@scale.*` damage die — not authored.
 - **Automatic-damage aura** → `add-feature` `aura`.
 - **Multiattack** → import it (Step 4) or author a `passive` named "Multiattack" with the text;
   optionally give it a clickable action via `manage-activity` (`utility`).

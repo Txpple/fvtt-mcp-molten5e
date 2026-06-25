@@ -23,14 +23,16 @@ const AddFeaturesFromCompendiumSchema = z.object({
     ),
   compendiumPacks: z
     .array(z.string().min(1))
-    .default(['dnd5e.monsterfeatures24', 'dnd5e.classfeatures'])
+    .default(['dnd5e.monsterfeatures24', 'dnd5e.classes24', 'dnd5e.classfeatures'])
     .describe(
       'Compendium pack IDs to search, in priority order (first match wins). ' +
-        'Defaults to ["dnd5e.monsterfeatures24", "dnd5e.classfeatures"] — 2024 monster features, ' +
-        'falling back to 2014 SRD class features. Prefer premium packs ("dnd-monster-manual.features") ' +
-        'when present; pass ["dnd5e.monsterfeatures"] for 2014 monsters. ' +
-        'Note: 2024 class features live INSIDE class items, not a separate pack — if a needed 2024 ' +
-        'class feature is missing here, tell the user and ask rather than substituting silently.'
+        'Defaults to ["dnd5e.monsterfeatures24", "dnd5e.classes24", "dnd5e.classfeatures"] — 2024 monster ' +
+        'features, then 2024 CLASS features (the classes pack also holds the individual feature feats), ' +
+        'falling back to 2014 SRD class features. Prefer premium packs ("dnd-monster-manual.features", ' +
+        '"dnd-players-handbook.classes") when present; pass ["dnd5e.monsterfeatures"] for 2014 monsters. ' +
+        'CAVEAT: a 2024 class/racial feature copied onto an NPC may carry an unresolved @scale.* damage/' +
+        'uses formula (its ScaleValue comes from the PC class/species advancement, absent on an NPC) — ' +
+        'verify and replace the formula with an explicit value after import.'
     ),
 });
 
@@ -79,14 +81,17 @@ export class DnD5eFeaturesFromCompendiumTools {
           '⚠️ IMPORTANT — feature names must be in English: the compendium uses English names. ' +
           'Translate BEFORE calling if the user provided names in another language.\n\n' +
           'compendiumPacks controls which pack(s) to search (priority order, first match wins):\n' +
-          '  - Default ["dnd5e.monsterfeatures24", "dnd5e.classfeatures"] → 2024 monsters + 2014 SRD class\n' +
-          '  - ["dnd5e.monsterfeatures"]                                 → 2014 SRD monster features\n' +
-          '  - ["dnd-monster-manual.features"]                           → premium 2024 monster features\n\n' +
+          '  - Default ["dnd5e.monsterfeatures24", "dnd5e.classes24", "dnd5e.classfeatures"] → 2024 ' +
+          'monsters, then 2024 class features, then 2014 SRD class features\n' +
+          '  - ["dnd-monster-manual.features"] / ["dnd-players-handbook.classes"] → premium 2024 packs\n' +
+          '  - ["dnd5e.monsterfeatures"]                                          → 2014 SRD monsters\n\n' +
+          'NOTE: 2024 CLASS features ARE importable — the individual feature feats live in the classes ' +
+          'pack (dnd5e.classes24 / dnd-players-handbook.classes) alongside the class items. But a 2024 ' +
+          'class/racial feature copied onto an NPC may carry an unresolved @scale.* formula (its ' +
+          'ScaleValue comes from the absent PC class/species advancement) — verify + fix it after import.\n\n' +
           'DO NOT USE THIS TOOL for:\n' +
           '  - Importing spell items → use add-feature with featureType "spells" instead\n' +
           '  - Setting up spellcasting class or spell slots → use add-feature with featureType "spellcasting"\n' +
-          '  - Importing 2024 class features — they are embedded inside class items in the 2024 ' +
-          'edition, not available in a separate compendium pack; this tool cannot import them\n' +
           '  - Creating custom/homebrew features from scratch → compendium-only, no homebrew\n' +
           '  - Non-dnd5e systems → this tool is dnd5e-exclusive\n\n' +
           'Returns a detailed report: features added ✅, skipped (already on actor) ⏭️, ' +
