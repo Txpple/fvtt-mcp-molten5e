@@ -121,10 +121,21 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `import-item` `unresolvedScale` report. Shipped with 1.1/1.2.
 
 ### Phase 2 — Journals fully aligned (live block #2 + §8 landing zone)
-- [ ] **2.1 — De-leak the quest tool** (tool, M). `create-quest-journal` → structuring-only; delete
-  prose generators; deepen the page model.
-- [ ] **2.2 — `journal-builder` skill** (skill, L). The judgment layer; quest becomes a page template.
-  *Ships with 2.1.*
+- [x] **2.1 — De-leak the quest tool** (tool, M) — **landed `master`.** Deleted the prose generators
+  (`quest/quest-content.ts` + the prose assembler in `quest-template.ts`, both files removed); new pure
+  typed-block renderer `src/tools/journal/blocks.ts` (heading/lead/paragraph/readaloud/gmnote/list/grid/
+  html → the `.mcp-journal` house style, `<script>`-stripped). `create-quest-journal` is now
+  structuring-only (`pages[].blocks` + `playerVisible`); `update-quest-journal` appends a styled section
+  from blocks; `link-quest-to-npc` inserts a real `@UUID[Actor.id]` link (refuses an unknown NPC).
+  Deepened the page model: per-page ownership in `createJournal`/`updateJournalContent` (handout vs
+  GM-only), `playerVisible` surfaced in the page manifest; removed the quest-specific `createJournalEntry`.
+  Gate green (723 tests); live-verified 15/15 on `sandbox` (`verify-journal-tooling.mjs` — per-page
+  ownership PERSISTS in v14, blocks round-trip, @UUID link resolves, recap append).
+- [x] **2.2 — `journal-builder` skill** (skill, L) — **landed `master`.** New
+  `.claude/skills/journal-builder/SKILL.md`: the judgment/prose layer (you write the words, the tool
+  structures) — page kinds (handout/lore/read-aloud/GM-notes/quest/session-recap), the quest
+  page-template, player-vs-GM visibility, `@UUID` linking, the §8 session-log path; references
+  `_shared/authoring-policy.md` with the journal-prose clarification. Shipped with 2.1.
 
 ### Phase 3 — Remaining content blocks
 - [ ] **3.1 — Tables** (tool+skill, M/L). Fix v14 `description` schema; compendium-referencing results;
@@ -142,7 +153,8 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `create-pc`/`pc-builder` family.
 
 ---
-*Phase 0 (Foundations) **COMPLETE**. Phase 1 (NPCs) **COMPLETE** — 1.1 prefab-as-base bridge · 1.2
-`@scale` detection as a reported fact · 1.3 builder-skill realign, all landed on `master` and
-live-verified on `sandbox` (10/10 + 8/8). Next: **Phase 2 — Journals** (2.1 de-leak the quest tool ·
-2.2 `journal-builder` skill).*
+*Phase 0 (Foundations) **COMPLETE**. Phase 1 (NPCs) **COMPLETE** (live-verified 10/10 + 8/8). Phase 2
+(Journals) **COMPLETE** — 2.1 de-leak the quest tool (typed-block structuring + per-page ownership +
+`@UUID` links; prose generators deleted) · 2.2 `journal-builder` skill, landed on `master` and
+live-verified on `sandbox` (15/15). Next: **Phase 3 — remaining content blocks** (3.1 Tables · 3.2 Cards
+· 3.3 Playlists).*

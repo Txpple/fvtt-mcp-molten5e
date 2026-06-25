@@ -48,192 +48,181 @@ describe('QuestCreationTools.getToolDefinitions', () => {
   });
 });
 
-describe('handleCreateQuestJournal', () => {
-  it('forwards the quest title + generated content and reports the page count', async () => {
-    const { tools, calls } = build({ id: 'j1', name: 'Find the Amulet', pageCount: 1 });
+describe('handleCreateQuestJournal (structuring — blocks -> styled HTML, no prose)', () => {
+  it("renders each page's blocks into the house style + maps playerVisible to ownership", async () => {
+    const { tools, calls } = build({
+      id: 'j1',
+      name: 'The Grove',
+      pageCount: 2,
+      pages: [{ id: 'p1' }, { id: 'p2' }],
+    });
     const out = await tools.handleCreateQuestJournal({
-      questTitle: 'Find the Amulet',
-      questDescription: 'A precious amulet was stolen.',
+      title: 'The Grove',
+      pages: [
+        {
+          name: 'Overview',
+          blocks: [
+            { type: 'lead', html: 'A cursed grove.' },
+            { type: 'readaloud', html: '<p>Cold air bites.</p>' },
+            { type: 'list', items: ['Find the druid'] },
+          ],
+        },
+        {
+          name: 'Handout',
+          playerVisible: true,
+          blocks: [{ type: 'paragraph', html: 'For the players.' }],
+        },
+      ],
+      folderName: 'Quests',
     });
 
-    expect(calls[0][0]).toBe('createJournalEntry');
-    expect(calls[0][1].name).toBe('Find the Amulet');
-    // Generated HTML content carries the title and the lead description.
-    expect(calls[0][1].content).toContain('Find the Amulet');
-    expect(calls[0][1].content).toContain('A precious amulet was stolen.');
+    expect(calls[0][0]).toBe('createJournal');
+    expect(calls[0][1].name).toBe('The Grove');
+    expect(calls[0][1].folderName).toBe('Quests');
+    const pages = calls[0][1].pages;
+    expect(pages).toHaveLength(2);
+    // page 1: GM-only (no ownership), styled content carrying ONLY the caller's words
+    expect(pages[0].name).toBe('Overview');
+    expect(pages[0].ownership).toBeUndefined();
+    expect(pages[0].content).toContain('class="mcp-journal"');
+    expect(pages[0].content).toContain('A cursed grove.');
+    expect(pages[0].content).toContain('Cold air bites.');
+    expect(pages[0].content).toContain('Find the druid');
+    // page 2: player-visible handout -> ownership default 2 (observe)
+    expect(pages[1].ownership).toEqual({ default: 2 });
+    expect(pages[1].content).toContain('For the players.');
 
     expect(out).toMatchObject({
       success: true,
       journalId: 'j1',
-      journalName: 'Find the Amulet',
-      pageCount: 1,
-      message: 'Quest "Find the Amulet" created successfully with 1 page(s)',
+      journalName: 'The Grove',
+      pageCount: 2,
     });
   });
 
-  it('passes folderName and additionalPages through to the bridge', async () => {
-    const { tools, calls } = build({ id: 'j2', name: 'Side Quest', pageCount: 2 });
+  it('never invents prose — the page HTML contains only the caller words', async () => {
+    const { tools, calls } = build({ id: 'j', name: 'X', pageCount: 1, pages: [] });
     await tools.handleCreateQuestJournal({
-      questTitle: 'Side Quest',
-      questDescription: 'Help the villagers.',
-      folderName: 'Quests',
-      additionalPages: [{ name: 'Player Handout', content: '<p>Hello</p>' }],
+      title: 'X',
+      pages: [{ name: 'P', blocks: [{ type: 'paragraph', html: 'JustThis.' }] }],
     });
-    expect(calls[0][1].folderName).toBe('Quests');
-    expect(calls[0][1].additionalPages).toEqual([
-      { name: 'Player Handout', content: '<p>Hello</p>' },
-    ]);
-  });
-
-  it('embeds quest-detail fields (type, difficulty, location) into the content', async () => {
-    const { tools, calls } = build({ id: 'j3', name: 'Hunt', pageCount: 1 });
-    await tools.handleCreateQuestJournal({
-      questTitle: 'Hunt',
-      questDescription: 'Track the beast.',
-      questType: 'kill',
-      difficulty: 'hard',
-      location: 'Darkwood',
-      questGiver: 'Mayor Tom',
-      rewards: '500 gold',
-    });
-    const content = calls[0][1].content;
-    expect(content).toContain('Kill Quest'); // questType capitalized
-    expect(content).toContain('Hard'); // difficulty capitalized
-    expect(content).toContain('Darkwood'); // location
-    expect(content).toContain('Mayor Tom'); // quest giver
-    expect(content).toContain('500 gold'); // rewards
+    const content = calls[0][1].pages[0].content;
+    expect(content).toContain('JustThis.');
+    for (const fabricated of [
+      'approaches the party',
+      'urgent news',
+      'Report back',
+      'innocent people',
+    ]) {
+      expect(content).not.toContain(fabricated);
+    }
   });
 
   it('throws when the bridge returns an error payload', async () => {
     const { tools } = build({ error: 'boom' });
     await expect(
-      tools.handleCreateQuestJournal({ questTitle: 'X', questDescription: 'Y' })
-    ).rejects.toThrow();
-  });
-
-  it('rejects a missing questDescription', async () => {
-    const { tools } = build();
-    await expect(tools.handleCreateQuestJournal({ questTitle: 'X' })).rejects.toThrow();
-  });
-
-  it('rejects an empty questTitle', async () => {
-    const { tools } = build();
-    await expect(
-      tools.handleCreateQuestJournal({ questTitle: '', questDescription: 'Y' })
-    ).rejects.toThrow();
-  });
-
-  it('rejects an invalid questType enum value', async () => {
-    const { tools } = build();
-    await expect(
       tools.handleCreateQuestJournal({
-        questTitle: 'X',
-        questDescription: 'Y',
-        questType: 'epic',
+        title: 'X',
+        pages: [{ name: 'P', blocks: [{ type: 'paragraph', html: 'y' }] }],
       })
     ).rejects.toThrow();
   });
 
-  it('rejects an additionalPages entry with empty content', async () => {
+  it('rejects missing pages / an empty title / a bad block type / empty blocks', async () => {
     const { tools } = build();
+    await expect(tools.handleCreateQuestJournal({ title: 'X' })).rejects.toThrow();
     await expect(
       tools.handleCreateQuestJournal({
-        questTitle: 'X',
-        questDescription: 'Y',
-        additionalPages: [{ name: 'Page', content: '' }],
+        title: '',
+        pages: [{ name: 'P', blocks: [{ type: 'paragraph', html: 'y' }] }],
       })
+    ).rejects.toThrow();
+    await expect(
+      tools.handleCreateQuestJournal({
+        title: 'X',
+        pages: [{ name: 'P', blocks: [{ type: 'bogus', html: 'y' }] }],
+      })
+    ).rejects.toThrow();
+    await expect(
+      tools.handleCreateQuestJournal({ title: 'X', pages: [{ name: 'P', blocks: [] }] })
     ).rejects.toThrow();
   });
 });
 
-describe('handleLinkQuestToNPC', () => {
-  it('reads the journal, writes the linked content, and reports the relationship', async () => {
+describe('handleLinkQuestToNPC (real @UUID link, never a dead name)', () => {
+  it('resolves the NPC and appends a @UUID[Actor.id] enricher link', async () => {
     const { tools, calls } = build((method: string) => {
-      if (method === 'getJournalContent')
-        return { content: '<section class="mcp-journal"><div></div></section>' };
-      if (method === 'updateJournalContent') return { success: true };
+      if (method === 'findActor') return { id: 'abc123', name: 'Old Druid' };
+      if (method === 'getJournalContent') return { content: '<section>old</section>' };
+      if (method === 'updateJournalContent')
+        return { success: true, pageId: 'p1', pageName: 'Quest' };
       return {};
     });
 
     const out = await tools.handleLinkQuestToNPC({
       journalId: 'j1',
-      npcName: 'Gandalf',
+      npcName: 'Old Druid',
       relationship: 'questGiver',
     });
 
-    expect(calls[0][0]).toBe('getJournalContent');
-    expect(calls[0][1]).toEqual({ journalId: 'j1' });
-    const updateCall = calls.find(c => c[0] === 'updateJournalContent');
-    expect(updateCall![1].journalId).toBe('j1');
-    expect(updateCall![1].content).toContain('Gandalf');
-
-    // relationship has its underscore replaced with a space in the message.
-    expect(out).toEqual({
+    expect(calls.find(c => c[0] === 'findActor')![1]).toEqual({ identifier: 'Old Druid' });
+    const updateCall = calls.find(c => c[0] === 'updateJournalContent')!;
+    expect(updateCall[1].journalId).toBe('j1');
+    expect(updateCall[1].content).toContain('@UUID[Actor.abc123]{Old Druid}');
+    expect(updateCall[1].content).toContain('old'); // appended after existing content
+    expect(out).toMatchObject({
       success: true,
-      message: 'Linked Gandalf to quest as quest giver',
+      npc: { id: 'abc123', name: 'Old Druid' },
+      link: '@UUID[Actor.abc123]{Old Druid}',
     });
   });
 
-  it('throws when the journal cannot be found', async () => {
-    const { tools } = build((method: string) =>
-      method === 'getJournalContent' ? { error: 'not found' } : {}
-    );
+  it('throws (no dead link) when the NPC does not resolve', async () => {
+    const { tools } = build((method: string) => (method === 'findActor' ? null : {}));
     await expect(
-      tools.handleLinkQuestToNPC({ journalId: 'bad', npcName: 'X', relationship: 'ally' })
-    ).rejects.toThrow();
+      tools.handleLinkQuestToNPC({ journalId: 'j1', npcName: 'Ghost', relationship: 'ally' })
+    ).rejects.toThrow(/not found in the world/);
   });
 
-  it('rejects an invalid relationship enum value', async () => {
+  it('rejects an invalid relationship / empty npcName', async () => {
     const { tools } = build();
     await expect(
       tools.handleLinkQuestToNPC({ journalId: 'j', npcName: 'X', relationship: 'frenemy' })
     ).rejects.toThrow();
-  });
-
-  it('rejects an empty npcName', async () => {
-    const { tools } = build();
     await expect(
       tools.handleLinkQuestToNPC({ journalId: 'j', npcName: '', relationship: 'ally' })
     ).rejects.toThrow();
   });
 });
 
-describe('handleUpdateQuestJournal', () => {
-  it('creates a new page when newPageName is given (no read-modify-write)', async () => {
-    const { tools, calls } = build((method: string) => {
-      if (method === 'updateJournalContent')
-        return { success: true, pageId: 'p9', pageName: 'Session 2' };
-      return {};
-    });
+describe('handleUpdateQuestJournal (append a styled section from blocks)', () => {
+  it('creates a new page from blocks when newPageName is given (single write)', async () => {
+    const { tools, calls } = build((method: string) =>
+      method === 'updateJournalContent'
+        ? { success: true, pageId: 'p9', pageName: 'Session 2' }
+        : {}
+    );
 
     const out = await tools.handleUpdateQuestJournal({
       journalId: 'j1',
-      newContent: 'The party reached the keep.',
-      updateType: 'progress',
       newPageName: 'Session 2',
+      blocks: [
+        { type: 'heading', text: 'Session 2' },
+        { type: 'paragraph', html: 'The party reached the keep.' },
+      ],
     });
 
-    // Only a single bridge call: the create-page write. No getJournalContent read.
+    // Only the create-page write — no read.
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toBe('updateJournalContent');
     expect(calls[0][1].newPageName).toBe('Session 2');
     expect(calls[0][1].content).toContain('The party reached the keep.');
-
-    expect(out).toMatchObject({
-      success: true,
-      updateType: 'progress',
-      message: 'New page "Session 2" created in journal',
-      pageId: 'p9',
-      pageName: 'Session 2',
-      verified: true,
-    });
+    expect(calls[0][1].content).toContain('class="mcp-journal"');
+    expect(out).toMatchObject({ success: true, pageId: 'p9', pageName: 'Session 2' });
   });
 
-  it('appends to the first text page and verifies the grown content', async () => {
-    // Stateful mock: the verify read-back must return the WRITTEN (grown)
-    // content, mirroring the real bridge, or verification would fail.
-    const original = '<section class="mcp-journal"><div>old</div></section>';
-    let stored = original;
+  it('appends a styled section to the first text page (read then write)', async () => {
+    let stored = '<section class="mcp-journal"><div>old</div></section>';
     const { tools, calls } = build((method: string, data: any) => {
       if (method === 'getJournalContent') return { content: stored };
       if (method === 'updateJournalContent') {
@@ -243,27 +232,18 @@ describe('handleUpdateQuestJournal', () => {
       return {};
     });
 
-    const out = await tools.handleUpdateQuestJournal({
+    await tools.handleUpdateQuestJournal({
       journalId: 'j1',
-      newContent: 'New milestone reached.',
-      updateType: 'progress',
+      blocks: [{ type: 'paragraph', html: 'New milestone reached.' }],
     });
 
-    // Reads current content, writes updated content, reads back to verify.
-    expect(calls.map(c => c[0])).toEqual([
-      'getJournalContent',
-      'updateJournalContent',
-      'getJournalContent',
-    ]);
+    expect(calls.map(c => c[0])).toEqual(['getJournalContent', 'updateJournalContent']);
     const writeCall = calls[1];
-    expect(writeCall[1].content).toContain('New milestone reached.');
-    expect(writeCall[1].content).toContain('Progress Update');
-
-    expect(out).toMatchObject({ success: true, updateType: 'progress', verified: true });
+    expect(writeCall[1].content).toContain('old'); // existing content preserved
+    expect(writeCall[1].content).toContain('New milestone reached.'); // appended
   });
 
   it('appends to a specific page when pageId is supplied', async () => {
-    // Stateful: page read-back returns the appended content so verify passes.
     let stored = '<p>existing page text</p>';
     const { tools, calls } = build((method: string, data: any) => {
       if (method === 'getJournalPageContent') return { content: stored };
@@ -274,56 +254,23 @@ describe('handleUpdateQuestJournal', () => {
       return {};
     });
 
-    const out = await tools.handleUpdateQuestJournal({
+    await tools.handleUpdateQuestJournal({
       journalId: 'j1',
       pageId: 'p2',
-      newContent: 'A clue was found.',
-      updateType: 'modification',
+      blocks: [{ type: 'paragraph', html: 'A clue was found.' }],
     });
 
-    // Page read -> write (carrying pageId) -> page read-back to verify.
-    expect(calls.map(c => c[0])).toEqual([
-      'getJournalPageContent',
-      'updateJournalContent',
-      'getJournalPageContent',
-    ]);
+    expect(calls.map(c => c[0])).toEqual(['getJournalPageContent', 'updateJournalContent']);
     expect(calls[1][1].pageId).toBe('p2');
+    expect(calls[1][1].content).toContain('existing page text');
     expect(calls[1][1].content).toContain('A clue was found.');
-    expect(out).toMatchObject({ success: true, verified: true });
   });
 
-  it('throws when the target journal has no content', async () => {
-    const { tools } = build((method: string) =>
-      method === 'getJournalContent' ? { content: '' } : {}
-    );
-    await expect(
-      tools.handleUpdateQuestJournal({
-        journalId: 'j1',
-        newContent: 'x',
-        updateType: 'progress',
-      })
-    ).rejects.toThrow();
-  });
-
-  it('rejects an invalid updateType enum value', async () => {
+  it('rejects empty blocks / a bad block', async () => {
     const { tools } = build();
+    await expect(tools.handleUpdateQuestJournal({ journalId: 'j1', blocks: [] })).rejects.toThrow();
     await expect(
-      tools.handleUpdateQuestJournal({
-        journalId: 'j1',
-        newContent: 'x',
-        updateType: 'restart',
-      })
-    ).rejects.toThrow();
-  });
-
-  it('rejects an empty newContent', async () => {
-    const { tools } = build();
-    await expect(
-      tools.handleUpdateQuestJournal({
-        journalId: 'j1',
-        newContent: '',
-        updateType: 'progress',
-      })
+      tools.handleUpdateQuestJournal({ journalId: 'j1', blocks: [{ type: 'nope', html: 'x' }] })
     ).rejects.toThrow();
   });
 });

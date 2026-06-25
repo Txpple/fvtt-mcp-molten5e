@@ -1,102 +1,83 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
-import { ErrorHandler } from '../utils/error-handler.js';
+import { ErrorHandler, FormattedToolError } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
-// Quest prose + HTML templating live in ./quest/* (pure, string-in/string-out); this class is
-// the thin MCP orchestration around them.
-import {
-  generateQuestContent,
-  addNPCLinkToJournal,
-  formatNewPageContent,
-  formatQuestUpdate,
-  formatUpdateContentForFoundry,
-} from './quest/quest-template.js';
+// Journal STRUCTURING (typed blocks -> styled HTML) lives in ./journal/blocks (pure). The skill
+// supplies the words as blocks; this class arranges/styles them. No prose is generated here — the
+// former quest/quest-content.ts prose generators were deleted (design.md §2.1 / Invariant 1).
+import { renderStyledHtml, blockSchema, type Block } from './journal/blocks.js';
 
 // Single source of truth for each tool's input contract: the handler parses with these
 // schemas and getToolDefinitions() advertises toInputSchema(...) of the same schema.
-const CreateQuestJournalSchema = z.object({
-  questTitle: z.string().min(1, 'Quest title is required').describe('The title of the quest'),
-  questDescription: z
-    .string()
-    .min(1, 'Quest description is required')
-    .describe('Detailed description of what the quest should accomplish'),
-  questType: z
-    .enum(['main', 'side', 'personal', 'mystery', 'fetch', 'escort', 'kill', 'collection'])
+
+// A journal page = a name + ordered typed blocks (the skill's words) + optional player visibility.
+// The tool renders the blocks into the `.mcp-journal` house style; it NEVER generates the words.
+const journalPageSchema = z.object({
+  name: z.string().min(1).describe('Page title (the tab name in the journal).'),
+  playerVisible: z
+    .boolean()
     .optional()
-    .describe('Type of quest (optional)'),
-  difficulty: z
-    .enum(['easy', 'medium', 'hard', 'deadly'])
-    .optional()
-    .describe('Quest difficulty level (optional)'),
-  location: z.string().optional().describe('Where the quest takes place (optional)'),
-  questGiver: z
-    .string()
-    .optional()
-    .describe('Name of the NPC who gives this quest to the party (optional)'),
-  npcName: z
-    .string()
-    .optional()
+    .describe('If true, players can OBSERVE this page (a handout). Default: GM-only.'),
+  blocks: z
+    .array(blockSchema)
+    .min(1)
     .describe(
-      'Name of key NPC this quest involves - could be antagonist, ally, or target (optional)'
+      'Ordered typed blocks that ARE the page body — heading / lead / paragraph / readaloud ' +
+        '(boxed player text) / gmnote (GM-only box) / list / grid / html. You supply the words; the ' +
+        'tool styles them.'
     ),
-  rewards: z.string().optional().describe('Quest rewards description (optional)'),
-  additionalPages: z
-    .array(
-      z.object({
-        name: z.string().min(1).describe('Page name (e.g. "Player Handout", "GM Notes")'),
-        content: z.string().min(1).describe('HTML content for this page'),
-      })
-    )
-    .optional()
+});
+
+const CreateQuestJournalSchema = z.object({
+  title: z.string().min(1, 'Title is required').describe('Journal entry name.'),
+  pages: z
+    .array(journalPageSchema)
+    .min(1)
     .describe(
-      'Optional additional pages to create alongside the main quest page. Use for multi-page journals with separate sections like Player Handout, GM Notes, etc.'
+      'Ordered pages (e.g. a player Handout page + a GM Notes page), each a list of blocks.'
     ),
   folderName: z
     .string()
     .optional()
-    .describe(
-      'Optional folder name to organize the journal into. The folder is created automatically if it does not exist.'
-    ),
+    .describe('Optional folder to organize the journal into (created if it does not exist).'),
 });
 
 const LinkQuestToNPCSchema = z.object({
-  journalId: z.string().min(1, 'Journal ID is required').describe('ID of the quest journal entry'),
+  journalId: z.string().min(1, 'Journal ID is required').describe('ID of the quest journal entry.'),
   npcName: z
     .string()
     .min(1, 'NPC name is required')
-    .describe('Name of the NPC to link to the quest'),
+    .describe('Name (or id) of a REAL world Actor to link. Must resolve — a dead link is refused.'),
   relationship: z
     .enum(['questGiver', 'target', 'ally', 'enemy', 'contact'])
-    .describe('Relationship between NPC and quest'),
+    .describe('Relationship between the NPC and the quest.'),
+  pageId: z
+    .string()
+    .optional()
+    .describe('Page to add the link to (id from list-journals). Omit to use the first text page.'),
 });
 
 const UpdateQuestJournalSchema = z.object({
   journalId: z
     .string()
     .min(1, 'Journal ID is required')
-    .describe('ID of the quest journal to update'),
-  newContent: z
-    .string()
-    .min(1, 'New content is required')
+    .describe('ID of the quest journal to update.'),
+  blocks: z
+    .array(blockSchema)
+    .min(1)
     .describe(
-      'Content to add using quest-style HTML or plain text. Quest HTML classes: <h2 class="spaced">Section</h2>, <div class="gmnote"><p>GM info</p></div>, <div class="readaloud"><p>Player content</p></div>, <div class="grid-2">Two columns</div>. Plain text gets wrapped in <p> tags. Markdown will be stripped.'
+      'Typed blocks to APPEND as a new styled section (e.g. a heading "Session 3 — date" + ' +
+        'paragraphs). You supply the words; the tool styles them. Include a heading block to label it.'
     ),
-  updateType: z
-    .enum(['progress', 'completion', 'failure', 'modification'])
-    .describe('Type of update being made'),
   pageId: z
     .string()
     .optional()
-    .describe(
-      'ID of a specific page to update. If omitted, updates the first text page. Get page IDs from list-journals.'
-    ),
+    .describe('Page to append to (id from list-journals). Omit to use the first text page.'),
   newPageName: z
     .string()
     .optional()
-    .describe(
-      'If provided (without pageId), creates a new page with this name instead of updating an existing one.'
-    ),
+    .describe('If set (without pageId), create a NEW page with this name from the blocks instead.'),
 });
 
 const ListJournalsSchema = z.object({
@@ -143,6 +124,10 @@ const CreateJournalSchema = z.object({
       z.object({
         name: z.string().min(1, 'Page name is required').describe('Page title.'),
         content: z.string().optional().default('').describe('HTML content for the page.'),
+        playerVisible: z
+          .boolean()
+          .optional()
+          .describe('If true, players can OBSERVE this page (a handout). Default: GM-only.'),
       })
     )
     .min(1, 'At least one page is required')
@@ -208,18 +193,29 @@ export class QuestCreationTools {
       {
         name: 'create-quest-journal',
         description:
-          'Create a new quest journal entry with AI-generated content based on natural language description',
+          'Create a multi-page journal (quest log, handout, lore, GM notes) from STRUCTURED typed ' +
+          'blocks — a STRUCTURING tool, it never writes the words. You pass pages of blocks (heading / ' +
+          'lead / paragraph / readaloud / gmnote / list / grid / html); the tool renders them in the ' +
+          'house style and sets per-page visibility (playerVisible -> players can observe a handout; ' +
+          "omit -> GM-only). Compose the prose yourself (that's the journal-builder skill's job). For " +
+          'plain raw-HTML pages use create-journal instead.',
         inputSchema: toInputSchema(CreateQuestJournalSchema),
       },
       {
         name: 'link-quest-to-npc',
-        description: 'Link an existing quest journal to an NPC in the world',
+        description:
+          'Append a link from a quest journal to a REAL world NPC: resolves the actor, inserts a ' +
+          'Foundry @UUID[Actor.id]{Name} enricher link (clickable on render) in a GM note, labelled ' +
+          'with the relationship. Refuses an unknown NPC (no dead links) — create the actor first.',
         inputSchema: toInputSchema(LinkQuestToNPCSchema),
       },
       {
         name: 'update-quest-journal',
         description:
-          'Update an existing quest journal with new progress information. By default updates the FIRST text page. Use pageId to target a specific page, or newPageName to create a new page.\n\nFor Foundry VTT v13 ProseMirror editor compatibility:\n\n✅ USE QUEST-STYLE HTML: Match create-quest-journal formatting\n✅ OR USE PLAIN TEXT: Will be wrapped in <p> tags with line breaks as <br>\n❌ DO NOT USE MARKDOWN: **bold**, *italic*, # headers will be stripped to plain text\n\nQuest-style HTML examples:\n• Sections: "<h2 class=\\"spaced\\">New Discovery</h2>"\n• GM Notes: "<div class=\\"gmnote\\"><p>GM info here</p></div>"\n• Player Info: "<div class=\\"readaloud\\"><p>Player-facing content</p></div>"\n• Plain text: "The party discovered the secret chamber"\n• Avoid: "**The party** discovered the *secret chamber*" (Markdown will be stripped)',
+          'Append a new styled section to a quest/journal page from typed blocks (e.g. a heading ' +
+          '"Session 3" + paragraphs of what happened) — the §8 session-log/progress path. You supply ' +
+          'the words as blocks; the tool styles + appends them. By default appends to the first text ' +
+          'page; use pageId to target a page, or newPageName to start a new page. Structuring only.',
         inputSchema: toInputSchema(UpdateQuestJournalSchema),
       },
       {
@@ -267,31 +263,33 @@ export class QuestCreationTools {
    */
   async handleCreateQuestJournal(args: any): Promise<any> {
     try {
-      // Validate arguments
       const request = CreateQuestJournalSchema.parse(args);
 
-      // Generate formatted quest content
-      const questContent = generateQuestContent(request);
+      // STRUCTURE the caller's blocks into styled HTML; map playerVisible -> per-page ownership
+      // (2 = players observe a handout). The words are the caller's blocks — no prose generated here.
+      const pages = request.pages.map(p => ({
+        name: p.name,
+        content: renderStyledHtml(p.blocks),
+        ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
+      }));
 
-      // Create journal entry via Foundry client
-      const result = await this.foundry.call('createJournalEntry', {
-        name: request.questTitle,
-        content: questContent,
-        additionalPages: request.additionalPages,
+      const result = await this.foundry.call('createJournal', {
+        name: request.title,
+        pages,
         ...(request.folderName ? { folderName: request.folderName } : {}),
       });
 
       if (!result || result.error) {
-        throw new Error(result?.error || 'Failed to create quest journal');
+        throw new Error(result?.error || 'Failed to create journal');
       }
 
       return {
         success: true,
         journalId: result.id,
         journalName: result.name,
-        pageCount: result.pageCount || 1,
-        content: questContent,
-        message: `Quest "${request.questTitle}" created successfully with ${result.pageCount || 1} page(s)`,
+        pageCount: result.pageCount,
+        pages: result.pages,
+        message: `Journal "${result.name}" created with ${result.pageCount} page(s).`,
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'create-quest-journal', 'quest creation');
@@ -305,172 +303,112 @@ export class QuestCreationTools {
     try {
       const request = LinkQuestToNPCSchema.parse(args);
 
-      // Get journal content first
-      const journalResult = await this.foundry.call('getJournalContent', {
-        journalId: request.journalId,
-      });
-
-      if (!journalResult || journalResult.error) {
-        throw new Error('Journal not found');
+      // Resolve the NPC to a REAL Actor — a quest link must point at a live document, never a dead
+      // name (ask-don't-invent). findActor returns { id, name } or null.
+      const actor = (await this.foundry.call('findActor', {
+        identifier: request.npcName,
+      })) as { id?: string; name?: string } | null;
+      if (!actor?.id) {
+        throw new FormattedToolError(
+          `NPC "${request.npcName}" not found in the world — create the actor first (or check the ` +
+            'name). A quest link must point at a real Actor; I will not insert a dead reference.'
+        );
       }
 
-      // Add NPC relationship information to journal
-      const updatedContent = addNPCLinkToJournal(
-        journalResult.content,
-        request.npcName,
-        request.relationship
-      );
+      // Build a Foundry @UUID enricher link (clickable on render) inside a GM note, labelled with the
+      // relationship. This is STRUCTURE (a real document link), not prose.
+      const link = `@UUID[Actor.${actor.id}]{${actor.name ?? request.npcName}}`;
+      const relationshipText = request.relationship
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .trim();
+      const linkBlocks: Block[] = [
+        {
+          type: 'gmnote',
+          html: `<p><strong>Related NPC:</strong> ${link} — ${relationshipText}</p>`,
+        },
+      ];
 
-      // Update journal with NPC link
-      const updateResult = await this.foundry.call('updateJournalContent', {
+      const current = await this.readPageContent(request.journalId, request.pageId);
+      const result = await this.foundry.call('updateJournalContent', {
         journalId: request.journalId,
-        content: updatedContent,
+        content: current + renderStyledHtml(linkBlocks),
+        ...(request.pageId ? { pageId: request.pageId } : {}),
       });
-
-      if (!updateResult || updateResult.error) {
-        throw new Error('Failed to update journal with NPC link');
+      if (!result || result.error || !result.success) {
+        throw new Error(result?.error || 'Failed to add the NPC link');
       }
 
       return {
         success: true,
-        message: `Linked ${request.npcName} to quest as ${request.relationship
-          .replace(/([A-Z])/g, ' $1')
-          .toLowerCase()}`,
+        npc: { id: actor.id, name: actor.name ?? request.npcName },
+        link,
+        message: `Linked ${actor.name ?? request.npcName} to the quest as ${relationshipText}.`,
       };
     } catch (error) {
+      if (error instanceof FormattedToolError) throw error;
       this.errorHandler.handleToolError(error, 'link-quest-to-npc', 'linking quest to NPC');
     }
   }
 
   /**
-   * Handle update quest journal request
+   * Append a new styled section (from typed blocks) to a quest/journal page — the progress / §8
+   * session-log path. Structuring only: the words are the caller's blocks; the tool styles + appends.
    */
   async handleUpdateQuestJournal(args: any): Promise<any> {
     try {
       const request = UpdateQuestJournalSchema.parse(args);
+      const sectionHtml = renderStyledHtml(request.blocks);
 
-      // Auto-convert Markdown to plain text with warning (don't block)
-      request.newContent = this.convertMarkdownToPlainText(request.newContent);
-
-      // If creating a new page, skip the read-modify-write cycle
+      // New page: set its content directly (nothing to append to).
       if (request.newPageName) {
-        const formattedContent = formatNewPageContent(request.newContent, request.updateType);
         const result = await this.foundry.call('updateJournalContent', {
           journalId: request.journalId,
-          content: formattedContent,
+          content: sectionHtml,
           newPageName: request.newPageName,
         });
-
         if (!result || result.error || !result.success) {
-          throw new Error(result?.error || 'Failed to create new journal page');
+          throw new Error(result?.error || 'Failed to create the new page');
         }
-
         return {
           success: true,
-          updateType: request.updateType,
-          message: `New page "${request.newPageName}" created in journal`,
+          message: `New page "${request.newPageName}" added.`,
           pageId: result.pageId,
           pageName: result.pageName,
-          verified: true,
         };
       }
 
-      // Get current journal content (for the target page)
-      let currentContent: string;
-      if (request.pageId) {
-        const pageResult = await this.foundry.call('getJournalPageContent', {
-          journalId: request.journalId,
-          pageId: request.pageId,
-        });
-        if (!pageResult || pageResult.error) {
-          throw new Error(`Page not found: ${request.pageId}`);
-        }
-        currentContent = pageResult.content;
-      } else {
-        const currentJournal = await this.foundry.call('getJournalContent', {
-          journalId: request.journalId,
-        });
-        if (!currentJournal || currentJournal.error) {
-          throw new Error(
-            `Journal not found: ${currentJournal?.error || 'Journal ID may be invalid'}`
-          );
-        }
-        currentContent = currentJournal.content;
-      }
-
-      if (!currentContent) {
-        throw new Error('Journal/page exists but has no content to update');
-      }
-
-      // Format the update based on type
-      // For specific page updates, use append-style since the page may not have quest HTML structure
-      let updatedContent: string;
-      if (request.pageId) {
-        const formattedNew = formatUpdateContentForFoundry(request.newContent);
-        updatedContent = currentContent + formattedNew;
-      } else {
-        updatedContent = formatQuestUpdate(currentContent, request.newContent, request.updateType);
-      }
-
-      // Update the journal
+      // Existing page: append the new styled section after the current content.
+      const current = await this.readPageContent(request.journalId, request.pageId);
       const result = await this.foundry.call('updateJournalContent', {
         journalId: request.journalId,
-        content: updatedContent,
-        pageId: request.pageId,
+        content: current + sectionHtml,
+        ...(request.pageId ? { pageId: request.pageId } : {}),
       });
-
-      if (!result) {
-        throw new Error('Failed to update quest journal: No response from Foundry');
+      if (!result || result.error || !result.success) {
+        throw new Error(result?.error || 'Failed to append the section');
       }
-
-      if (result.error) {
-        throw new Error(`Failed to update quest journal: ${result.error}`);
-      }
-
-      if (!result.success) {
-        throw new Error('Failed to update quest journal: Update operation returned failure');
-      }
-
-      // Verify the update by reading the content back
-      let verifyContent: string;
-      if (request.pageId) {
-        const verifyResult = await this.foundry.call('getJournalPageContent', {
-          journalId: request.journalId,
-          pageId: request.pageId,
-        });
-        verifyContent = verifyResult?.content || '';
-      } else {
-        const verifyResult = await this.foundry.call('getJournalContent', {
-          journalId: request.journalId,
-        });
-        verifyContent = verifyResult?.content || '';
-      }
-
-      // The bridge already confirmed result.success above. Use the read-back only to catch the
-      // one failure that flag can't: a page that's empty after we wrote non-empty content. (The
-      // previous OR-chain hard-coded English heading strings that had to stay in lockstep with
-      // formatQuestUpdate, and its "content changed" clause subsumed all the others — dropped as
-      // brittle. Foundry's HTML normalization makes an exact substring match unreliable, so we
-      // don't assert the formatted content survives verbatim.)
-      if (request.newContent.trim().length > 0 && verifyContent.trim().length === 0) {
-        throw new Error(
-          'Journal update verification failed: the page is empty after writing non-empty content.'
-        );
-      }
-
       return {
         success: true,
-        updateType: request.updateType,
-        message: `Quest journal updated with ${request.updateType}`,
+        message: 'Appended a new section to the journal page.',
         pageId: result.pageId,
         pageName: result.pageName,
-        verified: true,
-        details: `Content successfully updated and verified. Content length changed from ${currentContent.length} to ${verifyContent.length} characters.`,
-        updatedContent: verifyContent,
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'update-quest-journal', 'journal update');
     }
+  }
+
+  /** Read a journal page's current HTML (a specific page by id, else the first text page). */
+  private async readPageContent(journalId: string, pageId?: string): Promise<string> {
+    if (pageId) {
+      const pageResult = await this.foundry.call('getJournalPageContent', { journalId, pageId });
+      if (!pageResult || pageResult.error) throw new Error(`Page not found: ${pageId}`);
+      return pageResult.content || '';
+    }
+    const journal = await this.foundry.call('getJournalContent', { journalId });
+    if (!journal || journal.error) throw new Error(`Journal not found: ${journalId}`);
+    return journal.content || '';
   }
 
   /**
@@ -648,9 +586,16 @@ export class QuestCreationTools {
     try {
       const request = CreateJournalSchema.parse(args);
 
+      // Map the friendly per-page `playerVisible` onto Foundry's page ownership (2 = observe).
+      const pages = request.pages.map(p => ({
+        name: p.name,
+        content: p.content,
+        ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
+      }));
+
       const result = await this.foundry.call('createJournal', {
         name: request.name,
-        pages: request.pages,
+        pages,
         ...(request.folderName ? { folderName: request.folderName } : {}),
       });
 
@@ -750,33 +695,5 @@ export class QuestCreationTools {
     const end = Math.min(content.length, index + maxLength);
 
     return `...${content.substring(start, end)}...`;
-  }
-
-  /**
-   * Convert Markdown to plain text and warn (don't block the operation)
-   * This ensures the tool works while gently educating about proper format
-   */
-  private convertMarkdownToPlainText(content: string): string {
-    const originalContent = content;
-
-    // Convert common Markdown patterns to plain text
-    content = content
-      .replace(/\*\*(.+?)\*\*/g, '$1') // **bold** → bold
-      .replace(/\*(.+?)\*/g, '$1') // *italic* → italic
-      .replace(/^#{1,6}\s+(.+)/gm, '$1') // # headers → headers
-      .replace(/`(.+?)`/g, '$1') // `code` → code
-      .replace(/\[(.+?)\]\((.+?)\)/g, '$1') // [text](url) → text
-      .replace(/^[-*+]\s+(.+)/gm, '$1') // - item → item
-      .replace(/^\d+\.\s+(.+)/gm, '$1') // 1. item → item
-      .replace(/^>\s*(.+)/gm, '$1'); // > quote → quote
-
-    // If we made changes, log a warning (but don't block)
-    if (content !== originalContent) {
-      this.logger.warn(
-        'Automatically converted Markdown formatting to plain text. Future updates will work better with plain text input.'
-      );
-    }
-
-    return content;
   }
 }

@@ -19,6 +19,8 @@ interface JournalPageSummary {
   id: string;
   name: string;
   type: string;
+  /** True when players can observe this page (ownership.default >= OBSERVER) — i.e. a handout. */
+  playerVisible: boolean;
 }
 
 interface JournalSummary {
@@ -44,13 +46,18 @@ interface JournalPageContent {
   content: string;
 }
 
-/** Reduce a journal's pages to the lightweight {id,name,type} summary shape. */
+/**
+ * Reduce a journal's pages to the lightweight summary shape, including per-page visibility.
+ * `playerVisible` derives from the page's own ownership (OBSERVER+ = a handout); an inherited/omitted
+ * ownership (default -2 / 0) reads as GM-only.
+ */
 function mapPages(journal: any): JournalPageSummary[] {
   return (
     journal.pages?.map((page: any) => ({
       id: page.id || '',
       name: page.name || '',
       type: page.type || 'text',
+      playerVisible: (page.ownership?.default ?? 0) >= 2,
     })) || []
   );
 }
@@ -130,61 +137,6 @@ export function getJournalPageContent(args: {
 // --- writes ------------------------------------------------------------------
 
 /**
- * Create a quest-flavoured JournalEntry: the first page is always named
- * "Quest Details" holding the supplied content, followed by any additionalPages.
- * The journal is auto-foldered under folderName (or, when omitted, its own name).
- */
-export async function createJournalEntry(request: {
-  name: string;
-  content: string;
-  folderName?: string;
-  additionalPages?: Array<{ name: string; content: string }>;
-}): Promise<{ id: string; name: string; pageCount: number }> {
-  // Build pages array: main page + any additional pages.
-  const pages: Array<{ type: string; name: string; text: { content: string } }> = [
-    {
-      type: 'text',
-      name: 'Quest Details',
-      text: {
-        content: request.content,
-      },
-    },
-  ];
-
-  if (request.additionalPages) {
-    for (const page of request.additionalPages) {
-      pages.push({
-        type: 'text',
-        name: page.name,
-        text: {
-          content: page.content,
-        },
-      });
-    }
-  }
-
-  // Create journal entry with proper Foundry document structure.
-  const journalData = {
-    name: request.name,
-    pages,
-    ownership: { default: 0 }, // GM only by default
-    folder: await getOrCreateFolder(request.folderName || request.name, 'JournalEntry'),
-  };
-
-  const journal = await JournalEntryClass.create(journalData);
-
-  if (!journal) {
-    throw new Error('Failed to create journal entry');
-  }
-
-  return {
-    id: journal.id,
-    name: journal.name || request.name,
-    pageCount: pages.length,
-  };
-}
-
-/**
  * Set a journal's page content in one of three modes:
  *  - newPageName given: create a new text page with that name.
  *  - pageId given: replace that specific page's content (throws if not found).
@@ -197,13 +149,14 @@ export async function updateJournalContent(request: {
   content: string;
   pageId?: string | undefined;
   newPageName?: string | undefined;
+  ownership?: { default: number } | undefined;
 }): Promise<{ success: boolean; pageId?: string | undefined; pageName?: string | undefined }> {
   const journal = game.journal.get(request.journalId);
   if (!journal) {
     throw new Error('Journal entry not found');
   }
 
-  // Mode 1: Create a new page.
+  // Mode 1: Create a new page (carry per-page ownership when given — e.g. a player handout page).
   if (request.newPageName) {
     const created = await journal.createEmbeddedDocuments('JournalEntryPage', [
       {
@@ -212,13 +165,14 @@ export async function updateJournalContent(request: {
         text: {
           content: request.content,
         },
+        ...(request.ownership ? { ownership: request.ownership } : {}),
       },
     ]);
     const newPage = created?.[0];
     return { success: true, pageId: newPage?.id || '', pageName: request.newPageName };
   }
 
-  // Mode 2: Update a specific page by ID.
+  // Mode 2: Update a specific page by ID (optionally re-set ownership — e.g. reveal a handout).
   if (request.pageId) {
     const page = journal.pages.get(request.pageId);
     if (!page) {
@@ -226,6 +180,7 @@ export async function updateJournalContent(request: {
     }
     await page.update({
       'text.content': request.content,
+      ...(request.ownership ? { ownership: request.ownership } : {}),
     });
     return { success: true, pageId: page.id, pageName: page.name };
   }
@@ -258,14 +213,15 @@ export async function updateJournalContent(request: {
 /**
  * Create a generic multi-page JournalEntry from caller-supplied text pages.
  *
- * Unlike createJournalEntry (quest-flavoured: first page is always named
- * "Quest Details" and the journal is auto-foldered under its own name), this
- * takes an explicit pages array and only places the journal in a folder when
- * folderName is given. Each page is a text page with HTML content.
+ * The sole journal creator (the quest-flavoured createJournalEntry was removed — the journal-builder
+ * skill composes structure, this just stores it). Takes an explicit pages array; only folders the
+ * journal when folderName is given. Each page is a text page with HTML content and OPTIONAL per-page
+ * `ownership` (`{ default: 2 }` = players observe — a handout; omitted/`{ default: 0 }` = GM-only).
+ * Per-page ownership is what lets one journal hold a player handout beside GM-only notes (design.md §5).
  */
 export async function createJournal(params: {
   name: string;
-  pages: Array<{ name: string; content: string }>;
+  pages: Array<{ name: string; content: string; ownership?: { default: number } }>;
   folderName?: string;
 }): Promise<{
   id: string;
@@ -288,13 +244,15 @@ export async function createJournal(params: {
       type: 'text',
       name: p.name,
       text: { content: typeof p.content === 'string' ? p.content : '' },
+      // Per-page ownership (JournalEntryPage carries its own ownership in v10+); omit to inherit GM-only.
+      ...(p.ownership ? { ownership: p.ownership } : {}),
     };
   });
 
   const journalData: any = {
     name: params.name,
     pages,
-    ownership: { default: 0 }, // GM only by default
+    ownership: { default: 0 }, // GM only by default (per-page ownership above can re-open a handout)
   };
   if (params.folderName && params.folderName.trim().length > 0) {
     journalData.folder = await getOrCreateFolder(params.folderName.trim(), 'JournalEntry');
