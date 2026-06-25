@@ -37,6 +37,9 @@ describe('compendium-sources — library policy (design.md §2.3: books only, ne
       'dnd-monster-manual.actors',
       'dnd-players-handbook.classes',
       'dnd-dungeon-masters-guide.equipment',
+      // additional premium books brought into scope (extensibility)
+      'dnd-heroes-faerun.actors',
+      'dnd-ravenloft-horrors-within.items',
     ])('flags %s as a premium book', pack => {
       expect(isPremiumBookPack(pack)).toBe(true);
     });

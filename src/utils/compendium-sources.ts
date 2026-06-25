@@ -20,9 +20,13 @@ export const SRD_PACK_PREFIX = 'dnd5e.';
  * Never add an SRD (`dnd5e.*`) pack here.
  */
 export const PREMIUM_BOOK_PREFIXES = [
+  // Core 2024 rulebooks
   'dnd-monster-manual.',
   'dnd-players-handbook.',
   'dnd-dungeon-masters-guide.',
+  // Additional premium books brought into scope (add new releases here)
+  'dnd-heroes-faerun.', // Heroes of Faerûn
+  'dnd-ravenloft-horrors-within.', // Ravenloft: The Horrors Within
 ] as const;
 
 /** True if a pack id is an SRD (`dnd5e.*`) pack — never an authoring source. */
