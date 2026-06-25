@@ -100,6 +100,7 @@ This is the architectural backbone that makes principle #1 real.
 | **Content creation** | Scenes | 1 (now) | ✅ working |
 | | Actors → **NPCs** | 1 (now) | 🔨 **active focus** |
 | | Actors → PCs | 1 (later) | 🧭 designed-for, not built |
+| | Journals (handouts, lore, quests, notes) | 1 | ◻️ tooling exists |
 | | Tables (roll tables) | 1 | ◻️ tooling exists |
 | | Playable cards | 1 | ◻️ tooling exists |
 | | Playlists | 1 | ◻️ tooling exists |
@@ -126,12 +127,16 @@ and its own deterministic tools for correctness.
   mood/lighting/weather/fog, attach playlists and journals.
 - **Actors** *(active)* — the creatures and characters. Split hard into **NPCs** (§6, current) and
   **PCs** (§7, later). This split is the most important structural decision in the content phase.
+- **Journals** — the written layer of an adventure: handouts, lore/gazetteer entries, read-aloud
+  (boxed) text, quest logs, and the GM's own notes. Includes quest journals and linking quests to the
+  NPCs that give them. This is also the **landing zone for Phase-2 session summaries & logs** (§8) — we
+  build the journal capability now, and later session output writes into it.
 - **Tables** — roll tables for loot, encounters, rumors, wild magic, etc.
 - **Playable cards** — Foundry card decks/hands/piles for in-play use.
 - **Playlists** — audio ambiences and tracks, attachable to scenes.
 
-Supporting content that serves the above (journals/quests, organization/folders, ownership, asset
-management) exists to make the building blocks usable; it is plumbing, not a headline scope item.
+Supporting plumbing that serves the above (organization/folders, ownership, asset management) exists to
+make the building blocks usable; it is not itself a headline scope item.
 
 ---
 
@@ -225,7 +230,8 @@ corner.
 - **Audio capture & transcription** — ingest **Craig** (Discord) recordings and run **Whisper**
   speech-to-text to get a spoken transcript alongside the chat transcript.
 - **Summaries & logs** — fuse the chat transcript and the Craig/Whisper audio transcript into session
-  recaps and ongoing campaign logs.
+  recaps and ongoing campaign logs, **authored as journals** (the §5 building block): Phase 1 builds
+  the journal capability, Phase 2 writes session output into it.
 
 ---
 
