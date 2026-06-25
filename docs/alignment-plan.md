@@ -89,8 +89,14 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   copy→modify→rename · ask-don't-invent · authoring-not-play, tracing to design.md §2.3–§2.4/§6). Both
   authoring skills (`stat-block-builder`, `physical-item-builder`) now point to it instead of restating
   it inline; skill-specific bits (the NPC `@scale` fix, item-shaping rules) stay in their skills.
-- [ ] **0.4 — Type the tool↔page seam** (infra, tool, M/L, parallel). `satisfies` + derived `PageApi`
-  + coverage test. *Done when:* a wrong `foundry.call` name fails the gate, not a live session.
+- [x] **0.4 — Type the tool↔page seam** (infra, tool, M/L) — **landed `master`.** `src/page/index.ts`
+  now derives `export type PageApi = typeof api` (the `api` object carries a
+  `satisfies Record<string, (...args) => unknown>` guardrail instead of a widening annotation);
+  `FoundryBridge.call` narrows `name` to `keyof PageApi` (`T` stays first, so `call<Shape>('m', …)`
+  sites are unchanged). A wrong/removed method name is now a `tsc` error across all ~110 tool call
+  sites — proven to bite via a throwaway `@ts-expect-error` fixture. Runtime backstop:
+  `src/foundry.seam.test.ts` parses the registration and asserts every `foundry.call('X')` targets a
+  registered method. Zero call-site fallout; gate green (695 tests).
 
 ### Phase 1 — NPCs fully aligned (live block #1)
 - [ ] **1.1 — Prefab-first as a code path** (tool, M). Copy-default structural; prefab-as-base path
@@ -122,4 +128,6 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `create-pc`/`pc-builder` family.
 
 ---
-*First unit in flight: **0.1** (2024 by default), paired with **0.3**, with **0.4** started in parallel.*
+*Phase 0 (Foundations) **COMPLETE** — 0.1 / 0.1b / 0.1c, SRD full-exclusion, 0.3, 0.2, 0.4 all landed on
+`master`. Next: **Phase 1 — NPCs** (1.1 prefab-first code path · 1.2 `@scale` detection as a reported
+fact · 1.3 realign the builder skills to the §6 ladder).*

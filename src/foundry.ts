@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { PageApi } from './page/index.js';
 
 /**
  * The seam the rest of the codebase depends on. Tools import THIS (a type),
@@ -23,7 +24,13 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
  * foundryClient.query('foundry-mcp-bridge.<name>', data) 1:1.
  */
 export interface FoundryBridge {
-  call<T = any>(name: string, args?: unknown): Promise<T>;
+  /**
+   * Invoke a page-side handler by name. `name` is constrained to `keyof PageApi` (the
+   * registered window.__fvtt method names), so a typo'd or removed method is a compile
+   * error here, not an "Unknown page function" at runtime. `T` stays first so existing
+   * `call<ReturnShape>('method', args)` sites are unchanged.
+   */
+  call<T = any>(name: keyof PageApi, args?: unknown): Promise<T>;
 }
 
 export interface FoundryConfig {

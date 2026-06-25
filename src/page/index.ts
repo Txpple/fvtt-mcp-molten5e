@@ -86,7 +86,7 @@ import { setActorSpellcasting, addSpellsToActor, addHomebrewSpellToActor } from 
 import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
 import { addItem, importItemFromCompendium } from './dnd5e/items.js';
 
-const api: Window['__fvtt'] = {
+const api = {
   // world / scene
   getWorldInfo,
   getActiveScene,
@@ -182,6 +182,15 @@ const api: Window['__fvtt'] = {
   addFeaturesFromCompendium,
   addItem,
   importItemFromCompendium,
-};
+} satisfies Record<string, (...args: any[]) => unknown>;
+
+/**
+ * The exact tool↔page contract: each key is a bridge method name and its value is the
+ * page handler's signature. `FoundryBridge.call` (src/foundry.ts) narrows its `name`
+ * parameter to `keyof PageApi`, so a mistyped method name is a COMPILE error caught by
+ * the gate, not a runtime "Unknown page function" in a live session. Registering a
+ * handler in `api` is the single step that exposes it across the seam.
+ */
+export type PageApi = typeof api;
 
 window.__fvtt = api;
