@@ -169,6 +169,24 @@ describe('handleSearchCompendium', () => {
     const { tools } = build();
     await expect(tools.handleSearchCompendium({ query: 'dragon', limit: 0 })).rejects.toThrow();
   });
+
+  it('drops SRD (dnd5e.*) hits and counts only book results (enforced backstop)', async () => {
+    const bridgeResults = [
+      { id: 'b1', name: 'Goblin', type: 'npc', pack: 'dnd-monster-manual.actors', packLabel: 'MM' },
+      { id: 's1', name: 'Goblin', type: 'npc', pack: 'dnd5e.monsters', packLabel: 'SRD' },
+      { id: 's2', name: 'Goblin Boss', type: 'npc', pack: 'dnd5e.monsters', packLabel: 'SRD' },
+    ];
+    const { tools } = build('dnd5e', bridgeResults);
+
+    const out = await tools.handleSearchCompendium({ query: 'goblin' });
+
+    // Only the premium-book hit survives; SRD rows are not results and do not inflate counts.
+    expect(out.totalFound).toBe(1);
+    expect(out.showing).toBe(1);
+    expect(out.hasMore).toBe(false);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({ id: 'b1', pack: { id: 'dnd-monster-manual.actors' } });
+  });
 });
 
 describe('handleGetCompendiumItem', () => {
@@ -264,6 +282,15 @@ describe('handleGetCompendiumItem', () => {
     const { tools } = build();
     await expect(tools.handleGetCompendiumItem({ packId: 'p' })).rejects.toThrow();
   });
+
+  it('refuses an SRD (dnd5e.*) packId before touching the bridge', async () => {
+    const { tools, calls } = build();
+    await expect(
+      tools.handleGetCompendiumItem({ packId: 'dnd5e.monsters', itemId: 'x' })
+    ).rejects.toThrow(/SRD/);
+    // Guard fires before any bridge call.
+    expect(calls.find(c => c[0] === 'getCompendiumDocumentFull')).toBeUndefined();
+  });
 });
 
 describe('handleListCreaturesByCriteria', () => {
@@ -338,6 +365,29 @@ describe('handleListCreaturesByCriteria', () => {
     const { tools } = build();
     await expect(tools.handleListCreaturesByCriteria({ limit: 1001 })).rejects.toThrow();
   });
+
+  it('drops SRD (dnd5e.*) creatures and counts only book results (enforced backstop)', async () => {
+    const bridgeResult = {
+      response: {
+        creatures: [
+          {
+            id: 'b1',
+            name: 'Adult Red Dragon',
+            pack: 'dnd-monster-manual.actors',
+            packLabel: 'MM',
+          },
+          { id: 's1', name: 'Adult Red Dragon', pack: 'dnd5e.monsters', packLabel: 'SRD' },
+        ],
+        searchSummary: { packsSearched: 2 },
+      },
+    };
+    const { tools } = build('dnd5e', bridgeResult);
+
+    const out = await tools.handleListCreaturesByCriteria({ creatureType: 'dragon' });
+    expect(out.totalFound).toBe(1);
+    expect(out.creatures).toHaveLength(1);
+    expect(out.creatures[0]).toMatchObject({ id: 'b1', pack: { id: 'dnd-monster-manual.actors' } });
+  });
 });
 
 describe('handleListCompendiumPacks', () => {
@@ -383,5 +433,32 @@ describe('handleListCompendiumPacks', () => {
     expect(out.total).toBe(0);
     expect(out.packs).toEqual([]);
     expect(out.availableTypes).toEqual([]);
+  });
+
+  it('excludes SRD (dnd5e.*) packs from the list and from availableTypes (enforced backstop)', async () => {
+    const packs = [
+      {
+        id: 'dnd-monster-manual.actors',
+        label: 'MM',
+        type: 'Actor',
+        system: 'dnd5e',
+        private: false,
+      },
+      {
+        id: 'dnd5e.monsters',
+        label: 'SRD Monsters',
+        type: 'Actor',
+        system: 'dnd5e',
+        private: false,
+      },
+      { id: 'dnd5e.spells24', label: 'SRD Spells', type: 'Item', system: 'dnd5e', private: false },
+    ];
+    const { tools } = build('dnd5e', packs);
+
+    const out = await tools.handleListCompendiumPacks({});
+    expect(out.total).toBe(1);
+    expect(out.packs.map((p: any) => p.id)).toEqual(['dnd-monster-manual.actors']);
+    // availableTypes derives from the visible (book) packs only — no SRD-only 'Item' type leaks in.
+    expect(out.availableTypes).toEqual(['Actor']);
   });
 });

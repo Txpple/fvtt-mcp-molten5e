@@ -9,6 +9,7 @@ import {
   type GameSystem,
 } from '../utils/system-detection.js';
 import { GenericFiltersSchema, describeFilters } from '../utils/compendium-filters.js';
+import { assertNoSrdPacks, isSrdPack } from '../utils/compendium-sources.js';
 import { toInputSchema } from '../utils/schema.js';
 
 // Single source of truth for each tool's input contract: the handlers parse with these schemas
@@ -189,24 +190,25 @@ export class CompendiumTools {
       {
         name: 'search-compendium',
         description:
-          'Search through compendium packs by name. IMPORTANT LIMITATIONS: (1) Text search only matches entity NAMES - descriptions and traits are NOT searchable. (2) Filters use name heuristics only (not actual system data) and only work on Actor packs - challengeRating and creatureType filters search for keywords like "ancient", "legendary", "humanoid", etc. in entity names. For accurate filtering by level/CR, traits, or rarity, use search-compendium-creatures instead. For best results, use broad name-based searches (e.g., "dragon", "knight") and inspect individual items with get-compendium-entry.',
+          'Search the premium book compendium packs by name. The SRD (dnd5e.*) packs are NOT searched and never appear in results — the authoring library is the premium books only (design.md §2.3). IMPORTANT LIMITATIONS: (1) Text search only matches entity NAMES - descriptions and traits are NOT searchable. (2) Filters use name heuristics only (not actual system data) and only work on Actor packs - challengeRating and creatureType filters search for keywords like "ancient", "legendary", "humanoid", etc. in entity names. For accurate filtering by level/CR, traits, or rarity, use search-compendium-creatures instead. For best results, use broad name-based searches (e.g., "dragon", "knight") and inspect individual items with get-compendium-entry.',
         inputSchema: toInputSchema(SearchCompendiumSchema),
       },
       {
         name: 'get-compendium-entry',
         description:
-          'Retrieve a specific compendium entry (monster, item, spell, etc.) by pack id + entry id. Returns the full stat block — items, spells, abilities, effects, system data — needed for actor/item creation. Set compact=true for a condensed stat block when full detail is not needed.',
+          'Retrieve a specific compendium entry (monster, item, spell, etc.) by pack id + entry id. Returns the full stat block — items, spells, abilities, effects, system data — needed for actor/item creation. Set compact=true for a condensed stat block when full detail is not needed. An SRD (dnd5e.*) pack id is refused — author only from the premium books (design.md §2.3).',
         inputSchema: toInputSchema(GetCompendiumEntrySchema),
       },
       {
         name: 'search-compendium-creatures',
         description:
-          'D&D 5e CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria (Challenge Rating, type, size, spellcasting, legendary actions). Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features intelligent pack prioritization and high result limits for complete surveys.',
+          'D&D 5e CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria (Challenge Rating, type, size, spellcasting, legendary actions). Searches the premium book Actor packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features premium-book pack prioritization and high result limits for complete surveys.',
         inputSchema: toInputSchema(ListCreaturesByCriteriaSchema),
       },
       {
         name: 'list-compendium-packs',
-        description: 'List all available compendium packs',
+        description:
+          'List the available compendium packs. SRD (dnd5e.*) packs are excluded — only the premium book packs (and any other non-SRD packs) are listed (design.md §2.3).',
         inputSchema: toInputSchema(ListCompendiumPacksSchema),
       },
     ];
@@ -267,13 +269,18 @@ export class CompendiumTools {
         filters,
       });
 
+      // Enforced backstop to the page-side exclusion: an SRD (`dnd5e.*`) hit is never a result
+      // (design.md §2.3). The page already drops SRD packs before indexing; we re-drop here so the
+      // contract holds even if a pack slips past that filter, and counts reflect only book hits.
+      const visibleResults = results.filter((item: any) => !isSrdPack(item?.pack));
+
       // Limit results
-      const limitedResults = results.slice(0, limit);
+      const limitedResults = visibleResults.slice(0, limit);
 
       this.logger.debug('Compendium search completed', {
         query,
         gameSystem,
-        totalFound: results.length,
+        totalFound: visibleResults.length,
         returned: limitedResults.length,
       });
 
@@ -282,9 +289,9 @@ export class CompendiumTools {
         gameSystem, // Include detected system in response
         filterDescription: filters ? describeFilters(filters, gameSystem) : 'no filters',
         results: limitedResults.map((item: any) => this.formatCompendiumItem(item, gameSystem)),
-        totalFound: results.length,
+        totalFound: visibleResults.length,
         showing: limitedResults.length,
-        hasMore: results.length > limit,
+        hasMore: visibleResults.length > limit,
       };
     } catch (error) {
       this.logger.error('Failed to search compendium', error);
@@ -296,6 +303,10 @@ export class CompendiumTools {
 
   async handleGetCompendiumItem(args: any): Promise<any> {
     const { packId, itemId, compact } = GetCompendiumEntrySchema.parse(args);
+
+    // SRD packs are not a source and are not even visible in lookups (design.md §2.3); refuse an
+    // SRD packId outright rather than reading from it, consistent with the pull-tool guards.
+    assertNoSrdPacks(packId, 'get-compendium-entry');
 
     try {
       // Use the proper document retrieval method that already exists in actor creation
@@ -405,7 +416,12 @@ export class CompendiumTools {
       // Bridge returns either { response: { creatures: [...] } } or a bare array.
       // Use nullish coalescing so an empty creatures array is preserved (an empty
       // result must report totalFound: 0, not fall through to the wrapper's length).
-      const creatureList: any[] = results.response?.creatures ?? results ?? [];
+      const rawCreatureList: any[] = results.response?.creatures ?? results ?? [];
+
+      // Enforced backstop to the page-side exclusion: an SRD (`dnd5e.*`) creature is never a result
+      // (design.md §2.3). The creature index already skips SRD packs; re-drop here so the contract
+      // holds (and counts stay book-only) even if one slips past that filter.
+      const creatureList = rawCreatureList.filter((creature: any) => !isSrdPack(creature?.pack));
 
       return {
         gameSystem, // Include detected system
@@ -437,7 +453,12 @@ export class CompendiumTools {
     this.logger.info('Listing compendium packs', { type });
 
     try {
-      const packs = await this.foundry.call('getAvailablePacks');
+      const rawPacks = await this.foundry.call('getAvailablePacks');
+
+      // Enforced backstop to the page-side exclusion: SRD (`dnd5e.*`) packs are not visible in
+      // lookups (design.md §2.3). The page already omits them; re-drop here so the contract holds,
+      // and so `availableTypes` below is derived only from the visible (book) packs.
+      const packs = rawPacks.filter((pack: any) => !isSrdPack(pack?.id));
 
       // Filter by type if specified
       const filteredPacks = type ? packs.filter((pack: any) => pack.type === type) : packs;

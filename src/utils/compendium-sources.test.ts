@@ -4,6 +4,7 @@ import {
   isPremiumBookPack,
   packPriority,
   assertNoSrdPacks,
+  excludeSrdPacks,
   PREMIUM_BOOK_PREFIXES,
   DEFAULT_SPELL_PACKS,
   DEFAULT_FEATURE_PACKS,
@@ -68,6 +69,40 @@ describe('compendium-sources — library policy (design.md §2.3: books only, ne
         (a, b) => packPriority(a) - packPriority(b)
       );
       expect(sorted[0]).toBe('dnd-players-handbook.spells');
+    });
+  });
+
+  describe('excludeSrdPacks (the lookup chokepoint — SRD never surfaces)', () => {
+    it('drops SRD packs and keeps premium + other non-SRD packs', () => {
+      const packs = [
+        { metadata: { id: 'dnd-monster-manual.actors' } },
+        { metadata: { id: 'dnd5e.monsters' } }, // SRD — must be dropped
+        { metadata: { id: 'dnd5e.spells24' } }, // SRD — must be dropped
+        { metadata: { id: 'some-module.items' } },
+      ];
+      const kept = excludeSrdPacks(packs, p => p.metadata.id).map(p => p.metadata.id);
+      expect(kept).toEqual(['dnd-monster-manual.actors', 'some-module.items']);
+    });
+
+    it('works on the flat { id } shape the Node tools hold', () => {
+      const packs = [{ id: 'dnd-players-handbook.spells' }, { id: 'dnd5e.spells' }];
+      const kept = excludeSrdPacks(packs, p => p.id).map(p => p.id);
+      expect(kept).toEqual(['dnd-players-handbook.spells']);
+    });
+
+    it('returns everything when there are no SRD packs (no-op once SRD is permission-hidden)', () => {
+      const packs = [
+        { id: 'dnd-monster-manual.actors' },
+        { id: 'dnd-dungeon-masters-guide.equipment' },
+      ];
+      expect(excludeSrdPacks(packs, p => p.id)).toHaveLength(2);
+    });
+
+    it('does not throw on a malformed/undefined pack id (keeps it; downstream type filters handle it)', () => {
+      const packs = [{ id: undefined as unknown as string }, { id: 'dnd5e.monsters' }];
+      const kept = excludeSrdPacks(packs, p => p.id);
+      expect(kept).toHaveLength(1);
+      expect(kept[0].id).toBeUndefined();
     });
   });
 

@@ -7,7 +7,7 @@
 // SHAPES exactly match what the old data-access.ts queries produced, which is what the
 // Node tools (src/tools/compendium.ts) and their tests expect.
 
-import { packPriority } from '../utils/compendium-sources.js';
+import { excludeSrdPacks, packPriority } from '../utils/compendium-sources.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -153,9 +153,13 @@ export async function listCreaturesByCriteria(args?: CreatureCriteria): Promise<
  * sink the whole scan.
  */
 async function buildCreatureIndex(): Promise<CreatureIndexEntry[]> {
-  const actorPacks: any[] = Array.from(game.packs.values()).filter(
-    (pack: any) => pack?.metadata?.type === 'Actor'
-  );
+  // SRD (`dnd5e.*`) packs are excluded outright (design.md §2.3). Dropping them before we load
+  // documents also avoids paying the (expensive) full-document scan on the large SRD monster pack
+  // and keeps the result `limit` budget reserved for the premium books.
+  const actorPacks: any[] = excludeSrdPacks(
+    Array.from(game.packs.values()) as any[],
+    (pack: any) => pack?.metadata?.id
+  ).filter((pack: any) => pack?.metadata?.type === 'Actor');
 
   const creatures: CreatureIndexEntry[] = [];
 

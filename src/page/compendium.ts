@@ -7,7 +7,7 @@
 // expect (faithful to the old data-access.ts oracle).
 
 import { toSource, sanitizeDocData } from './_shared.js';
-import { packPriority } from '../utils/compendium-sources.js';
+import { excludeSrdPacks, packPriority } from '../utils/compendium-sources.js';
 
 interface CompendiumSearchArgs {
   query: string;
@@ -99,8 +99,13 @@ export async function searchCompendium(
     throw new Error('Search query must contain valid search terms');
   }
 
-  // Filter packs by requested type; never search Scene packs.
-  const packs: any[] = Array.from(game.packs.values()).filter((pack: any) => {
+  // Filter packs by requested type; never search Scene packs; never search SRD packs.
+  // SRD (`dnd5e.*`) packs are excluded outright (design.md §2.3) — dropping them here, before we
+  // index, also keeps the RESULT_LIMIT budget reserved for the premium books.
+  const packs: any[] = excludeSrdPacks(
+    Array.from(game.packs.values()) as any[],
+    (pack: any) => pack.metadata.id
+  ).filter((pack: any) => {
     if (packType && pack.metadata.type !== packType) {
       return false;
     }
@@ -220,11 +225,15 @@ export async function searchCompendium(
 }
 
 /**
- * List all compendium packs with their basic metadata. The Node tool filters by
- * type and derives availableTypes from this list.
+ * List the visible compendium packs with their basic metadata. SRD (`dnd5e.*`) packs are excluded
+ * (design.md §2.3) so they never surface to the caller. The Node tool filters by type and derives
+ * availableTypes from this list.
  */
 export function getAvailablePacks(): unknown {
-  return Array.from(game.packs.values()).map((pack: any) => ({
+  return excludeSrdPacks(
+    Array.from(game.packs.values()) as any[],
+    (pack: any) => pack.metadata.id
+  ).map((pack: any) => ({
     id: pack.metadata.id,
     label: pack.metadata.label,
     type: pack.metadata.type,

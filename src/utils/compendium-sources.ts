@@ -4,6 +4,11 @@
 //   - The premium-book set is EXTENSIBLE: when a new premium book ships and is brought into scope,
 //     add its pack-id prefix to PREMIUM_BOOK_PREFIXES below — the ONE place. Nothing else changes.
 //   - The SRD deny-list is PERMANENT: no future book ever moves an SRD pack into scope.
+//   - SRD packs are EXCLUDED ENTIRELY from every lookup (search / creature index / pack list), not
+//     merely ranked last: `excludeSrdPacks` strips them at each enumeration site so they cannot
+//     surface, consume a result/scan budget, or be picked. This is forward-compatible with the
+//     planned permission change (the Assistant GM won't even see the SRD packs) — once those packs
+//     aren't in `game.packs`, the filter is simply a no-op.
 //
 // This module is intentionally PURE — no imports, no Node or Foundry globals — so it can be shared
 // by BOTH bundles: the Node-side tools (pack defaults) and the page-side search (premium-first
@@ -42,6 +47,17 @@ export function isPremiumBookPack(packId: string): boolean {
 }
 
 /**
+ * Filter a list of compendium packs down to the ones VISIBLE for authoring — i.e. everything
+ * except the SRD (`dnd5e.*`) packs, which are never a source (design.md §2.3) and must not even
+ * surface in lookups. This is the chokepoint every enumeration site routes through, so the deny
+ * list stays single-source. `getId` extracts the pack id from whatever shape the caller holds
+ * (a Foundry pack exposes `metadata.id`; the Node tool holds `{ id }`).
+ */
+export function excludeSrdPacks<T>(packs: readonly T[], getId: (pack: T) => string): T[] {
+  return packs.filter(pack => !isSrdPack(getId(pack)));
+}
+
+/**
  * Throw if any supplied pack id is an SRD (`dnd5e.*`) pack. The PULL tools (create-actor from
  * compendium, import-item, add-feature's compendium modes) call this on the caller-supplied
  * pack(s), so "books only, never SRD" (design.md §2.3) is enforced BY CONSTRUCTION — not just by
@@ -76,8 +92,10 @@ export const DEFAULT_FEATURE_PACKS: readonly string[] = [
  * Premium-first ranking key for a pack id (lower sorts first):
  *   0 = premium book (the in-scope library)
  *   1 = any other non-SRD pack (third-party/module — allowed, but not a book)
- *   2 = SRD pack (`dnd5e.*`) — always last
- * Used to order search results so authoring lands on the books, never the SRD.
+ *   2 = SRD pack (`dnd5e.*`) — defensive backstop only
+ * Used to order the surviving search results so authoring lands on the books first. SRD packs are
+ * excluded upstream by `excludeSrdPacks`, so the `2` tier should never actually reach a sort — it
+ * stays as a backstop in case a pack slips past the filter.
  */
 export function packPriority(packId: string): 0 | 1 | 2 {
   if (isPremiumBookPack(packId)) return 0;
