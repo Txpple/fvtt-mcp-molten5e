@@ -67,6 +67,11 @@ If the exact item isn't in a compendium but a close base IS (the common case for
      has no numeric field; it MUST be an ActiveEffect).
 3. **Rename** to the custom name (`import-item`'s `name` on copy, or `update-actor-item`).
 
+> **If `import-item` reports `unresolvedScale`** (rare — a magic-item feature rider whose damage/uses
+> use an advancement-fed `@scale.*` formula), it's flagging a dangling token as a fact, just like the
+> NPC case. Set an explicit value at the reported `path` with `update-actor-item`; the tool reports the
+> token, you choose the die (design.md §2.1).
+
 ## Step 2 — True homebrew with no compendium base (last resort — ASK first)
 
 Only when nothing in any compendium fits, author from scratch with **`add-item`** (pick `itemType`,

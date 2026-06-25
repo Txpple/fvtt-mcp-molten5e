@@ -99,12 +99,26 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   registered method. Zero call-site fallout; gate green (695 tests).
 
 ### Phase 1 — NPCs fully aligned (live block #1)
-- [ ] **1.1 — Prefab-first as a code path** (tool, M). Copy-default structural; prefab-as-base path
-  (instantiate MM actor → layer mods on the *world copy* only).
-- [ ] **1.2 — `@scale` detection as a fact** (tool, M). Copy tools report unresolved `@scale` tokens;
-  the skill picks the die, the tool never guesses.
-- [ ] **1.3 — Realign `stat-block-builder` + `physical-item-builder`** (skill, M). Prefab search is the
-  first move; pack-ids move into tool defaults; copy→modify→rename for items. *Ships with 1.1/1.2.*
+- [x] **1.1 — Prefab-first as a code path** (tool, M) — **landed `master`.** create-actor (compendium)
+  gains an optional `modifications` passthrough — update-actor-shaped stat edits layered onto the
+  instantiated WORLD COPY via the existing updateActor correctness (world-copy-only by construction;
+  target pinned to the fresh copy after the spread so a stray `actorIdentifier` can't redirect it).
+  Best-effort per actor; applies to every copy; the response reports what was layered on + warnings.
+  create-actor description now advertises the three rungs in order. Live-verified 8/8 on sandbox
+  (`verify-prefab-bridge.mjs`): edits land on the copy, the **source compendium entry is provably
+  unchanged**, warn-not-block preserved.
+- [x] **1.2 — `@scale` detection as a fact** (tool, M) — **landed `master`.** New pure helper
+  `findUnresolvedScaleTokens` (deep `@scale.` scan → `{path, formula}`) wired into all three copy
+  paths (addFeaturesFromCompendium / importItemFromCompendium / createActorFromCompendium); surfaced
+  via one shared `formatUnresolvedScale` advisory (reports the token, proposes no value). Live-verified
+  10/10 (`verify-scale-report.mjs`) — the real 2024 Breath Weapon hides its token in
+  `damage.parts[].custom.formula`, confirming the scan-all-strings design; reported paths resolve on
+  the live item; clean features not flagged.
+- [x] **1.3 — Realign `stat-block-builder` + `physical-item-builder`** (skill, M) — **landed `master`.**
+  stat-block-builder Step 0 rewritten as the explicit §6 ladder (prefab → prefab-as-base via
+  `modifications` → authored-last); `@scale` guidance now consumes the reported fact (corrected the
+  live "Breath Weapon" name + `custom.formula` patch path). physical-item-builder consumes the
+  `import-item` `unresolvedScale` report. Shipped with 1.1/1.2.
 
 ### Phase 2 — Journals fully aligned (live block #2 + §8 landing zone)
 - [ ] **2.1 — De-leak the quest tool** (tool, M). `create-quest-journal` → structuring-only; delete
@@ -128,6 +142,7 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `create-pc`/`pc-builder` family.
 
 ---
-*Phase 0 (Foundations) **COMPLETE** — 0.1 / 0.1b / 0.1c, SRD full-exclusion, 0.3, 0.2, 0.4 all landed on
-`master`. Next: **Phase 1 — NPCs** (1.1 prefab-first code path · 1.2 `@scale` detection as a reported
-fact · 1.3 realign the builder skills to the §6 ladder).*
+*Phase 0 (Foundations) **COMPLETE**. Phase 1 (NPCs) **COMPLETE** — 1.1 prefab-as-base bridge · 1.2
+`@scale` detection as a reported fact · 1.3 builder-skill realign, all landed on `master` and
+live-verified on `sandbox` (10/10 + 8/8). Next: **Phase 2 — Journals** (2.1 de-leak the quest tool ·
+2.2 `journal-builder` skill).*
