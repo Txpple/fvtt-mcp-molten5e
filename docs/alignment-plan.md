@@ -152,7 +152,12 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `import-cards` instantiates a core PRESET deck (`pokerDark`/`pokerLight` = a standard 52-card deck —
   the only "ready-made deck" path, no compendium); new `cards-builder` skill. Spike
   `scripts/spike-cards-schema.mjs`. Gate green (731); live-verified 7/7 (`verify-cards-tooling.mjs`).
-- [ ] **3.3 — Playlists** (skill, S/M). `playlist-builder`; `scene-builder` delegates to it.
+- [x] **3.3 — Playlists** (skill, S/M) — **landed `master`.** Tools were already v14-correct (spike
+  `scripts/spike-playlist-schema.mjs` confirmed the PlaylistSound file field is still `path`), so this
+  is skill-only: new `playlist-builder` skill (mode judgment sequential/shuffle/simultaneous/soundboard,
+  volume/repeat/fade, scene-ambience vs combat-music vs SFX, asset-driven audio); `scene-builder` now
+  **delegates** new-playlist authoring to it (keeps the scene `playlist` link wiring). Audio has no
+  compendium (asset-driven like scenes). Live-verified 8/8 (`verify-playlist-tooling.mjs`).
 
 ### Phase 4 — Continuous correctness hardening (parallel, non-blocking)
 - [ ] Generate `add-feature` schema from zod (don't split it); split `create-actor` →
@@ -165,7 +170,10 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
 
 ---
 *Phase 0 (Foundations) **COMPLETE**. Phase 1 (NPCs) **COMPLETE** (live-verified 10/10 + 8/8). Phase 2
-(Journals) **COMPLETE** — 2.1 de-leak the quest tool (typed-block structuring + per-page ownership +
-`@UUID` links; prose generators deleted) · 2.2 `journal-builder` skill, landed on `master` and
-live-verified on `sandbox` (15/15). Next: **Phase 3 — remaining content blocks** (3.1 Tables · 3.2 Cards
-· 3.3 Playlists).*
+(Journals) **COMPLETE** (15/15). Phase 3 (Remaining content blocks) **COMPLETE** — 3.1 Tables (v14
+`description` results + compendium `@UUID` loot links + `import-rolltable` + `table-builder`, 19/19) ·
+3.2 Cards (face text + `import-cards` presets + `cards-builder`, 7/7) · 3.3 Playlists (`playlist-builder`
++ scene-builder delegation, tools v14-verified, 8/8), all landed on `master`. **Every design.md §5
+content building block now has its judgment skill + verified tools.** Next: **Phase 4 — continuous
+correctness hardening** (parallel/non-blocking: generate `add-feature` schema, split `create-actor`,
+rename `CharacterTools`→`ActorTools`, **extract `ItemTools`**) — then **Phase 5 — PCs** (last).*
