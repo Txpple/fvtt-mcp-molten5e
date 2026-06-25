@@ -179,6 +179,84 @@ describe('buildActivity — lean types (heal / check / utility / damage)', () =>
     expect(a.damage.parts).toHaveLength(1);
   });
 
+  it('cast (save spell, charged) — byte-equivalent to the live Wand of Fireballs shape', () => {
+    const a = buildActivity('cast', {
+      id: 'CAST000000000000',
+      name: 'Cast Fireball',
+      spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00',
+      level: 3,
+      spellProperties: ['vocal', 'somatic', 'material'],
+      saveDC: 15,
+      charges: 1,
+    });
+    expect(a).toEqual({
+      _id: 'CAST000000000000',
+      type: 'cast',
+      name: 'Cast Fireball',
+      img: '',
+      sort: 0,
+      spell: {
+        uuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00',
+        challenge: { save: 15, attack: null, override: true },
+        level: 3,
+        properties: ['vocal', 'somatic', 'material'],
+        spellbook: true,
+      },
+      activation: { type: 'action', value: null, override: false },
+      consumption: {
+        scaling: { allowed: false, max: '' },
+        spellSlot: false,
+        targets: [{ type: 'itemUses', value: '1', target: '', scaling: { mode: '', formula: '' } }],
+      },
+      description: { chatFlavor: '' },
+      duration: { units: 'inst', concentration: false, override: false },
+      range: { override: false, units: 'self' },
+      target: {
+        template: { contiguous: false, units: 'ft', stationary: false },
+        affects: { choice: false },
+        override: false,
+        prompt: true,
+      },
+      uses: { spent: 0, recovery: [], max: '' },
+      flags: {},
+      visibility: {
+        level: {},
+        requireAttunement: false,
+        requireIdentification: false,
+        requireMagic: false,
+      },
+    });
+  });
+
+  it('cast challenge: attackBonus pins a fixed spell-attack (no save key)', () => {
+    const a = buildActivity('cast', {
+      id: 'C',
+      spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplWitchBolt0',
+      attackBonus: 5,
+      charges: 1,
+    });
+    expect(a.spell.challenge).toEqual({ attack: 5, override: true });
+  });
+
+  it('cast challenge: neither saveDC nor attackBonus defers to the caster (override:false)', () => {
+    const a = buildActivity('cast', {
+      id: 'C',
+      spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplMagicMissi',
+      charges: 1,
+    });
+    expect(a.spell.challenge).toEqual({ attack: null, override: false });
+  });
+
+  it('cast without charges is at-will (empty consumption targets)', () => {
+    const a = buildActivity('cast', {
+      id: 'C',
+      spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplRayOfFrost',
+      level: 0,
+    });
+    expect(a.consumption.targets).toEqual([]);
+    expect(a.consumption.spellSlot).toBe(false);
+  });
+
   it('throws on an unknown activity type', () => {
     expect(() => buildActivity('bogus', { id: 'X' })).toThrow(/Unknown activity type/);
   });

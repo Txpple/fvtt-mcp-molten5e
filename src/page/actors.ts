@@ -29,6 +29,7 @@ import {
   SKILL_ABILITY,
 } from './dnd5e/actor-fields.js';
 import { buildActivity } from './dnd5e/activities.js';
+import { isSrdPack } from '../utils/compendium-sources.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
 // declared in foundry-globals.d.ts; reach it off globalThis (loosely typed).
@@ -1694,6 +1695,57 @@ export function resolveWorldItem(identifier: string): any {
 }
 
 /**
+ * Resolve a spell uuid for a `cast` activity (the activity LINKS a real compendium spell — design.md
+ * §2.3 / authoring-policy: an item's referenced spell is reached by COPYING a book spell, never by
+ * hand-rolling a fake save/damage activity). Validates the link and returns the facts the pure
+ * buildCastActivity needs (level / V·S·M components / name); it NEVER invents — an off-book or SRD
+ * spell throws so the skill STOPs and ASKs instead of fabricating.
+ */
+async function resolveCastSpell(
+  spellUuid: string | undefined
+): Promise<{ uuid: string; level: number; properties: string[]; name: string }> {
+  if (!spellUuid) {
+    throw new Error(
+      'A cast activity requires `spellUuid` — the Compendium uuid of the spell to link ' +
+        '(e.g. "Compendium.dnd-players-handbook.spells.Item.phbsplFireball00").'
+    );
+  }
+  const spell: any = await fromUuid(spellUuid);
+  if (!spell) {
+    throw new Error(
+      `Spell not found for uuid "${spellUuid}". A cast activity must LINK a real compendium spell ` +
+        '(mirror the Wand of Fireballs). If the spell is not in the premium books, STOP and ASK — ' +
+        'substitute a book spell, drop it, or get explicit homebrew permission; do not hand-roll a ' +
+        'fake save/damage activity to simulate an off-book spell (design.md §2.3).'
+    );
+  }
+  if (spell.documentName !== 'Item' || spell.type !== 'spell') {
+    throw new Error(
+      `uuid "${spellUuid}" resolves to a ${spell.documentName}/${spell.type ?? '?'}, not a spell.`
+    );
+  }
+  const packId: string = spell.pack ?? '';
+  if (isSrdPack(packId)) {
+    throw new Error(
+      `Refusing to link an SRD spell (pack "${packId}") into a cast activity — author from the ` +
+        'premium books only (design.md §2.3). Use the dnd-players-handbook.spells equivalent.'
+    );
+  }
+  const src = toSource(spell);
+  const rawProps = src?.system?.properties;
+  const allProps: string[] = Array.isArray(rawProps) ? rawProps : Array.from(rawProps ?? []);
+  // The cast activity carries only the V/S/M casting COMPONENTS (not concentration/ritual/etc).
+  const COMPONENTS = new Set(['vocal', 'somatic', 'material']);
+  const properties = allProps.filter(p => COMPONENTS.has(p));
+  return {
+    uuid: spellUuid,
+    level: typeof src?.system?.level === 'number' ? src.system.level : 0,
+    properties,
+    name: spell.name ?? 'Spell',
+  };
+}
+
+/**
  * Add / edit / remove / list dnd5e Activities on an item — embedded on an actor (pass
  * actorIdentifier) OR a world Item (omit it). Activities live in system.activities keyed by id.
  *  - list:   return [{ id, type, name }]
@@ -1751,9 +1803,23 @@ export async function manageActivity(params: {
       if (!type) throw new Error('activity.type is required to add an activity.');
       const id = foundry.utils.randomID(16);
       const { type: _t, ...rest } = params.activity ?? {};
+      // A cast activity LINKS a real compendium spell: resolve+validate it (off-book/SRD throws),
+      // then fill the facts the pure builder needs (cast level default, V/S/M components, name).
+      if (type === 'cast') {
+        const spell = await resolveCastSpell(rest.spellUuid);
+        if (rest.level === undefined || rest.level === null) rest.level = spell.level;
+        rest.spellProperties = spell.properties;
+        if (!rest.name) rest.name = `Cast ${spell.name}`;
+      }
       const act = buildActivity(type, { id, ...rest });
       await applyUpdate({ [`system.activities.${id}`]: act });
-      return { ...base, action: 'add', activityId: id, type };
+      return {
+        ...base,
+        action: 'add',
+        activityId: id,
+        type,
+        ...(type === 'cast' ? { spell: rest.spellUuid } : {}),
+      };
     }
 
     case 'edit': {

@@ -52,6 +52,16 @@ export interface BuildActivityOpts {
   checkAbility?: string;
   checkDC?: number;
   skills?: string[];
+  // cast (link a real compendium spell — the activity casts it, pulling its measured template / save /
+  // attack / effects). The page orchestrator resolves the spell from spellUuid and fills level/
+  // spellProperties before calling this pure builder; saveDC/attackBonus drive the challenge override.
+  spellUuid?: string;
+  /** Cast level (e.g. 3 for Fireball). Resolved from the spell's base level when omitted. */
+  level?: number;
+  /** The spell's V/S/M components (['vocal','somatic','material']) — resolved from the linked spell. */
+  spellProperties?: string[];
+  /** Item charges consumed per cast. Omit for an at-will cast (no consumption). */
+  charges?: number;
 }
 
 /** Build one dnd5e activity object of the given type. */
@@ -69,9 +79,11 @@ export function buildActivity(type: string, opts: BuildActivityOpts): Record<str
       return buildCheckActivity(opts);
     case 'utility':
       return buildUtilityActivity(opts);
+    case 'cast':
+      return buildCastActivity(opts);
     default:
       throw new Error(
-        `Unknown activity type "${type}". Use attack, damage, save, heal, check, or utility.`
+        `Unknown activity type "${type}". Use attack, damage, save, heal, check, utility, or cast.`
       );
   }
 }
@@ -221,5 +233,71 @@ function buildUtilityActivity(opts: BuildActivityOpts): Record<string, any> {
     name: opts.name ?? '',
     sort: opts.sort ?? 0,
     activation: { type: opts.activationType ?? 'action', value: 1, override: false },
+  };
+}
+
+// --- cast (link a real compendium spell) --------------------------------------
+// Mirrors the live DMG Wand of Fireballs / our verified Staff of Minor Bolts cast activity. The
+// activity LINKS a spell by uuid (spell.uuid); casting it pulls that spell's measured template
+// (fireball sphere, lightning line…), save/attack, and effects FOR FREE — which is why target.template
+// stays MINIMAL here (the spell owns the real template; a full override would suppress it).
+//
+//   challenge: saveDC -> {save, attack:null, override:true} (fixed DC, e.g. the Wand of Fireballs)
+//              attackBonus -> {attack:N, override:true}      (fixed spell-attack, e.g. a Witch Bolt staff)
+//              neither -> {attack:null, override:false}       (defer DC/attack to the casting actor)
+// The page sanitizer strips `save` tree-wide, so a fixed save DC is correct-but-invisible on read-back.
+//
+//   consumption: spellSlot:false (an item never eats the holder's spell slots) + an itemUses target of
+//                `charges` per cast; omit charges for an at-will cast (empty targets).
+function buildCastActivity(opts: BuildActivityOpts): Record<string, any> {
+  const challenge =
+    opts.saveDC !== undefined
+      ? { save: opts.saveDC, attack: null, override: true }
+      : opts.attackBonus !== undefined
+        ? { attack: opts.attackBonus, override: true }
+        : { attack: null, override: false };
+  const targets =
+    opts.charges !== undefined && opts.charges !== null
+      ? [
+          {
+            type: 'itemUses',
+            value: String(opts.charges),
+            target: '',
+            scaling: { mode: '', formula: '' },
+          },
+        ]
+      : [];
+  return {
+    _id: opts.id,
+    type: 'cast',
+    name: opts.name ?? '',
+    img: '',
+    sort: opts.sort ?? 0,
+    spell: {
+      uuid: opts.spellUuid ?? '',
+      challenge,
+      level: opts.level ?? 0,
+      properties: opts.spellProperties ?? [],
+      spellbook: true,
+    },
+    activation: { type: opts.activationType ?? 'action', value: null, override: false },
+    consumption: { scaling: { allowed: false, max: '' }, spellSlot: false, targets },
+    description: { chatFlavor: '' },
+    duration: { units: 'inst', concentration: false, override: false },
+    range: { override: false, units: 'self' },
+    target: {
+      template: { contiguous: false, units: 'ft', stationary: false },
+      affects: { choice: false },
+      override: false,
+      prompt: true,
+    },
+    uses: { spent: 0, recovery: [], max: '' },
+    flags: {},
+    visibility: {
+      level: {},
+      requireAttunement: false,
+      requireIdentification: false,
+      requireMagic: false,
+    },
   };
 }

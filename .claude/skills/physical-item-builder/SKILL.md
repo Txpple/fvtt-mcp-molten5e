@@ -85,28 +85,29 @@ menu but does **NOT** actually cast (no template pops). This is the #1 magic-ite
   books (e.g. *Snilloc's Snowball Swarm*), **STOP and ASK** — substitute a real spell, drop it, or get
   explicit homebrew permission. NEVER fabricate a fake activity to stand in for an off-book spell (same
   rule as a monster's off-book feature — see `_shared/authoring-policy.md`, design.md §2.3).
-- **Build it by mirroring the DMG Wand of Fireballs (`dmgWandOfFirebal`).** `manage-activity` has **no
-  `cast` type**, so write the activity JSON via **`update-item`** `system.activities.<16-char-id>` (it
-  deep-merges — the weapon's base Attack is preserved). Get the spell uuid from `search-compendium`
-  (it's `Compendium.<pack>.Item.<id>`). Minimal shape:
+- **Build it with `manage-activity` `action:"add", type:"cast"` — ONE validated call** (mirrors the DMG
+  Wand of Fireballs `dmgWandOfFirebal`). Get the spell uuid from `search-compendium-spells` (it's
+  `Compendium.<pack>.Item.<id>`); pass it as `spellUuid`. The tool **resolves the spell for you** — it
+  pulls the spell's level + V/S/M components + name, and **refuses an off-book or SRD uuid** (the
+  STOP-and-ASK above is enforced at the tool boundary, not just by you). Params:
   ```
-  system.activities.<id> = {
-    type:"cast", _id:"<16char>", name:"Cast <Spell> (<lvl>, DC <n>)", sort:0,
-    spell:{ uuid:"Compendium.dnd-players-handbook.spells.Item.<spellId>",
-            challenge:{ save:<DC>, attack:<+N|null>, override:true },  // override:true pins the item's fixed DC/attack; false = defer to the caster
-            level:<slot lvl>, properties:[<components>], spellbook:true },
-    activation:{ type:"action"|"bonus"|"reaction", value:null, override:false },
-    consumption:{ spellSlot:false, scaling:{allowed:false,max:""},
-                  targets:[{ type:"itemUses", value:"<charges>", target:"", scaling:{mode:"",formula:""} }] },  // []  == at-will (cantrip)
-    range:{units:"self",override:false}, duration:{units:"inst",concentration:false,override:false},
-    target:{ template:{contiguous:false,units:"ft",stationary:false}, affects:{choice:false}, override:false, prompt:true },
-    uses:{spent:0,recovery:[],max:""}, description:{chatFlavor:""}, img:"", flags:{},
-    visibility:{level:{},requireAttunement:false,requireIdentification:false,requireMagic:false} }
+  manage-activity {
+    action:"add", type:"cast",
+    itemIdentifier:"<item id/name>",            // + actorIdentifier:"<actor>" if the item is on an actor
+    spellUuid:"Compendium.dnd-players-handbook.spells.Item.<spellId>",
+    charges:<n>,            // item uses spent per cast; OMIT for an at-will cast (e.g. a cantrip)
+    saveDC:<n>,            // pins a FIXED save DC … OR …
+    attackBonus:<+N>,      // pins a FIXED spell-attack … OMIT BOTH to defer DC/attack to the caster
+    castLevel:<lvl>,       // optional — defaults to the spell's base level (set higher to upcast)
+    activationType:"action"|"bonus"|"reaction",   // optional, default "action"
+    name:"Cast <Spell>"    // optional — defaults to "Cast <spell name>"
+  }
   ```
-  Charges live on the ITEM (`system.uses.max` + `recovery:[{period:"dawn",type:"recoverAll"|"formula",formula}]`);
-  the cast activity's `consumption.targets` spends them. The `save` DC is set but **sanitized from
-  read-back** (data is correct; `attack` shows). To swap a wrong activity for a cast: `manage-activity
-  remove` the old, then `update-item` add the cast.
+  `add` **deep-merges**, so a weapon's base Attack activity is preserved (the cast is added alongside).
+  Charges live on the ITEM (`update-item` `system.uses.max` + `recovery:[{period:"dawn",
+  type:"recoverAll"|"formula",formula}]`); the cast's charge consumption is wired by `charges`. The fixed
+  `saveDC` is stored but **sanitized from read-back** (data is correct; `attackBonus` shows). To swap a
+  wrong activity for a cast: `manage-activity remove` the old, then `manage-activity add` the cast.
 - **⚠️ Placed copies do NOT auto-update.** Dragging an item onto an actor makes an independent COPY;
   editing the world item afterward does not touch copies already on actors — they go stale. After any
   fix, **re-drag** the item (or edit the on-actor copy directly). Tell-tale that you're looking at a

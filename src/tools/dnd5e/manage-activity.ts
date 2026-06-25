@@ -7,8 +7,10 @@ import { toInputSchema } from '../../utils/schema.js';
 
 /**
  * manage-activity — add / edit / remove / list dnd5e Activities (the rollable things on an item:
- * attack, damage, save, heal, check, utility) on an item embedded on an actor OR a world item.
- * This is what authors a Multiattack (a feat with a utility activity), a heal/check activity, etc.
+ * attack, damage, save, heal, check, utility, cast) on an item embedded on an actor OR a world item.
+ * This is what authors a Multiattack (a feat with a utility activity), a heal/check activity, or a
+ * `cast` activity that LINKS a real compendium spell (a wand/staff that casts Fireball, pulling the
+ * spell's measured template + save/attack for free — the page resolves & validates the spellUuid).
  * The page layer (manageActivity) + the shared buildActivity own the activity shapes; this tool is
  * the friendly surface. Authoring only — it edits document data, it does not run combat.
  */
@@ -45,10 +47,11 @@ const ManageActivitySchema = z.object({
 
   // add — activity definition
   type: z
-    .enum(['attack', 'damage', 'save', 'heal', 'check', 'utility'])
+    .enum(['attack', 'damage', 'save', 'heal', 'check', 'utility', 'cast'])
     .optional()
     .describe(
-      'Activity type. Required for add. "utility" = descriptive action (e.g. Multiattack).'
+      'Activity type. Required for add. "utility" = descriptive action (e.g. Multiattack). ' +
+        '"cast" = link & cast a real compendium spell (e.g. a wand/staff) — see spellUuid.'
     ),
   name: z
     .string()
@@ -64,7 +67,16 @@ const ManageActivitySchema = z.object({
     .describe('Damage dice — for attack (extra parts), damage, and save activities.'),
   // attack
   attackType: z.enum(['melee', 'ranged']).optional().describe('Attack activity: melee or ranged.'),
-  attackBonus: z.number().int().min(0).max(20).optional().describe('Flat to-hit bonus (attack).'),
+  attackBonus: z
+    .number()
+    .int()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Attack activity: flat to-hit bonus. Cast activity: pins a FIXED spell-attack ' +
+        'bonus (else the cast defers the attack to the casting actor).'
+    ),
   ability: ABILITY.optional().describe('Attack ability override (attack activity).'),
   includeBase: z
     .boolean()
@@ -72,7 +84,16 @@ const ManageActivitySchema = z.object({
     .describe('Attack: also roll the item base damage (default true).'),
   // save
   saveAbility: ABILITY.optional().describe('Save activity: the saving-throw ability.'),
-  saveDC: z.number().int().min(1).max(30).optional().describe('Save activity: the DC.'),
+  saveDC: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .optional()
+    .describe(
+      'Save activity: the DC. Cast activity: pins a FIXED save DC for the linked spell ' +
+        '(else the cast defers the DC to the casting actor).'
+    ),
   onSave: z
     .enum(['half', 'none'])
     .optional()
@@ -93,6 +114,31 @@ const ManageActivitySchema = z.object({
     .array(z.string())
     .optional()
     .describe('Check activity: associated skill keys (e.g. ["acr","ath"]).'),
+
+  // cast — link a real compendium spell (the activity casts it, pulling its template/save/attack)
+  spellUuid: z
+    .string()
+    .optional()
+    .describe(
+      'Cast activity (REQUIRED): the Compendium uuid of the spell to LINK, e.g. ' +
+        '"Compendium.dnd-players-handbook.spells.Item.phbsplFireball00". The activity CASTS this ' +
+        'spell — its measured template (fireball sphere, lightning line…), save/attack, and effects ' +
+        'come for free. The spell must be a real premium-book spell (off-book/SRD is refused — if it ' +
+        'is not in the books, STOP and ASK; do not hand-roll a fake save/damage activity).'
+    ),
+  castLevel: z
+    .number()
+    .int()
+    .min(0)
+    .max(9)
+    .optional()
+    .describe("Cast activity: level to cast at (0 = cantrip). Defaults to the spell's base level."),
+  charges: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Cast activity: item charges (uses) consumed per cast. Omit for an at-will cast.'),
 
   // edit
   patch: z
@@ -126,12 +172,14 @@ export class DnD5eManageActivityTool {
         name: 'manage-activity',
         description:
           '[D&D 5e only] Add / edit / remove / list Activities on an item — the rollable things ' +
-          '(attack, damage, save, heal, check, utility). Target an item on an actor (set ' +
+          '(attack, damage, save, heal, check, utility, cast). Target an item on an actor (set ' +
           'actorIdentifier) or a world item (omit it). This authors actions like a Multiattack ' +
-          '(action="add", type="utility", name="Multiattack"), a heal, an ability-check, or a ' +
-          'saving-throw activity. Use action="list" (or get-actor-entity) to find activityIds, then ' +
-          'edit/remove by id; edit takes a `patch` of dot-paths relative to the activity. Authoring ' +
-          'only — it does not run combat.',
+          '(action="add", type="utility", name="Multiattack"), a heal, an ability-check, a ' +
+          'saving-throw activity, OR a spell-casting item (action="add", type="cast", spellUuid=…, ' +
+          'charges=…, saveDC/attackBonus=… to pin a fixed challenge) — the cast LINKS a real ' +
+          'compendium spell so its measured template + save/attack fire for free. Use action="list" ' +
+          '(or get-actor-entity) to find activityIds, then edit/remove by id; edit takes a `patch` of ' +
+          'dot-paths relative to the activity. Authoring only — it does not run combat.',
         inputSchema: toInputSchema(ManageActivitySchema),
       },
     ];
@@ -161,6 +209,19 @@ export class DnD5eManageActivityTool {
           throw new FormattedToolError(
             'activity type "damage" requires at least one damageParts entry.'
           );
+        }
+        if (parsed.type === 'cast') {
+          if (!parsed.spellUuid) {
+            throw new FormattedToolError(
+              'activity type "cast" requires `spellUuid` — the Compendium uuid of the spell to link ' +
+                '(e.g. "Compendium.dnd-players-handbook.spells.Item.phbsplFireball00").'
+            );
+          }
+          if (parsed.saveDC !== undefined && parsed.attackBonus !== undefined) {
+            throw new FormattedToolError(
+              'activity type "cast": provide saveDC OR attackBonus (a spell uses one challenge), not both.'
+            );
+          }
         }
       }
       if ((parsed.action === 'edit' || parsed.action === 'remove') && !parsed.activityId) {
@@ -193,6 +254,10 @@ export class DnD5eManageActivityTool {
         checkAbility: parsed.checkAbility,
         checkDC: parsed.checkDC,
         skills: parsed.skills,
+        // cast — the page resolves spellUuid -> level default + V/S/M components + name
+        spellUuid: parsed.spellUuid,
+        level: parsed.castLevel,
+        charges: parsed.charges,
       };
 
       this.logger.info('manage-activity', {
@@ -219,7 +284,8 @@ export class DnD5eManageActivityTool {
         .join(', ');
       summary = `📋 ${where} activities: ${list || '(none)'}`;
     } else if (result?.action === 'add') {
-      summary = `✅ Added ${result.type} activity to "${where}" (id: \`${result.activityId}\`)`;
+      const spellNote = result.spell ? ` linking spell \`${result.spell}\`` : '';
+      summary = `✅ Added ${result.type} activity${spellNote} to "${where}" (id: \`${result.activityId}\`)`;
     } else if (result?.action === 'edit') {
       summary = `✅ Edited activity \`${result.activityId}\` on "${where}" (${(result.editedKeys ?? []).join(', ')})`;
     } else {

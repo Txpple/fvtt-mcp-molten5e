@@ -131,4 +131,51 @@ describe('manage-activity tool', () => {
     });
     expect(calls.some(([n]) => n === 'manageActivity')).toBe(true);
   });
+
+  it('add cast forwards spellUuid + castLevel->level + charges + saveDC', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      action: 'add',
+      type: 'cast',
+      activityId: 'C1',
+      spell: 'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00',
+      item: { id: 'w', name: 'Wand of Fireballs', type: 'equipment' },
+    });
+    const res = await tool.handleManageActivity({
+      action: 'add',
+      itemIdentifier: 'Wand of Fireballs',
+      type: 'cast',
+      spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00',
+      castLevel: 3,
+      charges: 1,
+      saveDC: 15,
+    });
+    const call = calls.find(([n]) => n === 'manageActivity');
+    expect(call?.[1].activity.type).toBe('cast');
+    expect(call?.[1].activity.spellUuid).toBe(
+      'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00'
+    );
+    // the tool maps the friendly `castLevel` param onto the page builder's `level`
+    expect(call?.[1].activity.level).toBe(3);
+    expect(call?.[1].activity.charges).toBe(1);
+    expect(call?.[1].activity.saveDC).toBe(15);
+    expect(res.message).toContain('linking spell');
+  });
+
+  it('cast requires spellUuid, and refuses both saveDC and attackBonus', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleManageActivity({ action: 'add', itemIdentifier: 'X', type: 'cast' })
+    ).rejects.toThrow(/"cast" requires `spellUuid`/);
+    await expect(
+      tool.handleManageActivity({
+        action: 'add',
+        itemIdentifier: 'X',
+        type: 'cast',
+        spellUuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplFireball00',
+        saveDC: 15,
+        attackBonus: 7,
+      })
+    ).rejects.toThrow(/saveDC OR attackBonus/);
+  });
 });
