@@ -107,12 +107,12 @@ This is the architectural backbone that makes principle #1 real.
 | Area | Sub-area | Phase | Status |
 | --- | --- | --- | --- |
 | **Content creation** | Scenes | 1 (now) | ✅ working |
-| | Actors → **NPCs** | 1 (now) | 🔨 **active focus** |
+| | Actors → **NPCs** | 1 (now) | ✅ aligned (§6 ladder structural; `stat-block-builder`) |
 | | Actors → PCs | 1 (later) | 🧭 designed-for, not built |
-| | Journals (handouts, lore, quests, notes) | 1 | ◻️ tooling exists |
-| | Tables (roll tables) | 1 | ◻️ tooling exists |
-| | Playable cards | 1 | ◻️ tooling exists |
-| | Playlists | 1 | ◻️ tooling exists |
+| | Journals (handouts, lore, quests, notes) | 1 | ✅ done (`journal-builder`; prose de-leaked) |
+| | Tables (roll tables) | 1 | ✅ done (`table-builder`; v14 results + `@UUID` loot + import) |
+| | Playable cards | 1 | ✅ done (`cards-builder`; face text + preset import) |
+| | Playlists | 1 | ✅ done (`playlist-builder`; scene-builder delegates) |
 | **DM session assistance** | Chat messages & integration | 2 | ◻️ partial (chat tools exist) |
 | | Export chats | 2 | ◻️ partial (`export-chat-log`) |
 | | Audio → text (Craig AI + Whisper) | 2 | ⛔ not started |
