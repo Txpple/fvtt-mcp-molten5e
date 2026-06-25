@@ -234,6 +234,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
     // Roll tables
     'create-rolltable': args => tableTools.handleCreateRollTable(args),
+    'import-rolltable': args => tableTools.handleImportRollTable(args),
     'list-rolltables': args => tableTools.handleListRollTables(args),
     'update-rolltable': args => tableTools.handleUpdateRollTable(args),
     'roll-on-table': args => tableTools.handleRollOnTable(args),

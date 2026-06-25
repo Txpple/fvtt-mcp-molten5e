@@ -47,6 +47,11 @@ SRD · ask-don't-invent). Two table-specific clarifications:
 - **`create-rolltable`** — the structuring creator (your main tool). `{ name, results[], formula?,
   replacement?, displayRoll?, folderName?, description? }`. Ranges auto-assign from weights and the
   formula defaults to `1d<total weight>` unless you pass explicit ones.
+- **`import-rolltable`** — copy a whole **published** table from a compendium into the world
+  (`{ packId, itemId, folderName? }`). Roll tables are world-only at roll time, so a DMG treasure /
+  magic-item table must be imported before you can roll it; its results (and their @UUID item links)
+  come along intact. Premium-book packs only. This is the table version of import-item — prefer it over
+  hand-rebuilding a book table.
 - **`update-rolltable`** — change table fields and/or **replace the entire result set** (supplying
   `results` deletes + recreates all entries with fresh ranges). Use to edit a table you built.
 - **`roll-on-table`** — preview a draw on a **world** table (evaluates without marking drawn / posting
@@ -96,7 +101,22 @@ match exactly (e.g. a `d100` table with uneven bands).
 - **displayRoll** — default `true` (shows the die). Set `false` to hide the roll (a "fated" reveal).
 - **folderName** — group related tables ("Encounters — Sword Coast", "Hoard Tables") for tidiness.
 
-## Workflow
+## Published tables (DMG treasure, magic-item tables)
+
+The books ship ready-made tables (the DMG Arcana/Armaments/Implements/Relics × rarity magic-item
+tables, the Treasure table, encounter tables). **Don't rebuild them by hand — copy them in:**
+
+1. **`list-compendium-packs type:RollTable`** → find the pack (e.g. `dnd-dungeon-masters-guide.tables`)
+   and the table's id (use `get-compendium-entry` / search to identify the exact `itemId`).
+2. **`import-rolltable`** `{ packId, itemId, folderName:"DMG Treasure" }` → the table (with its @UUID
+   item links) lands in the world.
+3. **`roll-on-table`** on the imported table → each drawn magic item comes back as an importable
+   `@UUID` (uuid + label).
+4. **`import-item`** (physical-item-builder) each drawn uuid into the world to make the actual loot item.
+
+This is the sanctioned path for "roll on the DMG treasure tables and give me the loot."
+
+## Workflow (building a NEW table)
 
 1. **Decide the contents.** Theme, entries, weights — your judgment. For loot/encounters, **find the
    real documents first** with `search-compendium-items` / `-creatures` (premium-only, so you get

@@ -104,6 +104,18 @@ const DeleteRollTableSchema = z.object({
     .describe('Exact ids (preferred) or exact names of tables to delete.'),
 });
 
+const ImportRollTableSchema = z.object({
+  packId: z
+    .string()
+    .min(1)
+    .describe('Compendium pack id holding the table (e.g. dnd-dungeon-masters-guide.tables).'),
+  itemId: z.string().min(1).describe('The RollTable document id within the pack.'),
+  folderName: z
+    .string()
+    .optional()
+    .describe('Optional folder to place the imported table in (created if absent).'),
+});
+
 export class TableTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -126,6 +138,15 @@ export class TableTools {
         inputSchema: toInputSchema(CreateRollTableSchema),
       },
       {
+        name: 'import-rolltable',
+        description:
+          'Copy a whole RollTable from a compendium pack into the world (e.g. a DMG treasure / ' +
+          'magic-item table). Roll tables are world-only at roll time, so a published table must be ' +
+          'imported before roll-on-table can use it; the embedded results — including their @UUID ' +
+          'item links — come along intact. Premium-book packs only (SRD refused). GM-only.',
+        inputSchema: toInputSchema(ImportRollTableSchema),
+      },
+      {
         name: 'list-rolltables',
         description:
           'List RollTable documents with id, name, formula, result count, and description.',
@@ -144,8 +165,8 @@ export class TableTools {
         description:
           'Roll on a world RollTable and return the drawn result(s). Evaluates without marking ' +
           'results drawn or posting to chat. Any @UUID item links in a drawn result are surfaced as ' +
-          'importable (uuid + label) so loot can be pulled into the world. (World tables only — a ' +
-          'compendium/DMG table must be copied into the world first.)',
+          'importable (uuid + label) so loot can be pulled into the world. (World tables only — copy ' +
+          'a compendium/DMG table in first with import-rolltable.)',
         inputSchema: toInputSchema(RollOnTableSchema),
       },
       {
@@ -164,6 +185,15 @@ export class TableTools {
     return (
       `Created roll table "${result?.tableName}" (${result?.tableId}) — formula ${result?.formula}, ` +
       `${result?.resultCount} result(s).`
+    );
+  }
+
+  async handleImportRollTable(args: any): Promise<string> {
+    const parsed = ImportRollTableSchema.parse(args ?? {});
+    const result = await this.foundry.call('importRollTable', parsed);
+    return (
+      `Imported roll table "${result?.tableName}" (${result?.tableId}) — formula ${result?.formula}, ` +
+      `${result?.resultCount} result(s). Roll it with roll-on-table.`
     );
   }
 

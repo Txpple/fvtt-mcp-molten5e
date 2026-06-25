@@ -5,8 +5,13 @@
 // Return shapes match the Node tools' existing contract (see
 // src/tools/{tables,cards,asset-bridge}.ts + their tests).
 
-import { isSrdPack } from '../utils/compendium-sources.js';
-import { normalizeAssetPath, basename, getOrCreateFolder } from './_shared.js';
+import { assertNoSrdPacks, isSrdPack } from '../utils/compendium-sources.js';
+import {
+  basename,
+  getOrCreateFolder,
+  importFromCompendium,
+  normalizeAssetPath,
+} from './_shared.js';
 
 // Foundry document classes (Playlist, RollTable, Cards) and CONST live in the page
 // global scope but are not declared in foundry-globals.d.ts; reach them off globalThis (loosely
@@ -471,6 +476,40 @@ export async function updateRollTable(args: {
 // Delete one or more RollTable documents by exact id/name. Best-effort.
 export async function deleteRollTables(args: { identifiers: string[] }): Promise<unknown> {
   return deleteByResolver(args.identifiers, id => resolveStrict(game.tables, id));
+}
+
+// Copy a whole RollTable from a compendium pack into the world (the table-level analog of
+// import-item / create-actor-from-compendium). RollTables are world-only at roll time, so a
+// published table (e.g. the DMG treasure / magic-item tables) must be brought into the world before
+// it can be rolled. Routes through the one copy primitive (importFromCompendium — design.md §0.2):
+// whole-document toObject() with a fresh top-level id; the embedded TableResult children (and the
+// @UUID item links in their descriptions) come along intact. Premium-book sources only — an SRD pack
+// is refused by construction (design.md §2.3).
+export async function importRollTable(args: {
+  packId: string;
+  itemId: string;
+  folderName?: string;
+}): Promise<unknown> {
+  if (!args?.packId || !args?.itemId) {
+    throw new Error('Both packId and itemId are required');
+  }
+  assertNoSrdPacks(args.packId, 'import-rolltable');
+
+  const { data } = await importFromCompendium(args.packId, args.itemId, {
+    requirePackType: 'RollTable',
+  });
+  if (args.folderName && args.folderName.trim().length > 0) {
+    data.folder = await getOrCreateFolder(args.folderName.trim(), 'RollTable');
+  }
+
+  const table = await RollTableClass.create(data);
+  return {
+    success: true,
+    tableId: table?.id,
+    tableName: table?.name,
+    formula: table?.formula ?? data.formula,
+    resultCount: table?.results?.size ?? (Array.isArray(data.results) ? data.results.length : 0),
+  };
 }
 
 // --- cards writes ---

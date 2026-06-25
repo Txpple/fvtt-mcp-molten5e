@@ -20,7 +20,7 @@ function build(response: any = {}) {
 }
 
 describe('TableTools.getToolDefinitions', () => {
-  it('exposes exactly the five rolltable tools', () => {
+  it('exposes exactly the six rolltable tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
@@ -29,6 +29,7 @@ describe('TableTools.getToolDefinitions', () => {
     expect(names).toEqual([
       'create-rolltable',
       'delete-rolltable',
+      'import-rolltable',
       'list-rolltables',
       'roll-on-table',
       'update-rolltable',
@@ -149,6 +150,43 @@ describe('handleCreateRollTable', () => {
       text: 'A pouch holding {{link}} and 2d6 gp',
       uuid: 'Compendium.dnd-players-handbook.equipment.Item.x',
     });
+  });
+});
+
+describe('handleImportRollTable', () => {
+  it('forwards a valid import and formats the result', async () => {
+    const { tools, calls } = build({
+      tableName: 'Arcana - Common',
+      tableId: 'imp1',
+      formula: '1d100',
+      resultCount: 50,
+    });
+    const out = await tools.handleImportRollTable({
+      packId: 'dnd-dungeon-masters-guide.tables',
+      itemId: 'dmgArcanaCommon0',
+      folderName: 'DMG Treasure',
+    });
+    expect(calls[0][0]).toBe('importRollTable');
+    expect(calls[0][1]).toMatchObject({
+      packId: 'dnd-dungeon-masters-guide.tables',
+      itemId: 'dmgArcanaCommon0',
+      folderName: 'DMG Treasure',
+    });
+    expect(out).toBe(
+      'Imported roll table "Arcana - Common" (imp1) — formula 1d100, 50 result(s). Roll it with roll-on-table.'
+    );
+  });
+
+  it('rejects a missing packId', async () => {
+    const { tools } = build();
+    await expect(tools.handleImportRollTable({ itemId: 'x' })).rejects.toThrow();
+  });
+
+  it('rejects a missing itemId', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleImportRollTable({ packId: 'dnd-dungeon-masters-guide.tables' })
+    ).rejects.toThrow();
   });
 });
 

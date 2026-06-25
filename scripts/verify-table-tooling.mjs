@@ -11,6 +11,9 @@
 //   * roll-on-table surfaces the @UUID links as importable (uuid + label);
 //   * GUARDS (correctness, design.md §2.3/§2.4): an SRD uuid is refused, an unresolvable premium uuid
 //     is refused, and a result with neither text nor uuid is refused.
+//   * import-rolltable (Phase 3.1b): copy a published DMG magic-item table into the world, confirm it
+//     keeps its formula + results, roll it (world-only) and confirm drawn results are importable @UUID
+//     item links; an SRD pack is refused.
 // A single-entry table (formula 1d1) always draws its one entry, so every assertion is deterministic.
 // Everything created is cleaned up.
 //
@@ -174,6 +177,38 @@ try {
     'create(result with neither text nor uuid -> refused)',
     () => f.call('createRollTable', { name: `${TAG} Empty`, results: [{ weight: 2 }] }),
     /either "text" or "uuid"/
+  );
+
+  // --- import-rolltable: copy a published DMG magic-item table into the world, then roll it ---
+  console.log('\n# import-rolltable (copy a published DMG table, then roll it)');
+  const imp = await f.call('importRollTable', {
+    packId: 'dnd-dungeon-masters-guide.tables',
+    itemId: 'dmgArcanaCommon0', // "Arcana - Common" — a 1d100 magic-item table of @UUID item links
+    folderName: `${TAG} DMG Treasure`,
+  });
+  if (imp?.tableId) createdTableIds.push(imp.tableId);
+  assert(Boolean(imp?.tableId), `imported a world copy of the DMG table (${imp?.tableName})`);
+  assert(imp?.formula === '1d100', `imported table keeps its formula 1d100 (${imp?.formula})`);
+  assert(imp?.resultCount > 0, `imported table carries its results (${imp?.resultCount})`);
+
+  // The imported world table is now rollable (roll-on-table is world-only) and its results carry
+  // the real @UUID item links — importable straight into the world (the treasure-table workflow).
+  const drawnImported = await rollOnce(imp.tableId);
+  assert(
+    /^@UUID\[Compendium\.dnd-dungeon-masters-guide\.equipment\.Item\./.test(
+      drawnImported.description ?? ''
+    ),
+    `drawn DMG result is a real item @UUID link — got ${JSON.stringify((drawnImported.description ?? '').slice(0, 80))}`
+  );
+  assert(
+    drawnImported.links?.length === 1 && /equipment\.Item\./.test(drawnImported.links[0].uuid),
+    'drawn DMG result surfaces the item as importable (uuid + label)'
+  );
+
+  await expectThrow(
+    'import-rolltable(SRD pack -> refused)',
+    () => f.call('importRollTable', { packId: 'dnd5e.tables', itemId: 'whatever00000000' }),
+    /SRD/
   );
 } catch (e) {
   fails++;
