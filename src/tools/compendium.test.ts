@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 describe('CompendiumTools.getToolDefinitions', () => {
-  it('exposes exactly the five compendium tools', () => {
+  it('exposes exactly the six compendium tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
@@ -54,6 +54,7 @@ describe('CompendiumTools.getToolDefinitions', () => {
       'list-compendium-packs',
       'search-compendium',
       'search-compendium-creatures',
+      'search-compendium-items',
       'search-compendium-spells',
     ]);
   });
@@ -72,6 +73,7 @@ describe('CompendiumTools.getToolDefinitions', () => {
     expect(byName['get-compendium-entry'].inputSchema.required).toEqual(['packId', 'itemId']);
     expect(byName['search-compendium-creatures'].inputSchema.required).toEqual([]);
     expect(byName['search-compendium-spells'].inputSchema.required).toEqual([]);
+    expect(byName['search-compendium-items'].inputSchema.required).toEqual([]);
   });
 });
 
@@ -479,6 +481,95 @@ describe('handleSearchCompendiumSpells', () => {
   it('rejects a limit above the maximum of 200', async () => {
     const { tools } = build();
     await expect(tools.handleSearchCompendiumSpells({ limit: 201 })).rejects.toThrow();
+  });
+});
+
+describe('handleSearchCompendiumItems', () => {
+  const hit = (over: any = {}) => ({
+    id: 'w1',
+    name: 'Flame Tongue',
+    type: 'weapon',
+    uuid: 'Compendium.dnd-dungeon-masters-guide.items.Item.w1',
+    pack: 'dnd-dungeon-masters-guide.items',
+    packLabel: 'DMG Items',
+    img: 'icons/sword.png',
+    facets: { rarity: 'rare', itemType: 'martialM', magical: true },
+    ...over,
+  });
+
+  it('defaults documentType to gear and forwards facets to searchCompendiumFaceted', async () => {
+    const { tools, calls } = build('dnd5e', [hit()]);
+
+    const out = await tools.handleSearchCompendiumItems({
+      rarity: 'very rare',
+      itemType: 'wondrous',
+      magical: true,
+      name: 'cloak',
+    });
+
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call).toBeDefined();
+    expect(call![1]).toEqual({
+      documentType: 'gear', // schema default
+      name: 'cloak',
+      rarity: 'very rare', // raw value forwarded; the engine normalizes to the dnd5e key
+      itemType: 'wondrous',
+      properties: undefined,
+      magical: true,
+      limit: 50,
+    });
+
+    expect(out.documentType).toBe('gear');
+    expect(out.criteriaDescription).toBe('gear (very rare, wondrous, magical, name~"cloak")');
+    expect(out.totalFound).toBe(1);
+    expect(out.results[0]).toMatchObject({ id: 'w1', pack: 'dnd-dungeon-masters-guide.items' });
+  });
+
+  it('narrows the family via documentType', async () => {
+    const { tools, calls } = build('dnd5e', []);
+    await tools.handleSearchCompendiumItems({
+      documentType: 'weapon',
+      rarity: ['rare', 'legendary'],
+    });
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call![1].documentType).toBe('weapon');
+    expect(call![1].rarity).toEqual(['rare', 'legendary']);
+  });
+
+  it('coerces a stringified magical flag (lenient client shape)', async () => {
+    const { tools, calls } = build('dnd5e', []);
+    await tools.handleSearchCompendiumItems({ magical: 'true' });
+    const call = calls.find(c => c[0] === 'searchCompendiumFaceted');
+    expect(call![1].magical).toBe(true);
+  });
+
+  it('drops SRD (dnd5e.*) item hits and counts only book results (enforced backstop)', async () => {
+    const { tools } = build('dnd5e', [
+      hit(),
+      hit({ id: 'srd1', pack: 'dnd5e.items', packLabel: 'SRD Items' }),
+    ]);
+    const out = await tools.handleSearchCompendiumItems({ rarity: 'rare' });
+    expect(out.totalFound).toBe(1);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0]).toMatchObject({ id: 'w1' });
+  });
+
+  it('reports an empty result set cleanly', async () => {
+    const { tools } = build('dnd5e', []);
+    const out = await tools.handleSearchCompendiumItems({ documentType: 'consumable' });
+    expect(out.totalFound).toBe(0);
+    expect(out.results).toEqual([]);
+    expect(out.criteriaDescription).toBe('consumable (no facets)');
+  });
+
+  it('rejects an invalid documentType', async () => {
+    const { tools } = build();
+    await expect(tools.handleSearchCompendiumItems({ documentType: 'spell' })).rejects.toThrow();
+  });
+
+  it('rejects a limit above the maximum of 200', async () => {
+    const { tools } = build();
+    await expect(tools.handleSearchCompendiumItems({ limit: 201 })).rejects.toThrow();
   });
 });
 

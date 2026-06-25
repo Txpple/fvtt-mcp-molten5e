@@ -231,6 +231,62 @@ const SearchCompendiumSpellsSchema = z.object({
     .describe('Maximum results to return (default: 50, max: 200)'),
 });
 
+// Thin typed facade over the faceted engine for GEAR. documentType narrows the item family
+// (gear=all / weapon / armor / consumable); only gear facets are representable (design.md §2.1).
+const SearchCompendiumItemsSchema = z.object({
+  documentType: z
+    .enum(['gear', 'weapon', 'armor', 'consumable'])
+    .default('gear')
+    .describe(
+      'Item family to search: "gear" = everything (weapons, armor/equipment, consumables, tools, loot, containers); or narrow to "weapon", "armor", or "consumable".'
+    ),
+  name: z
+    .string()
+    .optional()
+    .describe('Case-insensitive substring to narrow by item name (e.g., "flame", "healing").'),
+  rarity: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe(
+      'Rarity/-ies: common · uncommon · rare · very rare · legendary · artifact (case- and space-insensitive; one value or an array).'
+    ),
+  itemType: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe(
+      'dnd5e item SUBTYPE key (system.type.value), e.g. "wand" · "wondrous" · "rod" · "ring" · "potion" · "scroll" · "ammo"; for weapons the weapon-type key (e.g. "martialM"). One value or an array.'
+    ),
+  properties: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Keep items carrying ANY of these dnd5e property keys (e.g. "mgc" = magical, "fin" = finesse, "ver" = versatile).'
+    ),
+  magical: z
+    .union([
+      z.boolean(),
+      z
+        .string()
+        .refine(val => ['true', 'false'].includes(val.toLowerCase()))
+        .transform(val => val.toLowerCase() === 'true'),
+    ])
+    .optional()
+    .describe('If true, keep only items flagged magical (the "mgc" property).'),
+  limit: z
+    .union([
+      z.number().min(1).max(200),
+      z
+        .string()
+        .refine(val => {
+          const num = parseInt(val, 10);
+          return !Number.isNaN(num) && num >= 1 && num <= 200;
+        })
+        .transform(val => parseInt(val, 10)),
+    ])
+    .default(50)
+    .describe('Maximum results to return (default: 50, max: 200)'),
+});
+
 export interface CompendiumToolsOptions {
   foundry: FoundryBridge;
   logger: Logger;
@@ -284,6 +340,12 @@ export class CompendiumTools {
         description:
           'D&D 5e SPELL DISCOVERY: find spells matching faceted criteria (level, school, damage type, name) across the premium book packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Backed by the system Compendium Browser, so filters check real spell data (not name heuristics). Returns minimal hits ({id,name,type,uuid,pack,packLabel,img,facets}) premium-first ranked — identify candidates here, then pull full detail with get-compendium-entry. damageType is a two-stage refine (loads candidate spells to inspect their activities).',
         inputSchema: toInputSchema(SearchCompendiumSpellsSchema),
+      },
+      {
+        name: 'search-compendium-items',
+        description:
+          'D&D 5e ITEM/GEAR DISCOVERY: find equipment, weapons, armor, consumables, and treasure matching faceted criteria (rarity, subtype, properties, magical, name) across the premium book packs only — the SRD (dnd5e.*) packs are excluded and never appear in results (design.md §2.3). Backed by the system Compendium Browser, so filters check real item data (not name heuristics). Returns minimal hits ({id,name,type,uuid,pack,packLabel,img,facets}) premium-first ranked — identify candidates here, then pull full detail with get-compendium-entry. Use documentType to narrow the item family (gear=all, or weapon/armor/consumable).',
+        inputSchema: toInputSchema(SearchCompendiumItemsSchema),
       },
       {
         name: 'list-compendium-packs',
@@ -618,6 +680,76 @@ export class CompendiumTools {
         `Failed to search compendium spells: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  async handleSearchCompendiumItems(args: any): Promise<any> {
+    let params: z.infer<typeof SearchCompendiumItemsSchema>;
+    try {
+      params = SearchCompendiumItemsSchema.parse(args);
+    } catch (parseError) {
+      if (parseError instanceof z.ZodError) {
+        const details = parseError.issues
+          .map(err => `${err.path.join('.')}: ${err.message}`)
+          .join('; ');
+        throw new Error(
+          `Parameter validation failed: ${details}. Received args: ${JSON.stringify(args)}`
+        );
+      }
+      throw parseError;
+    }
+
+    const criteriaDescription = this.describeItemCriteria(params);
+    this.logger.info('Item faceted search', {
+      documentType: params.documentType,
+      criteria: criteriaDescription,
+    });
+
+    try {
+      // Thin facade: forward the gear facets to the one engine (documentType picks the family).
+      const hits = await this.foundry.call('searchCompendiumFaceted', {
+        documentType: params.documentType,
+        name: params.name,
+        rarity: params.rarity,
+        itemType: params.itemType,
+        properties: params.properties,
+        magical: params.magical,
+        limit: params.limit,
+      });
+
+      // Enforced backstop to the engine's by-uuid SRD exclusion (design.md §2.3); see the spell facade.
+      const list: any[] = Array.isArray(hits) ? hits : [];
+      const results = list.filter(hit => !isSrdPack(hit?.pack));
+
+      return {
+        documentType: params.documentType,
+        criteriaDescription,
+        results,
+        totalFound: results.length,
+        criteria: params,
+        note: 'Premium book items only — the SRD is never a source (design.md §2.3). Use get-compendium-entry for full item detail.',
+      };
+    } catch (error) {
+      this.logger.error('Failed to search compendium items', error);
+      throw new Error(
+        `Failed to search compendium items: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /** Human-readable summary of the item-search facets (transparency + logging). */
+  private describeItemCriteria(params: z.infer<typeof SearchCompendiumItemsSchema>): string {
+    const parts: string[] = [];
+    if (params.rarity) {
+      parts.push(Array.isArray(params.rarity) ? params.rarity.join('/') : params.rarity);
+    }
+    if (params.itemType) {
+      parts.push(Array.isArray(params.itemType) ? params.itemType.join('/') : params.itemType);
+    }
+    if (params.magical !== undefined) parts.push(params.magical ? 'magical' : 'non-magical');
+    if (params.properties?.length) parts.push(`properties:${params.properties.join('+')}`);
+    if (params.name) parts.push(`name~"${params.name}"`);
+    const facets = parts.length > 0 ? parts.join(', ') : 'no facets';
+    return `${params.documentType} (${facets})`;
   }
 
   /** Human-readable summary of the spell-search facets (transparency + logging). */

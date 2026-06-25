@@ -121,6 +121,22 @@ const SPELL_SCHOOL_TO_DND5E: Record<string, string> = {
   trs: 'trs',
 };
 
+/**
+ * Friendly rarity → dnd5e stored rarity KEY (what system.rarity holds). The only footgun is
+ * "very rare", whose key is the camelCase `veryRare`; everything else is already its own lowercase
+ * key. Lookup is space/case-insensitive; unknown values pass through trimmed (so a future key still
+ * filters). Lives here with the other facet-key maps (correctness, not judgment; design.md §2.1).
+ */
+const RARITY_TO_DND5E: Record<string, string> = {
+  common: 'common',
+  uncommon: 'uncommon',
+  rare: 'rare',
+  'very rare': 'veryRare',
+  veryrare: 'veryRare',
+  legendary: 'legendary',
+  artifact: 'artifact',
+};
+
 /** Index field paths to request per facet family (so projected hits carry their facet values). */
 const INDEX_FIELDS: Record<ContentTypeDef['kind'], string[]> = {
   creature: [
@@ -187,7 +203,9 @@ export function buildFacetFilters(
     );
     if (schools.length) out.push({ k: 'system.school', o: 'in', v: schools });
   } else if (kind === 'gear') {
-    const rarities = toArray(args.rarity);
+    const rarities = toArray(args.rarity).map(
+      r => RARITY_TO_DND5E[r.toLowerCase().trim()] ?? r.trim()
+    );
     if (rarities.length) out.push({ k: 'system.rarity', o: 'in', v: rarities });
     const subtypes = toArray(args.itemType);
     if (subtypes.length) out.push({ k: 'system.type.value', o: 'in', v: subtypes });

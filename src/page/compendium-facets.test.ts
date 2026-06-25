@@ -88,6 +88,15 @@ describe('buildFacetFilters', () => {
       { k: 'system.properties', o: 'hasany', v: ['mgc'] },
     ]);
   });
+
+  it('gear: friendly rarity normalizes to dnd5e keys ("very rare" -> "veryRare")', () => {
+    const f = buildFacetFilters('gear', {
+      documentType: 'gear',
+      rarity: ['Very Rare', 'rare', 'mythic'],
+    } as FacetedSearchArgs);
+    // "Very Rare" -> camelCase key; "rare" unchanged; unknown "mythic" passes through trimmed.
+    expect(f).toEqual([{ k: 'system.rarity', o: 'in', v: ['veryRare', 'rare', 'mythic'] }]);
+  });
 });
 
 describe('projectHit', () => {

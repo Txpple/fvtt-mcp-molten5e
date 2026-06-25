@@ -57,8 +57,11 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
   `documentType:'spell'`; SRD backstop + premium-only description; 77 tools. Added engine-side
   `SPELL_SCHOOL_TO_DND5E` so friendly school names ('evocation') normalize to dnd5e keys ('evo')
   alongside `SIZE_TO_DND5E`. Gate green (690 tests). **Live verify deferred to Phase 4 (restart).**
-- [ ] **2b — `search-compendium-items`** (new). `documentType` gear|weapon|armor|consumable; facets:
-  `rarity`, `itemType` (subtype), `properties`, `magical`, `name`, `limit`.
+- [x] **2b — `search-compendium-items`** (new). `documentType` gear|weapon|armor|consumable; facets:
+  `rarity`, `itemType` (subtype), `properties`, `magical`, `name`, `limit`. Thin facade on
+  `CompendiumTools`; SRD backstop; premium-only description; 78 tools. Engine: added
+  `RARITY_TO_DND5E` so friendly "very rare" normalizes to the camelCase `veryRare` key. Gate green
+  (698 tests). **Live verify deferred to Phase 4.**
 - [ ] **2c — Re-back `search-compendium-creatures` on the engine** (`documentType: creature`); switch
   output to the uniform `CompendiumHit` shape; **remove the now-redundant `src/page/creature-index.ts`
   path** (buildCreatureIndex/projectIndexEntry/passesCriteria/listCreaturesByCriteria) + its test once
