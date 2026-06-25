@@ -43,18 +43,23 @@ These are not aspirations; they are the rules we hold each other to.
    the patch that closes today's ticket. Best practice is the default, not the upsell. If the clean
    path costs more now, we pay it now.
 
-3. **Compendium-first — mix and match, don't manufacture.** The **2024** Monster Manual, Player's
-   Handbook, and Dungeon Master's Guide compendiums are assumed always installed and are our
-   **library**. We build new content by **copying and recombining existing compendium entries**
-   (correct stats *and* art) — mixing and matching is the *normal* way we create. We do **not** create
-   net-new items by default. Going ad hoc — authoring something from scratch, **or editing an original
-   compendium entry in place** — is a **last resort**, permitted only when **either** (a) we asked and
-   the user granted permission, **or** (b) the user explicitly asked for something custom. Even then,
-   prefer **copy → modify → rename** (leave the original intact) over mutating a source entry, and
-   default to `sourceRules: "2024"` everywhere.
+3. **Compendium-first — the books are the library; never the SRD.** Our **entire** authoring library
+   is the **premium 2024 published books**: the **Monster Manual**, **Player's Handbook**, and
+   **Dungeon Master's Guide** (the `dnd-monster-manual.*`, `dnd-players-handbook.*`,
+   `dnd-dungeon-masters-guide.*` packs), assumed always installed.
+   **The SRD packs — both the 2024 SRD (`dnd5e.*24`, e.g. `dnd5e.spells24`, `dnd5e.monsterfeatures24`,
+   `dnd5e.classes24`) and the older `dnd5e.*` SRD — are NEVER a source. The MM/PHB/DMG supersede them
+   in ALL cases.** (The books are supersets of the SRD, so this loses nothing.) We build new content by
+   **copying and recombining existing book entries** (correct stats *and* art) — mixing and matching is
+   the *normal* way we create. We do **not** create net-new items by default. Going ad hoc — authoring
+   from scratch, **or editing an original entry in place** — is a **last resort**, permitted only when
+   **either** (a) we asked and the user granted permission, **or** (b) the user explicitly asked for
+   something custom; even then, prefer **copy → modify → rename** (leave the original intact). If
+   something genuinely isn't in the books, **STOP and ASK (§2.4) — never fall back to the SRD.** Default
+   `sourceRules: "2024"` everywhere.
 
-4. **Ask, don't invent.** If we can't find a suitable 2024 source for what's asked, we **stop and ask
-   the user** — we do not silently fall back to 2014 or fabricate values.
+4. **Ask, don't invent.** If we can't find it in the **MM/PHB/DMG books**, we **stop and ask the
+   user** — we do **not** silently fall back to the SRD or to 2014, and we do not fabricate values.
 
 5. **NPCs and PCs are different products.** They are authored by **separate skill + tool
    architectures** because they are genuinely different problems (see §6 and §7). We never force one
@@ -143,7 +148,8 @@ make the building blocks usable; it is not itself a headline scope item.
 ## 6. NPC authoring doctrine *(current focus — follow this exactly)*
 
 NPCs are **`type: npc`** actors. The skill's job is to produce a complete, table-ready creature using
-the 2024 compendiums as its library. There is a strict decision ladder.
+the **premium 2024 MM/PHB/DMG books** as its library — **never the SRD** (§2.3). There is a strict
+decision ladder.
 
 ### Step 1 — Prefer a prefabricated Monster Manual actor
 
@@ -173,6 +179,9 @@ the fly. Net-new authoring, or editing an original compendium entry, is the last
    | Feats, spells | **Player's Handbook** | feats · spells |
    | Mundane gear | **Player's Handbook** | adventuring gear · armor · tools · weapons |
    | Magic & special gear | **Dungeon Master's Guide** | Armor · Blessings · Charms · Consumables · Containers · Equipment · Instruments · Supplemental · Treasure · Weapons |
+
+   *"Pull from" means the **premium book packs** — `dnd-monster-manual.*`, `dnd-players-handbook.*`,
+   `dnd-dungeon-masters-guide.*` — **never** the `dnd5e.*24` or older `dnd5e.*` SRD packs.*
 
    For a **custom ability** with no exact match: copy the closest compendium entry, modify it, and
    rename it — never hand-build from nothing. If nothing reasonable exists, **stop and ask.**
