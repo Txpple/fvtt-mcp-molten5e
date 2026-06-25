@@ -59,6 +59,34 @@ export function normalizeSkill(input: string): string | undefined {
   return SKILL_NAME_TO_KEY[s];
 }
 
+/**
+ * The default governing ability for each of the 18 dnd5e skill keys
+ * (CONFIG.DND5E.skills[*].ability). An authored skill object MUST carry `ability`:
+ * dnd5e resolves a skill's total as abilityMod + value·proficiencyBonus, and a skill
+ * created with only `{ value }` has an empty `ability`, so the ability modifier is
+ * dropped and the total collapses to the proficiency bonus alone.
+ */
+export const SKILL_ABILITY: Record<string, string> = {
+  acr: 'dex',
+  ani: 'wis',
+  arc: 'int',
+  ath: 'str',
+  dec: 'cha',
+  his: 'int',
+  ins: 'wis',
+  itm: 'cha',
+  inv: 'int',
+  med: 'wis',
+  nat: 'int',
+  prc: 'wis',
+  prf: 'cha',
+  per: 'cha',
+  rel: 'int',
+  slt: 'dex',
+  ste: 'dex',
+  sur: 'wis',
+};
+
 /** Parse a CR string ("1/4", "5") or number to a float. */
 export function normalizeCR(input: string | number): number {
   if (typeof input === 'number') return input;

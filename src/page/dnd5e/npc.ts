@@ -10,6 +10,7 @@ import {
   normalizeCR,
   formatCR,
   CONDITION_TYPES,
+  SKILL_ABILITY,
 } from './actor-fields.js';
 
 // CR helpers keep their npc-prefixed names for existing importers (npc.test.ts); the
@@ -22,13 +23,21 @@ export { normalizeCR as npcNormalizeCR, formatCR as npcFormatCR };
 
 export function npcBuildSkillsBlock(
   skills: Array<{ skill: string; proficiency: string }>
-): Record<string, { value: number }> {
-  const result: Record<string, { value: number }> = {};
-  for (const { skill, proficiency } of skills) {
+): Record<string, { value: number; ability: string }> {
+  // Collect requested proficiencies keyed by skill (unknown skill names are dropped).
+  const proficiency: Record<string, number> = {};
+  for (const { skill, proficiency: p } of skills) {
     const key = normalizeSkill(skill);
     if (key) {
-      result[key] = { value: proficiency === 'expert' ? 2 : 1 };
+      proficiency[key] = p === 'expert' ? 2 : 1;
     }
+  }
+  // Seed ALL 18 skills (value 0 unless proficient), each carrying its governing ability —
+  // mirrors a compendium-imported NPC. Without the full set the actor is missing 15 skills
+  // entirely, and without `ability` dnd5e drops the ability modifier from every skill total.
+  const result: Record<string, { value: number; ability: string }> = {};
+  for (const [key, ability] of Object.entries(SKILL_ABILITY)) {
+    result[key] = { value: proficiency[key] ?? 0, ability };
   }
   return result;
 }

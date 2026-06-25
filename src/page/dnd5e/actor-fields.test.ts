@@ -15,6 +15,8 @@ import {
   ARMOR_CALC,
   DAMAGE_TYPES,
   ABILITIES,
+  SKILL_ABILITY,
+  SKILL_KEYS,
 } from './actor-fields.js';
 
 describe('normalizeSize', () => {
@@ -38,6 +40,21 @@ describe('normalizeSkill', () => {
   });
   it('returns undefined for an unknown skill', () => {
     expect(normalizeSkill('Underwater Basket Weaving')).toBeUndefined();
+  });
+});
+
+describe('SKILL_ABILITY', () => {
+  it('maps every one of the 18 skill keys to a valid ability', () => {
+    expect(Object.keys(SKILL_ABILITY).sort()).toEqual([...SKILL_KEYS].sort());
+    for (const ability of Object.values(SKILL_ABILITY)) {
+      expect(ABILITIES).toContain(ability);
+    }
+  });
+  it('uses the canonical dnd5e governing abilities', () => {
+    expect(SKILL_ABILITY.ath).toBe('str'); // Athletics
+    expect(SKILL_ABILITY.per).toBe('cha'); // Persuasion
+    expect(SKILL_ABILITY.prc).toBe('wis'); // Perception
+    expect(SKILL_ABILITY.arc).toBe('int'); // Arcana
   });
 });
 

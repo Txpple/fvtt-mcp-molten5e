@@ -86,7 +86,7 @@ describe('handleGetCharacter', () => {
           attributes: { hp: { value: 18, max: 22, temp: 0 }, ac: { value: 15 } },
           details: { level: { value: 3 }, class: 'Wizard', race: 'Elf' },
           abilities: { int: { value: 16, mod: 3 } },
-          skills: { arc: { value: 5, proficient: true, ability: 'int' } },
+          skills: { arc: { value: 1, ability: 'int' } },
         },
         // saves are attached TOP-LEVEL by getCharacterInfo (page-side extractSaves), not under system
         saves: { str: { value: 0, proficient: 0 }, int: { value: 5, proficient: 1 } },
@@ -128,7 +128,7 @@ describe('handleGetCharacter', () => {
     expect(out.stats.hitPoints).toEqual({ current: 18, max: 22, temp: 0 });
     expect(out.stats.armorClass).toBe(15);
     expect(out.stats.abilities.int).toEqual({ value: 16, modifier: 3 });
-    expect(out.stats.skills.arc).toEqual({ value: 5, modifier: 0, proficient: true });
+    expect(out.stats.skills.arc).toEqual({ value: 1, modifier: 0, proficient: 1 });
     // saves: derived totals attached top-level page-side (extractSaves) and passed through
     expect(out.stats.saves).toEqual({
       str: { value: 0, proficient: 0 },

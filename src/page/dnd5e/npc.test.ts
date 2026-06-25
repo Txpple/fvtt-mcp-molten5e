@@ -32,13 +32,19 @@ describe('npcFormatCR', () => {
 });
 
 describe('npcBuildSkillsBlock', () => {
-  it('maps skill names to dnd5e keys with proficient(1)/expert(2) and skips unknowns', () => {
+  it('seeds all 18 skills with their governing ability, flags proficient(1)/expert(2), drops unknowns', () => {
     const out = npcBuildSkillsBlock([
       { skill: 'Perception', proficiency: 'proficient' },
       { skill: 'Stealth', proficiency: 'expert' },
       { skill: 'Underwater Basket Weaving', proficiency: 'proficient' },
     ]);
-    expect(out).toEqual({ prc: { value: 1 }, ste: { value: 2 } });
+    // full 18-skill set (like a compendium NPC), unknown skill ignored
+    expect(Object.keys(out)).toHaveLength(18);
+    expect(out.prc).toEqual({ value: 1, ability: 'wis' });
+    expect(out.ste).toEqual({ value: 2, ability: 'dex' });
+    // non-proficient skills are still present at value 0, each carrying its ability
+    expect(out.ath).toEqual({ value: 0, ability: 'str' });
+    expect(out.per).toEqual({ value: 0, ability: 'cha' });
   });
 });
 
@@ -91,7 +97,10 @@ describe('buildNpcActorData', () => {
     expect(actorData.system.details.cr).toBe(0.25);
     expect(actorData.system.traits.size).toBe('sm'); // 'small' → 'sm'
     expect(actorData.system.attributes.hp).toMatchObject({ value: 7, max: 7, formula: '2d6' });
-    expect(actorData.system.skills).toEqual({ ste: { value: 2 } });
+    // all 18 skills seeded with their ability; the proficient one carries its value
+    expect(Object.keys(actorData.system.skills)).toHaveLength(18);
+    expect(actorData.system.skills.ste).toEqual({ value: 2, ability: 'dex' });
+    expect(actorData.system.skills.ath).toEqual({ value: 0, ability: 'str' });
   });
 
   it('sets save-proficiency flags from savingThrows', () => {

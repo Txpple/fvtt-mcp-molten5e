@@ -24,6 +24,7 @@ import {
   normalizeCR,
   normalizeSize,
   normalizeSkill,
+  SKILL_ABILITY,
 } from './dnd5e/actor-fields.js';
 import { buildActivity } from './dnd5e/activities.js';
 
@@ -1338,6 +1339,9 @@ export async function updateActor(params: any): Promise<unknown> {
       }
       update[`system.skills.${key}.value`] =
         s.proficiency === 'expert' ? 2 : s.proficiency === 'proficient' ? 1 : 0;
+      // Also pin the governing ability: an authored NPC's skill may have been created
+      // without it (older builds), which silently drops the ability mod from the total.
+      update[`system.skills.${key}.ability`] = SKILL_ABILITY[key];
       touched = true;
     }
     if (touched) applied.push('skills');

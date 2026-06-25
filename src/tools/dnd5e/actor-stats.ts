@@ -127,10 +127,13 @@ export function extractActorStats(actorData: any): any {
     for (const [key, skill] of Object.entries(system.skills)) {
       const skillData = skill as any;
       const d = actorData.derived?.skills?.[key];
+      // dnd5e stores the proficiency multiplier in `value` (0 none / 1 proficient / 2 expert);
+      // there is no `proficient` field on the skill, so derive the flag from `value`.
+      const value = skillData.value ?? 0;
       const entry: any = {
-        value: skillData.value ?? 0,
+        value,
         modifier: d?.total ?? skillData.total ?? skillData.mod ?? 0,
-        proficient: skillData.proficient ?? 0,
+        proficient: value > 0 ? 1 : 0,
       };
       const passive = d?.passive ?? skillData.passive;
       if (passive !== undefined) entry.passive = passive;

@@ -53,7 +53,7 @@ describe('extractActorStats', () => {
         attributes: { hp: { value: 18, max: 22, temp: 0 }, ac: { value: 15 } },
         details: { level: { value: 3 } },
         abilities: { int: { value: 16, mod: 3 } },
-        skills: { arc: { value: 5, proficient: true, ability: 'int' } },
+        skills: { arc: { value: 1, ability: 'int' } },
       },
     });
     expect(stats.name).toBe('Aria');
@@ -62,7 +62,8 @@ describe('extractActorStats', () => {
     expect(stats.hitPoints).toEqual({ current: 18, max: 22, temp: 0 });
     expect(stats.armorClass).toBe(15);
     expect(stats.abilities.int).toEqual({ value: 16, modifier: 3 });
-    expect(stats.skills.arc).toEqual({ value: 5, modifier: 0, proficient: true });
+    // proficiency is derived from the multiplier in `value` (dnd5e has no `proficient` field)
+    expect(stats.skills.arc).toEqual({ value: 1, modifier: 0, proficient: 1 });
     // NPC-only fields and spellcasting are absent for a non-spellcaster PC
     expect(stats.creatureType).toBeUndefined();
     expect(stats.legendaryActions).toBeUndefined();
@@ -123,7 +124,8 @@ describe('extractActorStats', () => {
     expect(stats.armorClass).toBe(15);
     expect(stats.initiative).toBe(3);
     expect(stats.abilities.str).toEqual({ value: 20, modifier: 5 });
-    expect(stats.skills.prc).toEqual({ value: 2, modifier: 8, proficient: 0, passive: 18 });
+    // value 2 = expertise → proficient flag derived as 1 (was wrongly reported 0)
+    expect(stats.skills.prc).toEqual({ value: 2, modifier: 8, proficient: 1, passive: 18 });
     expect(stats.legendaryActions).toEqual({ available: 0, max: 0 });
     expect(stats.xp).toBe(1800);
   });
