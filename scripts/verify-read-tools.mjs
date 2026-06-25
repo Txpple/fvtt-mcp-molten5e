@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 
 import { Foundry } from '../dist/foundry.js';
 import { SceneTools } from '../dist/tools/scene.js';
-import { CharacterTools } from '../dist/tools/character.js';
+import { ActorTools } from '../dist/tools/actor.js';
 import { CompendiumTools } from '../dist/tools/compendium.js';
 import { QuestCreationTools } from '../dist/tools/quest-creation.js';
 import { AssetBridgeTools } from '../dist/tools/asset-bridge.js';
@@ -47,7 +47,7 @@ const foundry = new Foundry({
 });
 
 const scene = new SceneTools({ foundry, logger });
-const character = new CharacterTools({ foundry, logger });
+const character = new ActorTools({ foundry, logger });
 const compendium = new CompendiumTools({ foundry, logger });
 const quest = new QuestCreationTools({ foundry, logger });
 const asset = new AssetBridgeTools({ foundry, logger });

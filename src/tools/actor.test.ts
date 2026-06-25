@@ -1,5 +1,5 @@
 /**
- * Unit tests for CharacterTools.
+ * Unit tests for ActorTools.
  *
  * These exercise the two things each handler owns before/after the bridge call:
  *   1. zod input validation — required fields, .min(1) non-empty strings/arrays,
@@ -15,18 +15,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { CharacterTools } from './character.js';
+import { ActorTools } from './actor.js';
 import { makeLogger, makeFoundry } from './test-helpers.js';
 
 /**
- * Build a CharacterTools with a method-keyed mock bridge.
+ * Build a ActorTools with a method-keyed mock bridge.
  *
  * `responses` maps a bridge method name to the value its call resolves to
  * (keys are the bare op name, e.g. 'getCharacterInfo').
  */
 function build(responses: Record<string, any> = {}) {
   const { foundry, calls } = makeFoundry((method: string) => responses[method]);
-  const tools = new CharacterTools({ foundry, logger: makeLogger() });
+  const tools = new ActorTools({ foundry, logger: makeLogger() });
   return { tools, calls, foundry };
 }
 
@@ -35,7 +35,7 @@ function callFor(calls: Array<[string, any]>, bareMethod: string) {
   return calls.find(([m]) => m === bareMethod);
 }
 
-describe('CharacterTools.getToolDefinitions', () => {
+describe('ActorTools.getToolDefinitions', () => {
   it('exposes exactly the expected tool names', () => {
     const { tools } = build();
     const names = tools
@@ -176,7 +176,7 @@ describe('handleGetCharacter', () => {
       throw new Error('boom');
     });
     void calls;
-    const tools = new CharacterTools({ foundry, logger: makeLogger() });
+    const tools = new ActorTools({ foundry, logger: makeLogger() });
     await expect(tools.handleGetCharacter({ identifier: 'Ghost' })).rejects.toThrow(
       /Failed to retrieve character "Ghost": boom/
     );

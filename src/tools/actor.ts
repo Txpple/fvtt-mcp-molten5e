@@ -156,18 +156,18 @@ const SearchActorContentsSchema = z.object({
   limit: z.number().optional().describe('Maximum number of results to return (default: 20)'),
 });
 
-export interface CharacterToolsOptions {
+export interface ActorToolsOptions {
   foundry: FoundryBridge;
   logger: Logger;
 }
 
-export class CharacterTools {
+export class ActorTools {
   private foundry: FoundryBridge;
   private logger: Logger;
 
-  constructor({ foundry, logger }: CharacterToolsOptions) {
+  constructor({ foundry, logger }: ActorToolsOptions) {
     this.foundry = foundry;
-    this.logger = logger.child({ component: 'CharacterTools' });
+    this.logger = logger.child({ component: 'ActorTools' });
   }
 
   /**

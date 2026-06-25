@@ -5,7 +5,7 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import { Foundry } from '../../dist/foundry.js';
 import { SceneTools } from '../../dist/tools/scene.js';
-import { CharacterTools } from '../../dist/tools/character.js';
+import { ActorTools } from '../../dist/tools/actor.js';
 import { CompendiumTools } from '../../dist/tools/compendium.js';
 import { QuestCreationTools } from '../../dist/tools/quest-creation.js';
 import { AssetBridgeTools } from '../../dist/tools/asset-bridge.js';
@@ -14,7 +14,7 @@ import { LIVE, foundryConfig, noopLogger, CONNECT_TIMEOUT_MS } from './setup.js'
 describe.skipIf(!LIVE)('read-tool spine (live)', () => {
   let foundry: Foundry;
   let scene: SceneTools;
-  let character: CharacterTools;
+  let character: ActorTools;
   let compendium: CompendiumTools;
   let quest: QuestCreationTools;
   let asset: AssetBridgeTools;
@@ -25,7 +25,7 @@ describe.skipIf(!LIVE)('read-tool spine (live)', () => {
     await foundry.connect();
 
     scene = new SceneTools({ foundry, logger: noopLogger });
-    character = new CharacterTools({ foundry, logger: noopLogger });
+    character = new ActorTools({ foundry, logger: noopLogger });
     compendium = new CompendiumTools({ foundry, logger: noopLogger });
     quest = new QuestCreationTools({ foundry, logger: noopLogger });
     asset = new AssetBridgeTools({ foundry, logger: noopLogger });

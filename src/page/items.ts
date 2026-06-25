@@ -6,7 +6,7 @@
 // GM. Return shapes match the old data-access.ts oracle (reads listWorldItems
 // @3573-3637 / getWorldItem @3840-3899; writes updateWorldItems @3638-3733 /
 // createWorldItems @3733-3900 / deleteWorldItems @3900-4018) exactly so the
-// consuming Node tools (src/tools/character.ts) and their tests stay green.
+// consuming Node tools (src/tools/actor.ts) and their tests stay green.
 
 import { toSource, sanitizeDocData as sanitizeData } from './_shared.js';
 
