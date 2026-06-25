@@ -159,21 +159,37 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   **delegates** new-playlist authoring to it (keeps the scene `playlist` link wiring). Audio has no
   compendium (asset-driven like scenes). Live-verified 8/8 (`verify-playlist-tooling.mjs`).
 
-### Phase 4 — Continuous correctness hardening (parallel, non-blocking)
-- [ ] Generate `add-feature` schema from zod (don't split it); split `create-actor` →
-  `create-actor-from-compendium` + `author-npc`; rename `CharacterTools`→`ActorTools`; structured error
-  taxonomy; offline pure-builder tests.
+### Phase 4 — Continuous correctness hardening (the PC-de-risking subset; landed)
+- [x] **4.1 — Rename `CharacterTools`→`ActorTools`** (`0dea13e`) — pure internal rename; reserves the
+  "Character"/"PC" naming for the §7 PC product. Tool names unchanged → no alias, no skill edits.
+- [x] **4.2 — Split `create-actor`** (`3551b59`) → `create-actor-from-compendium` + `author-npc`, each
+  with its own hoisted single-source-of-truth schema; legacy `create-actor` kept as a DEPRECATED
+  one-release alias (branches on `source`); `stat-block-builder` rewired in the same commit.
+- [x] **4.3 — Extract `ItemTools`** (`b022402`) — world-Item CRUD + add/remove-from-actor pulled out of
+  the actor-reads class into their own first-class family (`src/tools/items.ts`); tool-layer only (page
+  untouched); tool names unchanged → no skill edits.
+- [x] **4.4 — Generate `add-feature` schema from zod** (`58300dc`) — killed the last hand-written JSON
+  schema; the wrapper composes the canonical `AddFeatureSchema` / `AddFeaturesFromCompendiumSchema` /
+  `AddToActorItemsSchema` zod. `add-feature` is NOT split into per-mode tools (locked decision).
+- [ ] **Deferred (not blocking PCs):** structured error-code taxonomy — no consumer yet; building typed
+  codes blind would be speculative (YAGNI), revisit when Phase-5 advancement errors justify them (the
+  one real fragility, the `create-actor` error literal, was fixed inside 4.2). Page-side `manageActivity`
+  relocation out of `actors.ts` (dual-target actor+item, shares helpers — intentional remainder).
 
 ### Phase 5 — PCs (LAST, separate effort)
-- [ ] Reserved until 0–3 land. Re-run the advancement spike, then build the parallel
-  `create-pc`/`pc-builder` family.
+- [ ] Reserved until 0–4 land. **Re-run the advancement spike FIRST** (`AdvancementManager.forNewItem(
+  actor, classData, {render:false})` resolving `@scale` headlessly — the make-or-break unknown), then
+  build the parallel `create-pc`/`pc-builder` family. Phase 4's rename + create-actor split are the real
+  prerequisites: `author-pc`/`create-pc` now slot in as siblings to `author-npc` on a clean `ActorTools`
+  surface, not bolted onto a `CharacterTools` collision.
 
 ---
 *Phase 0 (Foundations) **COMPLETE**. Phase 1 (NPCs) **COMPLETE** (live-verified 10/10 + 8/8). Phase 2
-(Journals) **COMPLETE** (15/15). Phase 3 (Remaining content blocks) **COMPLETE** — 3.1 Tables (v14
-`description` results + compendium `@UUID` loot links + `import-rolltable` + `table-builder`, 19/19) ·
-3.2 Cards (face text + `import-cards` presets + `cards-builder`, 7/7) · 3.3 Playlists (`playlist-builder`
-+ scene-builder delegation, tools v14-verified, 8/8), all landed on `master`. **Every design.md §5
-content building block now has its judgment skill + verified tools.** Next: **Phase 4 — continuous
-correctness hardening** (parallel/non-blocking: generate `add-feature` schema, split `create-actor`,
-rename `CharacterTools`→`ActorTools`, **extract `ItemTools`**) — then **Phase 5 — PCs** (last).*
+(Journals) **COMPLETE** (15/15). Phase 3 (Remaining content blocks) **COMPLETE** — 3.1 Tables · 3.2
+Cards · 3.3 Playlists, all landed on `master`. **Every design.md §5 content building block has its
+judgment skill + verified tools.** Phase 4 (PC-de-risking hardening subset) **COMPLETE** — 4.1 rename
+`CharacterTools`→`ActorTools` (`0dea13e`) · 4.2 split `create-actor`→`create-actor-from-compendium`+
+`author-npc` w/ deprecation alias (`3551b59`) · 4.3 extract `ItemTools` (`b022402`) · 4.4 generate
+`add-feature` schema from zod, last hand-written JSON schema killed (`58300dc`); 739 tests, 82 tools.
+Deferred (not blocking PCs): error-code taxonomy + page `manageActivity` relocation. Next: **Phase 5 —
+PCs** (LAST — re-run the advancement spike first).*
