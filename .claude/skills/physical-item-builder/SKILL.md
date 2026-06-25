@@ -20,19 +20,14 @@ A judgment layer for putting D&D 5e gear into Foundry. It turns an item descript
 stat-block "Equipment" line, or "give the boss a flaming greatsword" — into correctly-shaped, **art-
 bearing, edition-correct** Foundry items. It adds NO new mechanics; the tools hold the field shapes.
 
-## House rules — READ FIRST (project authoring policy)
+## Authoring policy — READ FIRST
 
-1. **Default to the 2024 ruleset.** Use the PHB/DMG **2024** compendiums and `sourceRules: "2024"`
-   unless the user says otherwise.
-2. **Compendium-FIRST — copy, don't author.** ALWAYS look for the item in a compendium and **copy it**
-   (with `import-item`) rather than building it from scratch. Copying brings the correct stats AND the
-   graphic. This applies even to plain gear (a greatsword, chain mail, a Potion of Healing).
-3. **Custom item = copy a base, then modify, then rename.** For a homebrew item that doesn't match a
-   compendium entry, copy the closest base (e.g. a `+1 Shield` from the DMG), modify it
-   (`update-actor-item` / `manage-activity` / `manage-effect`), and rename it (`import-item`'s `name`,
-   or `update-actor-item`).
-4. **If you can't find a workable 2024 match, STOP and ASK** — don't silently fall back to 2014 or
-   invent a rarity / price / damage die.
+**Follow the shared project authoring policy:** read
+[`_shared/authoring-policy.md`](../_shared/authoring-policy.md) (`.claude/skills/_shared/authoring-policy.md`)
+— 2024 by default · compendium-FIRST (copy the real PHB/DMG item with `import-item`, even for plain gear;
+don't author) · **never the SRD** · custom = copy a base → modify → rename · can't find a 2024 match →
+**STOP and ASK** (never fall back to 2014/SRD, never invent a rarity/price/damage die) · authoring, not
+play. The **item-specific** shaping rules are in "House rules for shaping items" below.
 
 Tools: **`import-item`** (copy from a compendium — the default path), **`search-compendium-items`**
 (faceted discovery by rarity / subtype / magical — the default way to *find* gear), **`search-compendium`**

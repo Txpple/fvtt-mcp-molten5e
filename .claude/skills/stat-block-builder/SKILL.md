@@ -44,22 +44,15 @@ each searches the premium books only and never the SRD, so you don't reason abou
 > Below, shorthand like "`add-feature` `save`" always means that `mode:"feature"` +
 > `feature.featureType` form — `featureType` is NOT a top-level mode.
 
-## House rules — READ FIRST (project authoring policy)
+## Authoring policy — READ FIRST
 
-- **Default to the 2024 ruleset.** Build with the PHB / DMG / MM **2024** compendiums and
-  `sourceRules: "2024"` everywhere unless the user says otherwise. (The tools now default to 2024 — keep
-  it consistent across the whole build.)
-- **Compendium-FIRST, everywhere — copy, don't author.** For the creature, its named traits, its spells,
-  AND its gear, look in a compendium and COPY the real entry (correct stats + artwork) before authoring:
-  `search-compendium-creatures` → `create-actor` (source: compendium); `add-feature` mode
-  `compendium-features` for named traits; `add-feature` mode `feature` with `feature.featureType:
-  "spells"` to import real spells; **`import-item`** for every piece of equipment. Author from scratch
-  only when nothing fits.
-- **Custom item = copy a base, then modify, then rename** (a magic weapon/shield with special powers):
-  `import-item` the closest base, then `update-actor-item` / `manage-activity` / `manage-effect`, then
-  rename. (See [[physical-item-builder]].)
-- **If you can't find a workable 2024 match, STOP and ASK** — never silently fall back to 2014 or invent
-  a value (a made-up CR, an invented damage type, a guessed price/rarity, a fabricated save DC).
+**Follow the shared project authoring policy:** read
+[`_shared/authoring-policy.md`](../_shared/authoring-policy.md) (`.claude/skills/_shared/authoring-policy.md`)
+— 2024 by default · compendium-FIRST (the premium books are the library; copy, don't author) · **never
+the SRD** · custom = copy a base → modify → rename · can't find a 2024 match → **STOP and ASK** (never
+fall back to 2014/SRD, never invent a value) · authoring, not play. Everything below applies those rules
+with the actor-authoring tools.
+
 - **⚠️ @scale gotcha when copying PC features onto an NPC.** 2024 class features (from the classes pack)
   and racial features (from the origins pack) are authored for PCs: their damage/uses often use a
   `@scale.*` formula whose value comes from the PC's class/species ADVANCEMENT — which an NPC doesn't
@@ -68,8 +61,6 @@ each searches the premium books only and never the SRD, so you don't reason abou
   level (e.g. a level-3 dragonborn breath weapon → `1d10`). `@prof` resolves fine on NPCs; only
   advancement-fed `@scale.*` dangles. (The full advancement-driven experience belongs to the future
   PC-actor builder — see project notes.)
-- This is AUTHORING. Don't place tokens on a scene, roll dice, spend charges, or run combat — those are
-  out of scope (the prototype-token config travels with the actor, but dropping a token is play).
 
 ## Step 0 — Compendium first, then author
 
@@ -208,7 +199,7 @@ or approximate.
   acceptance scripts bypass this via `dist/`.
 - Names must be unique on the actor — `add-feature` and attacks reject a duplicate name; rename or remove
   first. (`add-item` allows duplicate stacks.)
-- Keep `sourceRules` consistent across the build — **2024 by default** (the tools default to 2024; pass
-  `2014` only when the user explicitly wants legacy content).
+- Keep `sourceRules` consistent across the whole build (**2024 by default** — see the shared authoring
+  policy; pass `2014` only when the user explicitly wants legacy content).
 - Per-item corrections after the fact → `update-actor-item` (dot-path patch); per-actor corrections →
   `update-actor`.

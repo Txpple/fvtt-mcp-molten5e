@@ -79,8 +79,11 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
 - [ ] **0.2 — One copy primitive** (Inv. 2, tool, M). Whole-doc copy → `importFromCompendium`; keep
   the centralized hand-roll for embedded-item copy. *Done when:* each copy path routes through one
   primitive; **parity verified live**.
-- [ ] **0.3 — Shared authoring-policy snippet** (cross-cutting, skill, S). *Done when:* no skill
-  restates the policy inline.
+- [x] **0.3 — Shared authoring-policy snippet** (cross-cutting, skill, S) — **landed `master`.** New
+  single source `.claude/skills/_shared/authoring-policy.md` (2024-default · compendium-first/never-SRD ·
+  copy→modify→rename · ask-don't-invent · authoring-not-play, tracing to design.md §2.3–§2.4/§6). Both
+  authoring skills (`stat-block-builder`, `physical-item-builder`) now point to it instead of restating
+  it inline; skill-specific bits (the NPC `@scale` fix, item-shaping rules) stay in their skills.
 - [ ] **0.4 — Type the tool↔page seam** (infra, tool, M/L, parallel). `satisfies` + derived `PageApi`
   + coverage test. *Done when:* a wrong `foundry.call` name fails the gate, not a live session.
 
