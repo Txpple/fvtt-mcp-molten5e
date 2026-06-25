@@ -91,11 +91,21 @@ premium-first ranked. `search-compendium-creatures` is **kept (re-backed by the 
   the hit's `pack`+`id`. Name lookup kept as the quick path.
 
 ### Phase 4 — Live verification *(needs an MCP restart — the running bundle is stale)*
-- [ ] **4a** — restart Claude Code (loads the new `dist/page.bundle.js` + new tools).
-- [ ] **4b** — live smoke-test each faceted tool on `sandbox`: creatures (CR/type/size), spells
-  (level/school + a `damageType:fire` two-stage), items (rare wondrous). Confirm **no SRD**, premium-first,
-  sane counts; re-run `scripts/spike-compendium-lookup.mjs` if a primitive needs re-confirming.
-- [ ] **4c** — adversarial-verify the finished surface; confirm full gate green.
+- [ ] **4a** — **USER ACTION: restart Claude Code** to load the new `dist/page.bundle.js` + the two new
+  tools into the running MCP. The ENGINE is already live-verified (4b drives the fresh bundle directly,
+  bypassing the MCP process), so this only enables calling `search-compendium-spells` /
+  `search-compendium-items` *through MCP*. Post-restart smoke (optional, the facades are thin + unit-
+  tested): `search-compendium-spells {spellSchool:"evocation"}`, `search-compendium-items {rarity:"very
+  rare"}`, `search-compendium-creatures {creatureType:"dragon"}` — each returns book-only hits.
+- [x] **4b** — live smoke-test PASSED via **NEW `scripts/verify-faceted-lookup.mjs`** (direct-drive,
+  fresh bundle, against `sandbox`): **36/36 checks, 0 failures.** creatures (CR-range/type/size), spells
+  (level/school + `damageType:fire` two-stage), items (very-rare / wondrous-magical / rare-weapon).
+  Confirmed **ZERO SRD across all 159 hits**, every hit a premium book pack, premium-first, and the
+  friendly→key normalizations live (school evocation→evo, rarity "very rare"→veryRare, size large→lg).
+  Discovery spanned 5 books incl. non-uniform suffixes (`.options`, `.fallback-actors`) — by-type
+  discovery confirmed.
+- [x] **4c** — adversarial verification done (the verify script actively hunts SRD leakage + normalization
+  failures; none found) and full gate green (biome · tsc · 689 vitest · build · knip).
 
 ## Execution discipline
 - One coherent unit per commit (tool + its tests + any skill change together); commit direct to
