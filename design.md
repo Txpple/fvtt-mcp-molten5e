@@ -172,7 +172,7 @@ the fly. Net-new authoring, or editing an original compendium entry, is the last
    | Actions, attacks, legendary actions, traits | **Monster Manual** | monster features |
    | Feats, spells | **Player's Handbook** | feats · spells |
    | Mundane gear | **Player's Handbook** | adventuring gear · armor · tools · weapons |
-   | Magic & special gear | **Dungeon Master's Guide** | Armor · Blessings · Charms · Consumables · Containers · Equipment · Hazards · Instruments · Siege Weapons · Supplemental · Traps · Treasure · Weapons |
+   | Magic & special gear | **Dungeon Master's Guide** | Armor · Blessings · Charms · Consumables · Containers · Equipment · Instruments · Supplemental · Treasure · Weapons |
 
    For a **custom ability** with no exact match: copy the closest compendium entry, modify it, and
    rename it — never hand-build from nothing. If nothing reasonable exists, **stop and ask.**
