@@ -226,6 +226,62 @@ try {
       };
     });
 
+    // 3c) ITEM FACETS — ground the gear side of the unified faceted search ---------------------
+    await safe('itemFacets', async () => {
+      // Browser facet keyPaths for the gear-ish item data models.
+      const grab = dm => {
+        try {
+          const f = dm?.compendiumBrowserFilters;
+          const m = typeof f === 'function' ? f.call(dm) : f;
+          if (m instanceof Map)
+            return Array.from(m.entries()).map(([k, v]) => ({ key: k, type: v?.type, keyPath: v?.config?.keyPath || v?.keyPath }));
+          return m ? Object.keys(m) : null;
+        } catch (e) { return { error: String(e?.message || e) }; }
+      };
+      const facets = {
+        weapon: grab(CONFIG.Item?.dataModels?.weapon),
+        equipment: grab(CONFIG.Item?.dataModels?.equipment),
+        consumable: grab(CONFIG.Item?.dataModels?.consumable),
+        loot: grab(CONFIG.Item?.dataModels?.loot),
+      };
+      // What item TYPES and rarities actually live in the premium gear packs.
+      const sampleFromPack = async id => {
+        const pack = game.packs.get(id);
+        if (!pack) return { error: `${id} not found` };
+        const idx = await pack.getIndex({ fields: ['system.rarity', 'system.type.value', 'system.properties'] });
+        const entries = Array.from(idx.values());
+        const types = {};
+        const rarities = {};
+        for (const e of entries) {
+          types[e.type] = (types[e.type] || 0) + 1;
+          const r = e.system?.rarity ?? '(none)';
+          rarities[r] = (rarities[r] || 0) + 1;
+        }
+        const sample = entries.slice(0, 3).map(e => ({
+          name: e.name, type: e.type, rarity: e.system?.rarity,
+          itemSubtype: e.system?.type?.value, properties: e.system?.properties,
+        }));
+        return { count: entries.length, types, rarities, sample };
+      };
+      const phb = await sampleFromPack('dnd-players-handbook.equipment');
+      const dmg = await sampleFromPack('dnd-dungeon-masters-guide.equipment');
+      // Fetch gear by rarity to confirm the facet engine works for items.
+      let fetchRare = { skipped: 'no fetch' };
+      const CB = dnd5e?.applications?.CompendiumBrowser;
+      if (CB?.fetch) {
+        const res = await CB.fetch(CONFIG.Item.documentClass, {
+          types: new Set(['equipment', 'weapon', 'consumable']),
+          filters: [{ k: 'system.rarity', o: 'in', v: ['rare', 'veryRare'] }],
+          index: true,
+        });
+        const arr = Array.from(res ?? []);
+        const byPack = {};
+        for (const e of arr) { const pk = packIdFromUuid(e.uuid) || '?'; byPack[pk] = (byPack[pk] || 0) + 1; }
+        fetchRare = { count: arr.length, byPack, sample: arr.slice(0, 3).map(e => ({ name: e.name, rarity: e.system?.rarity, type: e.type })) };
+      }
+      return { facetKeyPaths: facets, phbEquipment: phb, dmgEquipment: dmg, fetchRareGear: fetchRare };
+    });
+
     // 4) TWO-STAGE SPELL DAMAGE ---------------------------------------------
     await safe('spellDamageShape', async () => {
       const pack = game.packs.get('dnd-players-handbook.spells');
