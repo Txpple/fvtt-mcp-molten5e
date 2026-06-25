@@ -31,10 +31,10 @@ describe('ErrorHandler.toUserMessage — enriches bridge/permission/validation f
   });
 
   it('adds the search-compendium tip on validation errors across the actor-creation family', () => {
-    // The tip fires for the whole family — both split tools and the deprecated create-actor alias.
-    // (The base message differs by branch: 'create-actor-from-compendium' contains the substring
-    // "compendium", so the classifier picks the more-specific "Creature not found" wording — fine.)
-    for (const tool of ['create-actor', 'create-actor-from-compendium', 'author-npc']) {
+    // The tip fires for both split tools. (The base message differs by branch:
+    // 'create-actor-from-compendium' contains the substring "compendium", so the classifier picks
+    // the more-specific "Creature not found" wording — fine.)
+    for (const tool of ['create-actor-from-compendium', 'author-npc']) {
       const msg = eh.toUserMessage(new Error('actor not found'), tool);
       expect(msg).toContain('use search-compendium first to see available creatures');
     }
@@ -49,7 +49,7 @@ describe('ErrorHandler.toUserMessage — never degrades already-specific message
     const zodish = Object.assign(new Error('Invalid input: expected string, received number'), {
       name: 'ZodError',
     });
-    expect(eh.toUserMessage(zodish, 'create-actor')).toBe(
+    expect(eh.toUserMessage(zodish, 'create-actor-from-compendium')).toBe(
       'Invalid input: expected string, received number'
     );
   });
@@ -66,11 +66,11 @@ describe('ErrorHandler.toUserMessage — never degrades already-specific message
 
 describe('ErrorHandler.handleToolError', () => {
   it('throws a FormattedToolError carrying the curated message', () => {
-    expect(() => eh.handleToolError(new Error('access denied'), 'create-actor', 'ctx')).toThrow(
-      FormattedToolError
-    );
+    expect(() =>
+      eh.handleToolError(new Error('access denied'), 'create-actor-from-compendium', 'ctx')
+    ).toThrow(FormattedToolError);
     try {
-      eh.handleToolError(new Error('access denied'), 'create-actor', 'ctx');
+      eh.handleToolError(new Error('access denied'), 'create-actor-from-compendium', 'ctx');
     } catch (e) {
       expect((e as Error).message).toContain('Permission denied');
       expect(e).toBeInstanceOf(Error);

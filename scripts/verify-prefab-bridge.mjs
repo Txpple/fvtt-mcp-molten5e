@@ -1,6 +1,6 @@
 // Live verification for alignment-plan 1.1 — the "prefab-as-base bridge".
 //
-// create-actor (source: compendium) can now layer update-actor-shaped `modifications` onto the
+// create-actor-from-compendium can now layer update-actor-shaped `modifications` onto the
 // instantiated WORLD COPY in one call — the §6 step-2 bridge from rung 1 (pure prefab copy) to a
 // customized NPC. This drives a real headless Foundry session through the foundry.call seam
 // (exercising the freshly-built dist/page.bundle.js without a Claude Code restart) and asserts,

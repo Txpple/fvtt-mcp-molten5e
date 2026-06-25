@@ -165,6 +165,8 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
 - [x] **4.2 — Split `create-actor`** (`3551b59`) → `create-actor-from-compendium` + `author-npc`, each
   with its own hoisted single-source-of-truth schema; legacy `create-actor` kept as a DEPRECATED
   one-release alias (branches on `source`); `stat-block-builder` rewired in the same commit.
+  **Alias since REMOVED** in the pre-Phase-5 cleanup — the actor-creation surface is now exactly the
+  two tools (`CreateActorSchema` deleted, dropped from `ACTOR_CREATION_TOOLS`; 82→81 tools).
 - [x] **4.3 — Extract `ItemTools`** (`b022402`) — world-Item CRUD + add/remove-from-actor pulled out of
   the actor-reads class into their own first-class family (`src/tools/items.ts`); tool-layer only (page
   untouched); tool names unchanged → no skill edits.
@@ -190,6 +192,7 @@ Cards · 3.3 Playlists, all landed on `master`. **Every design.md §5 content bu
 judgment skill + verified tools.** Phase 4 (PC-de-risking hardening subset) **COMPLETE** — 4.1 rename
 `CharacterTools`→`ActorTools` (`0dea13e`) · 4.2 split `create-actor`→`create-actor-from-compendium`+
 `author-npc` w/ deprecation alias (`3551b59`) · 4.3 extract `ItemTools` (`b022402`) · 4.4 generate
-`add-feature` schema from zod, last hand-written JSON schema killed (`58300dc`); 739 tests, 82 tools.
+`add-feature` schema from zod, last hand-written JSON schema killed (`58300dc`); 739 tests. The
+deprecated `create-actor` alias was then removed in the pre-Phase-5 cleanup (81 tools).
 Deferred (not blocking PCs): error-code taxonomy + page `manageActivity` relocation. Next: **Phase 5 —
 PCs** (LAST — re-run the advancement spike first).*

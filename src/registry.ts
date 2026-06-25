@@ -155,20 +155,12 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'get-current-scene': args => sceneTools.handleGetCurrentScene(args),
     'get-world-info': args => sceneTools.handleGetWorldInfo(args),
 
-    // Actor creation. Split into two product-aligned tools: create-actor-from-compendium (copy a
-    // pack entry — the default §6 path) and author-npc (hand-authored stat block — last resort).
-    // The legacy create-actor umbrella is a DEPRECATED one-release alias that still branches on
-    // `source` so old callers keep working until it's removed next release. Note the asymmetry:
-    // author-npc takes FLAT stat-block args, while the alias unwraps args.statBlock for back-compat.
+    // Actor creation — two product-aligned tools: create-actor-from-compendium (copy a pack entry,
+    // the default §6 path) and author-npc (hand-authored stat block, last resort). author-npc takes
+    // FLAT stat-block args.
     'create-actor-from-compendium': args =>
       actorCreationTools.handleCreateActorFromCompendium(args),
     'author-npc': args => dnd5eNpcTools.handleCreateNpc(args),
-    'create-actor': args => {
-      const source = args?.source ?? 'compendium';
-      return source === 'authored'
-        ? dnd5eNpcTools.handleCreateNpc(args?.statBlock ?? {})
-        : actorCreationTools.handleCreateActorFromCompendium(args);
-    },
     'delete-actor': args => actorCreationTools.handleDeleteActor(args),
     'delete-folder': args => actorCreationTools.handleDeleteFolder(args),
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),

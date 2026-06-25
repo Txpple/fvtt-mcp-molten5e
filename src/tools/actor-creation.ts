@@ -14,88 +14,10 @@ export interface ActorCreationToolsOptions {
 // Single source of truth for each tool's input contract: the handlers parse with these schemas
 // and getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised
 // and enforced contracts cannot drift.
-//
-// NOTE on create-actor (DEPRECATED one-release alias): the canonical tools are
-// `create-actor-from-compendium` (CreateActorFromCompendiumSchema — strict: packId/itemId/names
-// required) and `author-npc` (dnd5e/npc.ts). The legacy `create-actor` umbrella still dispatches on
-// `source` (registry.ts), so its advertised CreateActorSchema keeps every field optional
-// (required: []) — the per-path required-ness lives in each canonical tool's own schema.
-const CreateActorSchema = z.object({
-  source: z
-    .enum(['compendium', 'authored'])
-    .default('compendium')
-    .describe(
-      "Where the actor comes from. 'compendium' (default) copies an existing pack entry (use packId/itemId/names). 'authored' builds from the statBlock object. Prefer compendium for official 2024 content."
-    ),
-  packId: z
-    .string()
-    .optional()
-    .describe(
-      'ID of the premium-book pack containing the creature (e.g., "dnd-monster-manual.actors"). ' +
-        'Premium MM/PHB/DMG only — never the dnd5e.* SRD (design.md §2.3).'
-    ),
-  itemId: z
-    .string()
-    .optional()
-    .describe(
-      'ID of the specific creature entry within the pack (get this from search-compendium results)'
-    ),
-  names: z
-    .array(z.string())
-    .min(1)
-    .optional()
-    .describe('Custom names for the created actors (e.g., ["Flameheart", "Sneak", "Peek"])'),
-  quantity: z
-    .number()
-    .min(1)
-    .max(10)
-    .optional()
-    .describe('Number of actors to create (default: based on names array length)'),
-  addToScene: z
-    .boolean()
-    .default(false)
-    .describe('Whether to add created actors to the current scene as tokens'),
-  placement: z
-    .object({
-      type: z
-        .enum(['random', 'grid', 'center', 'coordinates'])
-        .default('grid')
-        .describe('Placement strategy'),
-      coordinates: z
-        .array(
-          z.object({
-            x: z.number().describe('X coordinate in pixels'),
-            y: z.number().describe('Y coordinate in pixels'),
-          })
-        )
-        .optional()
-        .describe('Specific coordinates for each token (required when type is "coordinates")'),
-    })
-    .optional()
-    .describe('Token placement options (only used when addToScene is true)'),
-  modifications: z
-    .record(z.string(), z.any())
-    .optional()
-    .describe(
-      "PREFAB-AS-BASE bridge (source='compendium' only): stat edits to layer onto the instantiated " +
-        'WORLD COPY — copy a close-matching Monster Manual creature, then customize it in one call ' +
-        '(the §6 step-2 path). Same shape as update-actor, e.g. {cr, hp:{value,max,formula}, ' +
-        'ac:{calc,flat}, abilities:{str,…}, skills:[{skill,proficiency}], damageResistances:{values}, ' +
-        'biography, currency:{mode,gp,…}}. Applied to the copy ONLY — the source compendium entry is ' +
-        'never modified. Use names[] for the name, not this. Applies to every copy when quantity > 1.'
-    ),
-  statBlock: z
-    .record(z.string(), z.any())
-    .optional()
-    .describe(
-      "Full hand-authored NPC stat block — used ONLY when source='authored'. Prefer the 2024 ruleset (sourceRules:'2024'). Required: name, creatureType (humanoid/undead/beast/dragon/fiend/…), size (tiny…gargantuan), cr (number or fraction string like '1/4'), abilities {str,dex,con,int,wis,cha}, hpAverage, hpFormula (e.g. '5d8+10'), acMode ('default'|'flat'; acValue required if 'flat'). Optional: alignment, savingThrows[], skills[{skill,proficiency}], walk/fly/swim/climb/burrowSpeed, darkvision/blindsight/tremorsense/truesight, damage immunities/resistances/vulnerabilities[], conditionImmunities[], languages[], biography, sourceBook/sourcePage/sourceRules. Add features, attacks, and spells afterward with add-feature; copy gear from a compendium with import-item."
-    ),
-});
 
-// create-actor-from-compendium contract (the §6 step-1 + step-2 path). Stricter than the legacy
-// CreateActorSchema umbrella — packId/itemId/names ARE required because this serves ONLY the
-// compendium-pull path. Single source of truth: the handler parses with it and getToolDefinitions()
-// advertises toInputSchema(...) of it.
+// create-actor-from-compendium contract (the §6 step-1 + step-2 path): packId/itemId/names ARE
+// required because this serves ONLY the compendium-pull path. Single source of truth: the handler
+// parses with it and getToolDefinitions() advertises toInputSchema(...) of it.
 const CreateActorFromCompendiumSchema = z.object({
   packId: z
     .string()
@@ -218,16 +140,6 @@ export class ActorCreationTools {
           'SAME call; the edits land on the copy only, never the source entry. For a fully ' +
           'hand-authored NPC with no compendium base, use author-npc (last resort).',
         inputSchema: toInputSchema(CreateActorFromCompendiumSchema),
-      },
-      {
-        name: 'create-actor',
-        description:
-          'DEPRECATED (one-release alias) — use create-actor-from-compendium (copy a pack entry, the ' +
-          'default) or author-npc (hand-authored stat block, last resort). This umbrella still works ' +
-          "for now: it branches on `source` ('compendium' → create-actor-from-compendium, 'authored' " +
-          '→ author-npc via the statBlock object). It will be removed next release; prefer the two ' +
-          'dedicated tools.',
-        inputSchema: toInputSchema(CreateActorSchema),
       },
       {
         name: 'delete-actor',

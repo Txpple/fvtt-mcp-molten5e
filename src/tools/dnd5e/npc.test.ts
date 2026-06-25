@@ -1,5 +1,5 @@
 /**
- * Unit tests for DnD5eNpcTools (create-actor source="authored" → createNpcActor).
+ * Unit tests for DnD5eNpcTools (author-npc → createNpcActor).
  *
  * Covers what handleCreateNpc owns before/around the bridge call:
  *   1. zod input validation — required identity fields, enum membership,

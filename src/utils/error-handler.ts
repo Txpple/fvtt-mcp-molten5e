@@ -1,12 +1,8 @@
 import { Logger } from '../logger.js';
 
 // The actor-creation tool family — a validation failure on any of these earns the "search-compendium
-// first" tip. Covers the split tools and the deprecated create-actor alias (one-release).
-const ACTOR_CREATION_TOOLS = new Set([
-  'create-actor',
-  'create-actor-from-compendium',
-  'author-npc',
-]);
+// first" tip. Covers the two split tools (create-actor-from-compendium / author-npc).
+const ACTOR_CREATION_TOOLS = new Set(['create-actor-from-compendium', 'author-npc']);
 
 export interface MCPError {
   type: 'user' | 'system' | 'permission' | 'validation' | 'connection';

@@ -1,6 +1,6 @@
 /**
  * Unit tests for ActorCreationTools
- * (create-actor, delete-actor, delete-folder).
+ * (create-actor-from-compendium, delete-actor, delete-folder).
  *
  * Each handler owns three things around the bridge call:
  *   1. zod input validation — required ids/names, non-empty strings, enum
@@ -22,18 +22,13 @@ function build(response: any = {}) {
 }
 
 describe('ActorCreationTools.getToolDefinitions', () => {
-  it('exposes the compendium-pull tool, the deprecated create-actor alias, and the delete tools', () => {
+  it('exposes the compendium-pull tool and the delete tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual([
-      'create-actor',
-      'create-actor-from-compendium',
-      'delete-actor',
-      'delete-folder',
-    ]);
+    expect(names).toEqual(['create-actor-from-compendium', 'delete-actor', 'delete-folder']);
   });
 
   it('every definition has an object inputSchema', () => {

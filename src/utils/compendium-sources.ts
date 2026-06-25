@@ -58,8 +58,8 @@ export function excludeSrdPacks<T>(packs: readonly T[], getId: (pack: T) => stri
 }
 
 /**
- * Throw if any supplied pack id is an SRD (`dnd5e.*`) pack. The PULL tools (create-actor from
- * compendium, import-item, add-feature's compendium modes) call this on the caller-supplied
+ * Throw if any supplied pack id is an SRD (`dnd5e.*`) pack. The PULL tools
+ * (create-actor-from-compendium, import-item, add-feature's compendium modes) call this on the caller-supplied
  * pack(s), so "books only, never SRD" (design.md §2.3) is enforced BY CONSTRUCTION — not just by
  * defaults / ranking / skill prose. A manual call or skill slip that names an SRD pack is refused
  * with a message pointing at the premium equivalent.

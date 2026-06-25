@@ -45,19 +45,19 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 82 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 81 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(82);
+    expect(names.length).toBe(81);
   });
 
-  it('advertises the actor-creation split and keeps create-actor as a deprecated alias', () => {
+  it('advertises the actor-creation split and fully retires the create-actor alias', () => {
     const { tools } = build();
     const names = new Set(tools.map(t => t.name));
     expect(names.has('create-actor-from-compendium')).toBe(true);
     expect(names.has('author-npc')).toBe(true);
-    expect(names.has('create-actor')).toBe(true); // deprecated one-release alias, still advertised
+    expect(names.has('create-actor')).toBe(false); // deprecated alias removed
   });
 
   it('advertises the actor-editing tools by name', () => {
@@ -159,10 +159,10 @@ describe('tool registry', () => {
     await expect(dispatch('no-such-tool', {})).rejects.toThrow(/Unknown tool/);
   });
 
-  it('dispatches the actor-creation split and the create-actor alias to the right page ops', async () => {
-    // The deprecation alias must keep working BOTH ways, and the sharpest trap is the arg asymmetry:
-    // author-npc takes a FLAT stat block, while the alias's source='authored' branch unwraps
-    // args.statBlock. Exercise all four routes and assert which page op each reaches.
+  it('dispatches the actor-creation split to the right page ops; the retired alias is unknown', async () => {
+    // The sharpest trap is the arg asymmetry: author-npc takes a FLAT stat block (the removed
+    // create-actor alias used to unwrap args.statBlock). Exercise both routes, assert which page op
+    // each reaches, and confirm the retired alias no longer dispatches.
     clearSystemCache(); // author-npc → assertDnd5e probes getWorldInfo (cached module-globally)
     const { foundry, calls } = makeFoundry((name: string) => {
       if (name === 'getWorldInfo') return { system: 'dnd5e' };
@@ -191,11 +191,12 @@ describe('tool registry', () => {
 
     await dispatch('create-actor-from-compendium', compendiumArgs);
     await dispatch('author-npc', statBlock); // FLAT
-    await dispatch('create-actor', { source: 'compendium', ...compendiumArgs }); // alias → compendium
-    await dispatch('create-actor', { source: 'authored', statBlock }); // alias unwraps statBlock
+    await expect(
+      dispatch('create-actor', { source: 'compendium', ...compendiumArgs })
+    ).rejects.toThrow(/Unknown tool/);
 
     const ops = calls.map(([op]) => op);
-    expect(ops.filter(op => op === 'createActorFromCompendium').length).toBe(2);
-    expect(ops.filter(op => op === 'createNpcActor').length).toBe(2);
+    expect(ops.filter(op => op === 'createActorFromCompendium').length).toBe(1);
+    expect(ops.filter(op => op === 'createNpcActor').length).toBe(1);
   });
 });
