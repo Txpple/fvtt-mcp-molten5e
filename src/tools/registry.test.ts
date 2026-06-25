@@ -44,11 +44,11 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 79 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 80 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(79);
+    expect(names.length).toBe(80);
   });
 
   it('advertises the actor-editing tools by name', () => {

@@ -138,9 +138,20 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
   `_shared/authoring-policy.md` with the journal-prose clarification. Shipped with 2.1.
 
 ### Phase 3 — Remaining content blocks
-- [ ] **3.1 — Tables** (tool+skill, M/L). Fix v14 `description` schema; compendium-referencing results;
-  `table-builder` skill. *Live-verify a roll.*
-- [ ] **3.2 — Cards** (tool+skill, M). Create/import decks only (no in-play verbs); `cards-builder`.
+- [x] **3.1 — Tables** (tool+skill, M/L) — **landed `master`.** **3.1a** (`23ce79a`): fixed the v14
+  `TableResult` bug (the canonical field is `description`, not the v14-dropped `text` — spike
+  `scripts/spike-rolltable-schema.mjs`); compendium-referencing results (`uuid` → book-style
+  `@UUID[…]{Name}` enricher with premium-only + resolvable guards, `{{link}}` mixed-loot placeholder);
+  `roll-on-table` surfaces drawn @UUID links as importable; new `table-builder` skill. **3.1b**
+  (`a287030`): `import-rolltable` copies a published compendium table into the world (the table copy
+  primitive via §0.2 `importFromCompendium`) — unblocks the DMG-treasure workflow (roll-on-table is
+  world-only). Gate green (729); live-verified 19/19 on `sandbox` (`verify-table-tooling.mjs`).
+- [x] **3.2 — Cards** (tool+skill, M) — **landed `master`.** Cards have NO premium-book compendium
+  (asset-driven like scenes — compendium-first N/A). Enhanced `create-cards` with per-card face `text`
+  (v14 face `{name, text?, img?}`) so a themed deck (Deck of Many Things) renders effect text;
+  `import-cards` instantiates a core PRESET deck (`pokerDark`/`pokerLight` = a standard 52-card deck —
+  the only "ready-made deck" path, no compendium); new `cards-builder` skill. Spike
+  `scripts/spike-cards-schema.mjs`. Gate green (731); live-verified 7/7 (`verify-cards-tooling.mjs`).
 - [ ] **3.3 — Playlists** (skill, S/M). `playlist-builder`; `scene-builder` delegates to it.
 
 ### Phase 4 — Continuous correctness hardening (parallel, non-blocking)

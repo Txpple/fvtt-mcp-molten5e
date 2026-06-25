@@ -19,13 +19,13 @@ function build(response: any = {}) {
 }
 
 describe('CardsTools.getToolDefinitions', () => {
-  it('exposes exactly the three cards tools', () => {
+  it('exposes exactly the four cards tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['create-cards', 'delete-cards', 'list-cards']);
+    expect(names).toEqual(['create-cards', 'delete-cards', 'import-cards', 'list-cards']);
   });
 
   it('every definition has an object inputSchema', () => {
@@ -50,7 +50,7 @@ describe('handleCreateCards', () => {
     expect(out).toBe('Created deck "Tarokka" (c1) with 54 card(s).');
   });
 
-  it('passes optional description, folderName and cards through', async () => {
+  it('passes optional description, folderName and cards (text + img) through', async () => {
     const { tools, calls } = build({
       type: 'pile',
       cardsName: 'Loot',
@@ -62,12 +62,12 @@ describe('handleCreateCards', () => {
       type: 'pile',
       description: 'a pile',
       folderName: 'Decks',
-      cards: [{ name: 'Ace', description: 'high', img: 'path/ace.webp' }],
+      cards: [{ name: 'The Sun', text: '<p>Gain a Wondrous item.</p>', img: 'path/sun.webp' }],
     });
     expect(calls[0][1]).toMatchObject({
       description: 'a pile',
       folderName: 'Decks',
-      cards: [{ name: 'Ace', description: 'high', img: 'path/ace.webp' }],
+      cards: [{ name: 'The Sun', text: '<p>Gain a Wondrous item.</p>', img: 'path/sun.webp' }],
     });
   });
 
@@ -89,6 +89,27 @@ describe('handleCreateCards', () => {
   it('rejects a card with an empty name', async () => {
     const { tools } = build();
     await expect(tools.handleCreateCards({ name: 'X', cards: [{ name: '' }] })).rejects.toThrow();
+  });
+});
+
+describe('handleImportCards', () => {
+  it('forwards a valid preset import and formats the result', async () => {
+    const { tools, calls } = build({
+      type: 'deck',
+      cardsName: 'Poker Deck',
+      cardsId: 'p1',
+      cardCount: 52,
+      preset: 'pokerDark',
+    });
+    const out = await tools.handleImportCards({ preset: 'pokerDark', folderName: 'Decks' });
+    expect(calls[0][0]).toBe('importCardsPreset');
+    expect(calls[0][1]).toMatchObject({ preset: 'pokerDark', folderName: 'Decks' });
+    expect(out).toBe('Imported deck "Poker Deck" (p1) from preset "pokerDark" — 52 card(s).');
+  });
+
+  it('rejects a missing preset', async () => {
+    const { tools } = build();
+    await expect(tools.handleImportCards({ folderName: 'Decks' })).rejects.toThrow();
   });
 });
 

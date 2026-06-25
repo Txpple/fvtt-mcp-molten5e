@@ -63,6 +63,7 @@ import {
   deleteRollTables,
   importRollTable,
   createCards,
+  importCardsPreset,
   deleteCards,
 } from './collections.js';
 import {
@@ -146,6 +147,7 @@ const api = {
   deleteRollTables,
   importRollTable,
   createCards,
+  importCardsPreset,
   deleteCards,
   // chat log (post / list / delete / export / dnd5e cards / roll requests)
   postChatMessage,

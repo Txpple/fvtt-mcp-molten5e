@@ -514,14 +514,17 @@ export async function importRollTable(args: {
 
 // --- cards writes ---
 
-// Create a Cards stack (deck/hand/pile) with optional initial cards. Each card
-// with a Data-relative img gets a single face built from the normalized path.
+// Create a Cards stack (deck/hand/pile) with optional initial cards. Each card carries one face
+// (v14 face shape: { name, text?, img? }) so a card can show ART (a Data-relative img), effect TEXT
+// (HTML — e.g. a Deck of Many Things outcome), or both; a card with neither gets no face (a plain
+// named card). The card-level `description` is GM/meta text (distinct from the face `text` shown on
+// the card).
 export async function createCards(args: {
   name: string;
   type?: string;
   description?: string;
   folderName?: string;
-  cards?: Array<{ name: string; description?: string; img?: string }>;
+  cards?: Array<{ name: string; description?: string; text?: string; img?: string }>;
 }): Promise<unknown> {
   if (!args?.name || args.name.trim().length === 0) {
     throw new Error('name is required and must be a non-empty string');
@@ -541,9 +544,13 @@ export async function createCards(args: {
         }
         const card: any = { name: c.name, type: 'base' };
         if (typeof c.description === 'string') card.description = c.description;
-        if (typeof c.img === 'string' && c.img.length > 0) {
-          const src = normalizeAssetPath(c.img);
-          card.faces = [{ name: c.name, img: src }];
+        const hasImg = typeof c.img === 'string' && c.img.length > 0;
+        const hasText = typeof c.text === 'string' && c.text.trim().length > 0;
+        if (hasImg || hasText) {
+          const face: any = { name: c.name };
+          if (hasImg) face.img = normalizeAssetPath(c.img as string);
+          if (hasText) face.text = c.text;
+          card.faces = [face];
           card.face = 0;
         }
         return card;
@@ -563,6 +570,46 @@ export async function createCards(args: {
     cardsName: doc?.name,
     type: doc?.type ?? type,
     cardCount: doc?.cards?.size ?? cards.length,
+  };
+}
+
+// Instantiate a core Foundry PRESET deck into the world (e.g. a standard 52-card poker deck). Cards
+// have no premium-book compendium (design.md §2.3 compendium-first is N/A — decks are asset-driven,
+// like scenes), but core ships preset decks in CONFIG.Cards.presets; this is the sanctioned "import a
+// ready-made deck" path. Mirrors Foundry's own preset loader: fetch the preset JSON, then create.
+export async function importCardsPreset(args: {
+  preset: string;
+  name?: string;
+  folderName?: string;
+}): Promise<unknown> {
+  const presets = (globalThis as any).CONFIG?.Cards?.presets ?? {};
+  const preset = presets[args?.preset ?? ''];
+  if (!preset) {
+    const available = Object.keys(presets).join(', ') || '(none)';
+    throw new Error(`Unknown card preset "${args?.preset}". Available presets: ${available}.`);
+  }
+  const fetchJson = (globalThis as any).foundry?.utils?.fetchJsonWithTimeout;
+  const data =
+    typeof fetchJson === 'function'
+      ? await fetchJson(preset.src)
+      : await fetch(preset.src).then((r: any) => r.json());
+  if (!data || typeof data !== 'object') {
+    throw new Error(`Preset "${args.preset}" did not load a deck (src: ${preset.src}).`);
+  }
+  if (args.name && args.name.trim().length > 0) data.name = args.name.trim();
+  if (args.folderName && args.folderName.trim().length > 0) {
+    data.folder = await getOrCreateFolder(args.folderName.trim(), 'Cards');
+  }
+  delete data._id; // fresh local id
+
+  const doc = await CardsClass.create(data);
+  return {
+    success: true,
+    cardsId: doc?.id,
+    cardsName: doc?.name,
+    type: doc?.type ?? data.type,
+    cardCount: doc?.cards?.size ?? (Array.isArray(data.cards) ? data.cards.length : 0),
+    preset: args.preset,
   };
 }
 

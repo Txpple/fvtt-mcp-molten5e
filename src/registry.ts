@@ -242,6 +242,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
     // Cards
     'create-cards': args => cardsTools.handleCreateCards(args),
+    'import-cards': args => cardsTools.handleImportCards(args),
     'list-cards': args => cardsTools.handleListCards(args),
     'delete-cards': args => cardsTools.handleDeleteCards(args),
 
