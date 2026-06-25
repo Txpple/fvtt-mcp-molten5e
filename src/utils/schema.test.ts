@@ -58,4 +58,20 @@ describe('toInputSchema', () => {
     expect((json.properties as any).size.enum).toEqual(['small', 'large']);
     expect((json.properties as any).ids.type).toBe('array');
   });
+
+  it('emits tuples in JSON Schema 2020-12 form (prefixItems, not the draft-7 items array)', () => {
+    // The Anthropic API validates every tool input_schema as draft 2020-12 and 400s the ENTIRE
+    // request if one is invalid — bricking the session the moment that tool loads. zod's draft-7
+    // target emitted the draft-7 tuple shape (`items: [schemaA, schemaB]` + `additionalItems`),
+    // which is invalid 2020-12; that bricked a live session via create-rolltable's `range` tuple.
+    // 2020-12 uses `prefixItems`. This locks the helper to the dialect the API actually enforces.
+    const json = toInputSchema(z.object({ range: z.tuple([z.number().int(), z.number().int()]) }));
+    const range = (json.properties as any).range;
+    expect(range.type).toBe('array');
+    expect(Array.isArray(range.prefixItems)).toBe(true);
+    expect(range.prefixItems).toHaveLength(2);
+    // The draft-7 forms that the API rejects must be absent.
+    expect(Array.isArray(range.items)).toBe(false);
+    expect(range.additionalItems).toBeUndefined();
+  });
 });

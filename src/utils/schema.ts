@@ -13,8 +13,15 @@ import { z } from 'zod';
  * Options chosen deliberately:
  * - `io: 'input'` — describe what callers may SEND. Fields with `.default()` stay optional
  *   (not forced into `required`), and coercion/transform unions advertise their INPUT side.
- * - `target: 'draft-7'` — the widely-supported JSON Schema dialect for MCP tool schemas; matches
- *   the dialect the previous hand-written definitions implied (`type`, `enum`, `anyOf`).
+ * - `target: 'draft-2020-12'` — the dialect the Anthropic API validates each tool `input_schema`
+ *   against. It rejects the ENTIRE request (HTTP 400 `tools.N.custom.input_schema ... must match
+ *   JSON Schema draft 2020-12`) if any advertised schema is invalid 2020-12 — which silently
+ *   bricks a session the moment the offending tool enters the tool list. The earlier `draft-7`
+ *   target looked fine for most tools but emitted the draft-7 tuple shape (`items: [schemaA,
+ *   schemaB]` + `additionalItems`) for `z.tuple(...)`, which is invalid under 2020-12 (tuples use
+ *   `prefixItems`) — that bricked a live session via create-rolltable's `range` tuple. Generating
+ *   2020-12 directly keeps the advertised dialect identical to the one Claude validates.
+ *   (schema.test.ts + registry.test.ts guard every tool against a 2020-12-invalid construct.)
  * - `unrepresentable: 'any'` — never throw at module-load time on an exotic `.refine()`/`.transform()`;
  *   emit a permissive node instead.
  *
@@ -25,7 +32,7 @@ import { z } from 'zod';
 export function toInputSchema(schema: z.ZodType): Record<string, unknown> {
   const json = z.toJSONSchema(schema, {
     io: 'input',
-    target: 'draft-7',
+    target: 'draft-2020-12',
     unrepresentable: 'any',
   }) as Record<string, unknown>;
 

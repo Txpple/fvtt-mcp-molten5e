@@ -18,6 +18,31 @@ function build() {
   return buildToolRegistry({ foundry, logger: makeLogger() });
 }
 
+// Recursively flag the JSON-Schema constructs that are valid in draft-7 but invalid under draft
+// 2020-12 — the dialect the Anthropic API enforces on tool input_schema. zod's generator can only
+// realistically emit these via `z.tuple(...)`: the draft-7 tuple uses an `items` ARRAY plus
+// `additionalItems`, whereas 2020-12 uses `prefixItems` (and folds `additionalItems` into `items`).
+// Returns a list of `path: reason` strings; empty means the schema is 2020-12-clean.
+function draft2020Violations(node: unknown, path: string): string[] {
+  if (Array.isArray(node)) {
+    return node.flatMap((child, i) => draft2020Violations(child, `${path}[${i}]`));
+  }
+  if (node && typeof node === 'object') {
+    const obj = node as Record<string, unknown>;
+    const here: string[] = [];
+    if (Array.isArray(obj.items)) {
+      here.push(`${path}.items: array (draft-7 tuple form; 2020-12 uses prefixItems)`);
+    }
+    if ('additionalItems' in obj) {
+      here.push(`${path}.additionalItems: present (removed in 2020-12)`);
+    }
+    return here.concat(
+      Object.entries(obj).flatMap(([k, v]) => draft2020Violations(v, `${path}.${k}`))
+    );
+  }
+  return [];
+}
+
 describe('tool registry', () => {
   it('advertises 78 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
@@ -77,6 +102,18 @@ describe('tool registry', () => {
       expect(typeof tool.name).toBe('string');
       expect(tool.inputSchema).toBeTruthy();
     }
+  });
+
+  it('every advertised tool input schema is valid JSON Schema 2020-12 (no draft-7-only constructs)', () => {
+    // The Anthropic API validates each tool input_schema as JSON Schema draft 2020-12 and 400s the
+    // ENTIRE request — not just the call — if any one is invalid, silently bricking the session the
+    // moment that tool enters the tool list (this actually happened: create-rolltable's `range`
+    // tuple emitted the draft-7 `items: [..]` shape and bricked a live session). Sweep every
+    // advertised schema for the 2020-12-incompatible constructs zod's generator can emit so a bad
+    // dialect can never silently ship again.
+    const { tools } = build();
+    const offenders = tools.flatMap(t => draft2020Violations(t.inputSchema, t.name));
+    expect(offenders).toEqual([]);
   });
 
   it('dispatch routes a known tool to the bridge and rejects an unknown one', async () => {
