@@ -75,7 +75,7 @@ const CreateActorSchema = z.object({
     .record(z.string(), z.any())
     .optional()
     .describe(
-      "Full hand-authored NPC stat block — used ONLY when source='authored'. Prefer the 2024 ruleset (sourceRules:'2024'). Required: name, creatureType (humanoid/undead/beast/dragon/fiend/…), size (tiny…gargantuan), cr (number or fraction string like '1/4'), abilities {str,dex,con,int,wis,cha}, hpAverage, hpFormula (e.g. '5d8+10'), acMode ('default'|'flat'; acValue required if 'flat'). Optional: alignment, savingThrows[], skills[{skill,proficiency}], walk/fly/swim/climb/burrowSpeed, darkvision/blindsight/tremorsense/truesight, damage immunities/resistances/vulnerabilities[], conditionImmunities[], languages[], biography, sourceBook/sourcePage/sourceRules. Add features, attacks, and spells afterward with grant-to-actor."
+      "Full hand-authored NPC stat block — used ONLY when source='authored'. Prefer the 2024 ruleset (sourceRules:'2024'). Required: name, creatureType (humanoid/undead/beast/dragon/fiend/…), size (tiny…gargantuan), cr (number or fraction string like '1/4'), abilities {str,dex,con,int,wis,cha}, hpAverage, hpFormula (e.g. '5d8+10'), acMode ('default'|'flat'; acValue required if 'flat'). Optional: alignment, savingThrows[], skills[{skill,proficiency}], walk/fly/swim/climb/burrowSpeed, darkvision/blindsight/tremorsense/truesight, damage immunities/resistances/vulnerabilities[], conditionImmunities[], languages[], biography, sourceBook/sourcePage/sourceRules. Add features, attacks, and spells afterward with add-feature; copy gear from a compendium with import-item."
     ),
 });
 

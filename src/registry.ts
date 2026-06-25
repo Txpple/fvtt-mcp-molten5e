@@ -25,7 +25,8 @@ import { DnD5eManageActivityTool } from './tools/dnd5e/manage-activity.js';
 import { DnD5eManageEffectTool } from './tools/dnd5e/manage-effect.js';
 import { DnD5eConditionTool } from './tools/dnd5e/conditions.js';
 import { DnD5eAddItemTool } from './tools/dnd5e/add-item.js';
-import { buildGrantToActorTool } from './tools/dnd5e/grant-to-actor.js';
+import { DnD5eImportItemTool } from './tools/dnd5e/import-item.js';
+import { buildAddFeatureTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
 import { AssetBridgeTools } from './tools/asset-bridge.js';
@@ -74,6 +75,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const dnd5eManageEffectTool = new DnD5eManageEffectTool({ foundry, logger });
   const dnd5eConditionTool = new DnD5eConditionTool({ foundry, logger });
   const dnd5eAddItemTool = new DnD5eAddItemTool({ foundry, logger });
+  const dnd5eImportItemTool = new DnD5eImportItemTool({ foundry, logger });
 
   const questCreationTools = new QuestCreationTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
@@ -88,9 +90,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const userTools = new UserTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
-  // Unified actor-granting tool: composes the feature-authoring + compendium-feature mode schemas
-  // (each sourced via the owning tool's getInputSchema()) into a single-entry `grant-to-actor`.
-  const grantToActorTool = buildGrantToActorTool(
+  // Unified add-feature tool: composes the feature-authoring + compendium-feature mode schemas
+  // (each sourced via the owning tool's getInputSchema()) into a single-entry `add-feature`.
+  const addFeatureTool = buildAddFeatureTool(
     dnd5eAddFeatureTool.getInputSchema(),
     dnd5eFeaturesFromCompendiumTools.getInputSchema()
   );
@@ -108,7 +110,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eManageEffectTool.getToolDefinitions(),
     ...dnd5eConditionTool.getToolDefinitions(),
     ...dnd5eAddItemTool.getToolDefinitions(),
-    grantToActorTool,
+    ...dnd5eImportItemTool.getToolDefinitions(),
+    addFeatureTool,
     ...questCreationTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
     ...moltenTools.getToolDefinitions(),
@@ -161,9 +164,10 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'manage-effect': args => dnd5eManageEffectTool.handleManageEffect(args),
     'apply-condition': args => dnd5eConditionTool.handleApplyCondition(args),
     'add-item': args => dnd5eAddItemTool.handleAddItem(args),
+    'import-item': args => dnd5eImportItemTool.handleImportItem(args),
 
-    // Actor authoring — unified grant entry (composes feature / compendium / items modes)
-    'grant-to-actor': args => {
+    // Actor authoring — unified add-feature entry (composes feature / compendium / items modes)
+    'add-feature': args => {
       const a = args ?? {};
       const actorIdentifier = a.actorIdentifier;
       if (a.mode === 'feature') {
@@ -183,7 +187,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         });
       }
       throw new Error(
-        `grant-to-actor: unknown mode "${a.mode}" — use "compendium-features", "feature", or "items"`
+        `add-feature: unknown mode "${a.mode}" — use "compendium-features", "feature", or "items"`
       );
     },
 

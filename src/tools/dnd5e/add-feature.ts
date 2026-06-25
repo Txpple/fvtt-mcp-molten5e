@@ -324,11 +324,11 @@ const AddFeatureSchema = z.object({
     ),
   compendiumPacks: z
     .array(z.string().min(1))
-    .default(['dnd5e.spells'])
+    .default(['dnd5e.spells24'])
     .describe(
       'Compendium pack IDs to search, in priority order (first match wins). ' +
-        'Default: ["dnd5e.spells"] (SRD 2014). Use "dnd5e.spells24" for 2024 rules. ' +
-        'Used by: spells.'
+        'Default: ["dnd5e.spells24"] (SRD 2024). Prefer the premium ["dnd-players-handbook.spells"] ' +
+        'when present; pass ["dnd5e.spells"] for 2014. Used by: spells.'
     ),
 
   // ── Feat widening (passive) ───────────────────────────────────────
@@ -417,9 +417,9 @@ const AddFeatureSchema = z.object({
   // ── Source metadata ───────────────────────────────────────────────
   sourceRules: z
     .enum(['2014', '2024'])
-    .default('2014')
+    .default('2024')
     .describe(
-      'Rules edition. Used by: passive, attack, attack-with-save, aura, spellcasting, homebrew-spell. Default: "2014".'
+      'Rules edition. Used by: passive, attack, attack-with-save, aura, spellcasting, homebrew-spell. Default: "2024" (pass "2014" for legacy content).'
     ),
   sourceBook: z
     .string()
@@ -457,7 +457,7 @@ export class DnD5eAddFeatureTool {
     this.errorHandler = new ErrorHandler(this.logger);
   }
 
-  /** This tool's JSON-Schema. Exposed so grant-to-actor can compose the 'feature' mode params. */
+  /** This tool's JSON-Schema. Exposed so the add-feature tool can compose the 'feature' mode params. */
   getInputSchema(): Record<string, unknown> {
     return this.getToolDefinitions()[0].inputSchema as Record<string, unknown>;
   }
@@ -500,7 +500,7 @@ export class DnD5eAddFeatureTool {
           'cleric/druid/ranger→WIS, sorcerer/warlock/bard/paladin→CHA), sourceRules\n\n' +
           '• spells — import EXISTING named spells from compendium. Names must be in English.\n' +
           '  Required: actorIdentifier, spellNames (max 50)\n' +
-          '  Optional: compendiumPacks (default ["dnd5e.spells"])\n\n' +
+          '  Optional: compendiumPacks (default ["dnd5e.spells24"]; prefer ["dnd-players-handbook.spells"] when present)\n\n' +
           '• homebrew-spell — author a NEW spell from scratch (vs "spells" which imports).\n' +
           '  Required: actorIdentifier, featureName, spellLevel\n' +
           '  Optional: description, spellSchool, spellMethod (atwill/innate/ritual/pact/spell), ' +
@@ -567,7 +567,7 @@ export class DnD5eAddFeatureTool {
       description: z.string().default(''),
       featType: z.string().optional(),
       requirements: z.string().optional(),
-      sourceRules: z.enum(['2014', '2024']).default('2014'),
+      sourceRules: z.enum(['2014', '2024']).default('2024'),
       sourceBook: z.string().default(''),
       sourcePage: z.string().default(''),
     });
@@ -726,7 +726,7 @@ export class DnD5eAddFeatureTool {
         longRangeFt: z.number().int().min(1).optional(),
         damageParts: z.array(damagePart).min(1, 'at least one damage part is required'),
         properties: z.array(z.string()).default([]),
-        sourceRules: z.enum(['2014', '2024']).default('2014'),
+        sourceRules: z.enum(['2014', '2024']).default('2024'),
         sourceBook: z.string().default(''),
         sourcePage: z.string().default(''),
       })
@@ -861,7 +861,7 @@ export class DnD5eAddFeatureTool {
         saveDC: z.number().int().min(1).max(30),
         saveDamageParts: z.array(damagePart).min(1, 'at least one save damage part is required'),
         saveOnSave: z.enum(['half', 'none']).default('none'),
-        sourceRules: z.enum(['2014', '2024']).default('2014'),
+        sourceRules: z.enum(['2014', '2024']).default('2024'),
         sourceBook: z.string().default(''),
         sourcePage: z.string().default(''),
       })
@@ -979,7 +979,7 @@ export class DnD5eAddFeatureTool {
       areaSize: z.number().positive('areaSize must be greater than 0'),
       areaUnits: z.enum(['ft', 'm']).default('ft'),
       affectsType: z.enum(['creature', 'object', 'space', '']).default('creature'),
-      sourceRules: z.enum(['2014', '2024']).default('2014'),
+      sourceRules: z.enum(['2014', '2024']).default('2024'),
       sourceBook: z.string().default(''),
       sourcePage: z.string().default(''),
     });
@@ -1067,7 +1067,7 @@ export class DnD5eAddFeatureTool {
       ]),
       spellcastingLevel: z.number().int().min(1).max(20),
       spellcastingAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
-      sourceRules: z.enum(['2014', '2024']).default('2014'),
+      sourceRules: z.enum(['2014', '2024']).default('2024'),
     });
 
     const parsed = schema.parse(args);
@@ -1135,7 +1135,7 @@ export class DnD5eAddFeatureTool {
       featureType: z.literal('spells'),
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       spellNames: z.array(z.string().min(1)).min(1).max(50),
-      compendiumPacks: z.array(z.string().min(1)).default(['dnd5e.spells']),
+      compendiumPacks: z.array(z.string().min(1)).default(['dnd5e.spells24']),
     });
 
     const parsed = schema.parse(args);
@@ -1205,7 +1205,7 @@ export class DnD5eAddFeatureTool {
             type: z.enum(['healing', 'temphp']).optional(),
           })
           .optional(),
-        sourceRules: z.enum(['2014', '2024']).default('2014'),
+        sourceRules: z.enum(['2014', '2024']).default('2024'),
       })
       .superRefine((data, ctx) => {
         if (

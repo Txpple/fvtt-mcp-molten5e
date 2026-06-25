@@ -141,7 +141,7 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**75 tools total: 66 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
+**76 tools total: 67 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes, roll tables, cards, ownership, folders/organization, 5e-specific helpers
@@ -174,11 +174,12 @@ asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the 
 | `set-actor-art`         | Set an actor's portrait (+ prototype token) from an image path               |
 | `add-journal-image`     | Append an image page to a journal entry                                      |
 
-The remaining Plane A tools cover world CRUD (`create-actor`, `grant-to-actor`, `create-item`,
-`add-item` (structured weapons/armor/consumables/loot/containers),
+The remaining Plane A tools cover world CRUD (`create-actor`, `add-feature` (features / compendium
+features / spells), `import-item` (copy a real PHB/DMG item — art + stats — onto an actor or the
+sidebar), `add-item` (author structured weapons/armor/consumables/loot/containers), `create-item`,
 `create-journal`/`create-quest-journal`, `create-rolltable`, `create-cards`, …), listing/search
 (`list-actors`, `search-compendium`, `list-journals`, …), and organization (`create-folder`,
-`move-documents`, `bulk-delete`). See [`src/index.ts`](src/index.ts) for the full dispatch table.
+`move-documents`, `bulk-delete`). See the `handlers` map in [`src/registry.ts`](src/registry.ts) for the full dispatch table.
 
 > Plane B file ops run over WebDAV (need `MOLTEN_WEBDAV_PASSWORD`, work whenever the VM is awake).
 > Plane A tools run over the headless bridge (need the world joined). Write tools refuse live

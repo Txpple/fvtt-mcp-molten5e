@@ -196,7 +196,7 @@ export class CharacterTools {
       {
         name: 'create-item',
         description:
-          'Create world-level Item document(s) in the Items sidebar — reusable library items (weapons, equipment, consumables, feats, spells). For dnd5e prefer the 2024 data model; pass system-specific data via the "system" field. GM-only. To attach items directly to an actor instead, use grant-to-actor (mode "items").',
+          'Create world-level Item document(s) in the Items sidebar — reusable library items (weapons, equipment, consumables, feats, spells). For dnd5e prefer the 2024 data model; pass system-specific data via the "system" field. GM-only. To put items on an actor instead, copy from a compendium with import-item, author one with add-item, or attach raw item data with add-feature (mode "items").',
         inputSchema: toInputSchema(CreateItemSchema),
       },
       {

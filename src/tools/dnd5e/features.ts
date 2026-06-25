@@ -8,7 +8,7 @@ import { toInputSchema } from '../../utils/schema.js';
 
 // Single source of truth for this tool's input contract: the handler parses with this schema and
 // getToolDefinitions() advertises toInputSchema(...) of the same schema, so the advertised and
-// enforced contracts cannot drift. grant-to-actor composes this via getInputSchema().
+// enforced contracts cannot drift. The add-feature tool composes this via getInputSchema().
 const AddFeaturesFromCompendiumSchema = z.object({
   actorIdentifier: z
     .string()
@@ -23,12 +23,14 @@ const AddFeaturesFromCompendiumSchema = z.object({
     ),
   compendiumPacks: z
     .array(z.string().min(1))
-    .default(['dnd5e.monsterfeatures', 'dnd5e.classfeatures'])
+    .default(['dnd5e.monsterfeatures24', 'dnd5e.classfeatures'])
     .describe(
       'Compendium pack IDs to search, in priority order (first match wins). ' +
-        'Defaults to ["dnd5e.monsterfeatures", "dnd5e.classfeatures"] (SRD 2014). ' +
-        'Use "dnd5e.monsterfeatures24" for 2024 monster features. ' +
-        'Note: 2024 class features are not available in a separate pack.'
+        'Defaults to ["dnd5e.monsterfeatures24", "dnd5e.classfeatures"] — 2024 monster features, ' +
+        'falling back to 2014 SRD class features. Prefer premium packs ("dnd-monster-manual.features") ' +
+        'when present; pass ["dnd5e.monsterfeatures"] for 2014 monsters. ' +
+        'Note: 2024 class features live INSIDE class items, not a separate pack — if a needed 2024 ' +
+        'class feature is missing here, tell the user and ask rather than substituting silently.'
     ),
 });
 
@@ -56,7 +58,7 @@ export class DnD5eFeaturesFromCompendiumTools {
     this.errorHandler = new ErrorHandler(this.logger);
   }
 
-  /** This tool's JSON-Schema. Exposed so grant-to-actor can compose the 'compendium-features' mode params. */
+  /** This tool's JSON-Schema. Exposed so the add-feature tool can compose the 'compendium-features' mode params. */
   getInputSchema(): Record<string, unknown> {
     return this.getToolDefinitions()[0].inputSchema as Record<string, unknown>;
   }
@@ -77,9 +79,9 @@ export class DnD5eFeaturesFromCompendiumTools {
           '⚠️ IMPORTANT — feature names must be in English: the compendium uses English names. ' +
           'Translate BEFORE calling if the user provided names in another language.\n\n' +
           'compendiumPacks controls which pack(s) to search (priority order, first match wins):\n' +
-          '  - Default ["dnd5e.monsterfeatures", "dnd5e.classfeatures"] → 2014 SRD\n' +
-          '  - ["dnd5e.monsterfeatures24"]                              → 2024 monster features only\n' +
-          '  - ["dnd5e.monsterfeatures24", "dnd5e.classfeatures"]       → 2024 monsters + 2014 class\n\n' +
+          '  - Default ["dnd5e.monsterfeatures24", "dnd5e.classfeatures"] → 2024 monsters + 2014 SRD class\n' +
+          '  - ["dnd5e.monsterfeatures"]                                 → 2014 SRD monster features\n' +
+          '  - ["dnd-monster-manual.features"]                           → premium 2024 monster features\n\n' +
           'DO NOT USE THIS TOOL for:\n' +
           '  - Importing spell items → use add-feature with featureType "spells" instead\n' +
           '  - Setting up spellcasting class or spell slots → use add-feature with featureType "spellcasting"\n' +

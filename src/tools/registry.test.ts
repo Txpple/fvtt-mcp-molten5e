@@ -19,11 +19,11 @@ function build() {
 }
 
 describe('tool registry', () => {
-  it('advertises 75 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 76 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(75);
+    expect(names.length).toBe(76);
   });
 
   it('advertises the actor-editing tools by name', () => {
@@ -35,6 +35,14 @@ describe('tool registry', () => {
     expect(names.has('manage-effect')).toBe(true);
     expect(names.has('apply-condition')).toBe(true);
     expect(names.has('add-item')).toBe(true);
+    expect(names.has('import-item')).toBe(true);
+  });
+
+  it('advertises the unified actor-authoring tool as add-feature (renamed from grant-to-actor)', () => {
+    const { tools } = build();
+    const names = new Set(tools.map(t => t.name));
+    expect(names.has('add-feature')).toBe(true);
+    expect(names.has('grant-to-actor')).toBe(false); // old name fully retired
   });
 
   it('advertises the six chat-log tools by name', () => {

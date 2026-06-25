@@ -109,7 +109,7 @@ describe('handleAddFeature — passive', () => {
     expect(out.success).toBe(true);
     expect(out.summary).toBe('✅ Feature "Magic Resistance" added to "Red Dragon"');
     expect(out.message).toContain('**Type:** passive / descriptive (no activity)');
-    expect(out.message).toContain("**Rules:** 2014 — MM'14");
+    expect(out.message).toContain("**Rules:** 2024 — MM'14");
   });
 
   it('rejects an empty featureName', async () => {
@@ -488,9 +488,7 @@ describe('handleAddFeature — spells', () => {
   it('forwards addSpellsToActor with default packs and formats an added report', async () => {
     const { tools, calls } = build({
       actor: { id: 'a1', name: 'Wizard' },
-      added: [
-        { name: 'Fireball', packId: 'dnd5e.spells', packLabel: 'Spells (SRD)', itemId: 's1' },
-      ],
+      added: [{ name: 'Fireball', packId: 'dnd5e.spells24', packLabel: 'Spells', itemId: 's1' }],
       skipped: [],
       notFound: [],
       failed: [],
@@ -504,9 +502,9 @@ describe('handleAddFeature — spells', () => {
 
     const [method, payload] = bridgeMethodFrom(calls);
     expect(method).toBe('addSpellsToActor');
-    expect(payload.compendiumPacks).toEqual(['dnd5e.spells']);
+    expect(payload.compendiumPacks).toEqual(['dnd5e.spells24']);
     expect(out.summary).toBe('✅ Spells imported to "Wizard" — 1 added');
-    expect(out.message).toContain('  - Fireball *(Spells (SRD), item `s1`)*');
+    expect(out.message).toContain('  - Fireball *(Spells, item `s1`)*');
   });
 
   it('uses the 🔍 icon when spells are not found', async () => {

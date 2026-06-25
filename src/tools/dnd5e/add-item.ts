@@ -199,8 +199,10 @@ const AddItemSchema = z.object({
     .describe('[weapon/armor/tool] Proficiency (weapon/armor 0|1; tool 0|0.5|1|2). Omit to infer.'),
   sourceRules: z
     .enum(['2014', '2024'])
-    .default('2014')
-    .describe('[weapon] Rules edition for the attack activity.'),
+    .default('2024')
+    .describe(
+      '[weapon] Rules edition for the attack activity. Default "2024" (pass "2014" for legacy).'
+    ),
 
   // ── Armor / shield ────────────────────────────────────────────────
   armorType: z
@@ -342,7 +344,7 @@ export class DnD5eAddItemTool {
           'Target: actorIdentifier embeds on that actor; omit it to create a reusable world Item ' +
           '(optionally in folder). This authors documents — it does NOT roll, equip-in-combat, or spend ' +
           'charges. For features/attacks-as-abilities use add-feature; for free-form system data use ' +
-          'create-item / grant-to-actor.',
+          'create-item / add-feature. To COPY a real item from a compendium (keeps art + stats), prefer import-item.',
         inputSchema: toInputSchema(AddItemSchema),
       },
     ];

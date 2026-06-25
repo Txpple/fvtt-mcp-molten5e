@@ -392,3 +392,94 @@ export async function addItem(data: any): Promise<unknown> {
     item: created,
   };
 }
+
+/**
+ * Copy an item from a compendium pack onto an actor's inventory (or into the world Items sidebar),
+ * preserving its art, system data, and activities. This is the COMPENDIUM-FIRST counterpart to addItem:
+ * the policy is to grab the real PHB/DMG entry (correct stats + graphic) and then tweak it with
+ * update-actor-item / manage-activity / manage-effect, rather than author gear from scratch. A handful
+ * of immediate overrides (rename, quantity, equipped, identified, container) are applied on the copy so
+ * the common "drop in a copy, ready to use" case is one call. Returns { success, target, item }.
+ */
+export async function importItemFromCompendium(data: any): Promise<unknown> {
+  if (game.system.id !== 'dnd5e') {
+    throw new Error(`importItemFromCompendium requires D&D 5e (current: "${game.system.id}").`);
+  }
+
+  const pack = game.packs.get(data.packId);
+  if (!pack) {
+    throw new Error(`Compendium pack not found: "${data.packId}". Use list-compendium-packs.`);
+  }
+  if (pack.metadata.type !== 'Item') {
+    throw new Error(
+      `Pack "${data.packId}" is type "${pack.metadata.type}", expected "Item" — pick an Item pack.`
+    );
+  }
+
+  const sourceDoc = await pack.getDocument(data.itemId);
+  if (!sourceDoc) {
+    throw new Error(
+      `Item "${data.itemId}" not found in pack "${data.packId}". ` +
+        'Use search-compendium / get-compendium-entry to find the exact packId + itemId.'
+    );
+  }
+
+  const doc: any = sourceDoc.toObject();
+  const sourceName = doc.name;
+  delete doc._id; // let Foundry assign a fresh local id (prevents id clash)
+  doc.system = doc.system ?? {};
+  if (data.name) doc.name = data.name; // rename (the base for a custom variant)
+  if (typeof data.quantity === 'number') doc.system.quantity = data.quantity;
+  if (typeof data.identified === 'boolean') doc.system.identified = data.identified;
+  if (typeof data.equipped === 'boolean' && EQUIPPABLE_DOC.has(doc.type)) {
+    doc.system.equipped = data.equipped;
+  }
+
+  // --- Target: actor (embedded) vs world (sidebar) ---
+  if (data.actorIdentifier) {
+    const actor = resolveActorFuzzy(data.actorIdentifier);
+    if (!actor) throw new Error(`Actor not found: "${data.actorIdentifier}"`);
+
+    if (data.container) {
+      const c = findContainer(actor.items, String(data.container));
+      if (!c) {
+        throw new Error(
+          `Container not found on "${actor.name}": "${data.container}". Add the container item first.`
+        );
+      }
+      doc.system.container = c.id;
+    }
+
+    const created = (await actor.createEmbeddedDocuments('Item', [doc]))[0];
+    if (!created) {
+      throw new Error(`Failed to copy item "${doc.name}" onto actor "${actor.name}"`);
+    }
+    return {
+      success: true,
+      source: { packId: data.packId, itemId: data.itemId, name: sourceName },
+      target: { type: 'actor', id: actor.id, name: actor.name },
+      item: { id: created.id, name: created.name, type: created.type },
+    };
+  }
+
+  if (data.container) {
+    const c = findContainer(game.items, String(data.container));
+    if (!c) {
+      throw new Error(
+        `Container world-item not found: "${data.container}". Create the container first.`
+      );
+    }
+    doc.system.container = c.id;
+  }
+
+  const res: any = await createWorldItems({ items: [doc], folder: data.folder });
+  const created = res?.created?.[0];
+  if (!created) throw new Error(`Failed to copy world item "${doc.name}"`);
+
+  return {
+    success: true,
+    source: { packId: data.packId, itemId: data.itemId, name: sourceName },
+    target: { type: 'world', folderId: res.folderId, folderName: res.folderName },
+    item: created,
+  };
+}

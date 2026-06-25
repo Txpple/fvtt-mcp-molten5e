@@ -21,21 +21,41 @@ defenses, senses, special traits, actions, spellcasting, effects, **its full inv
 biography, and a finishing pass — by sequencing the right tool calls. It adds NO new mechanics; every
 tool it calls holds its own correctness.
 
-Tools used: `create-actor` (authored), `update-actor`, `add-feature`, `manage-activity`,
-`manage-effect`, `apply-condition`, **`add-item`** (inventory/loot — defer item judgment to the
-[[physical-item-builder]] skill), `set-actor-art`, `set-actor-ownership`, `move-documents`,
-`update-actor-item` (per-item corrections), plus `get-actor` / `get-actor-entity` to read back. Pull
-from a compendium instead when the creature or a feature already exists there (Steps 0 and 4).
+Tools used: `create-actor` (compendium pull or authored), `update-actor`, `add-feature` (features /
+compendium-features / spells), **`import-item`** (COPY gear from a compendium — the default for
+inventory), `add-item` (author homebrew gear — last resort), `manage-activity`, `manage-effect`,
+`apply-condition`, `set-actor-art`, `set-actor-ownership`, `move-documents`, `update-actor-item`
+(per-item corrections), `search-compendium` / `search-compendium-creatures` / `get-compendium-entry`
+(find things to copy), plus `get-actor` / `get-actor-entity` to read back. Defer item judgment to the
+[[physical-item-builder]] skill.
 
-## House rules (from the project authoring policy)
+> **`add-feature` invocation shape.** It takes a top-level `mode` — only `feature`,
+> `compendium-features`, or `items` — plus nested params. Authoring any single
+> feature/attack/save/aura/spellcasting/spells/homebrew-spell is `mode: "feature"` with
+> `feature.featureType` set to that value (e.g. `mode:"feature"`, `feature.featureType:"save"`);
+> importing named features is `mode: "compendium-features"` with `compendiumFeatures.featureNames`.
+> Below, shorthand like "`add-feature` `save`" always means that `mode:"feature"` +
+> `feature.featureType` form — `featureType` is NOT a top-level mode.
 
-- **Prefer official 2024 content from PHB / DMG / MM.** If the creature (or a spell/feature it has)
-  exists in a compendium, prefer pulling it: `search-compendium-creatures` → `create-actor` (source:
-  compendium), `grant-to-actor` compendium-features for named traits, `add-feature` `spells` for real
-  spells. Authoring from scratch is for homebrew or when the source isn't installed.
-- **If something is ambiguous or clearly homebrew, STOP and ASK** rather than silently inventing values
-  (a made-up CR, an invented damage type, a guessed price/rarity, a fabricated save DC).
-- Set `sourceRules` to `2024` for new MM-2024 creatures (the default is `2014` — pass `2024` explicitly).
+## House rules — READ FIRST (project authoring policy)
+
+- **Default to the 2024 ruleset.** Build with the PHB / DMG / MM **2024** compendiums and
+  `sourceRules: "2024"` everywhere unless the user says otherwise. (The tools now default to 2024 — keep
+  it consistent across the whole build.)
+- **Compendium-FIRST, everywhere — copy, don't author.** For the creature, its named traits, its spells,
+  AND its gear, look in a compendium and COPY the real entry (correct stats + artwork) before authoring:
+  `search-compendium-creatures` → `create-actor` (source: compendium); `add-feature` mode
+  `compendium-features` for named traits; `add-feature` mode `feature` with `feature.featureType:
+  "spells"` to import real spells; **`import-item`** for every piece of equipment. Author from scratch
+  only when nothing fits.
+- **Custom item = copy a base, then modify, then rename** (a magic weapon/shield with special powers):
+  `import-item` the closest base, then `update-actor-item` / `manage-activity` / `manage-effect`, then
+  rename. (See [[physical-item-builder]].)
+- **If you can't find a workable 2024 match, STOP and ASK** — never silently fall back to 2014 or invent
+  a value (a made-up CR, an invented damage type, a guessed price/rarity, a fabricated save DC). Note:
+  2024 *class features* aren't individually importable (they live inside class items), so for an NPC's
+  class features tell the user and confirm the approach (copy 2014-SRD equivalents, or author) rather
+  than guessing.
 - This is AUTHORING. Don't place tokens on a scene, roll dice, spend charges, or run combat — those are
   out of scope (the prototype-token config travels with the actor, but dropping a token is play).
 
@@ -77,16 +97,20 @@ Immediately `update-actor` for anything the base builder doesn't cover or that y
 ## Step 4 — Special traits (prefer compendium import)
 
 For official, named traits **prefer importing** them so the real text/mechanics come in:
-`grant-to-actor` mode `compendium-features` (e.g. Pack Tactics, Nimble Escape, Magic Resistance,
-Multiattack). Only author from scratch with `add-feature` `passive` (`featType: "monster"`, prerequisite
-in `requirements`) for homebrew traits or ones not in a compendium.
+`add-feature` mode `compendium-features` (e.g. Pack Tactics, Nimble Escape, Magic Resistance,
+Multiattack). The default packs are 2024-leaning (`dnd5e.monsterfeatures24` + 2014-SRD class features);
+pass premium packs (`dnd-monster-manual.features`) when present. Only author from scratch with
+`add-feature` mode `feature` / `featureType: "passive"` (`featType: "monster"`, prerequisite in
+`requirements`) for homebrew traits or ones not in a compendium.
 
 ## Step 5 — Actions, attacks, and abilities
 
 Map each action to the right tool:
-- **The weapon it fights with** → build it as a REAL `add-item` `weapon` (with `damage`, `magicalBonus`
-  if magic, `properties`, `equipped: true`, and the attack activity on by default) so the attack derives
-  from the actual weapon — not a generic natural strike. Defer item judgment to [[physical-item-builder]].
+- **The weapon it fights with** → COPY the real weapon from a compendium with `import-item` (it arrives
+  with its attack activity + artwork), `equipped: true`. For a magic/custom weapon, copy the closest base
+  then modify+rename (see [[physical-item-builder]]). Author a `weapon` with `add-item` only for true
+  homebrew with no base. Either way it must be a real weapon item with an attack so to-hit/damage derive
+  from it — not a generic natural strike.
 - **Natural attacks** (claws/bite/etc.) → `add-feature` `attack` (`weaponClass: "natural"`).
 - **Attack that also forces a save** (e.g. Stinger: pierce + CON save) → `add-feature` `attack-with-save`.
 - **Save-or-suffer ability** (breath weapon, frightful presence) → `add-feature` `save` (+ `areaType`).
@@ -109,17 +133,21 @@ For ongoing derived modifiers that aren't a base-stat value (a permanent +1 AC a
 resistances, a fixed AC) on the actor via `update-actor`; reserve effects for toggleable/derived bonuses.
 Conditions the creature *starts* with (rare) → `apply-condition`.
 
-## Step 8 — Inventory, gear & loot (`add-item`)
+## Step 8 — Inventory, gear & loot (compendium-first via `import-item`)
 
-Build the rest of what the creature carries and drops — defer item judgment to [[physical-item-builder]]:
-- **Worn armor / shield** → `add-item` `armor` / `shield`. Pass `wireAc: true` on **body armor** if the
-  NPC's AC should derive from it (skip for natural-armor monsters; a shield needs no `wireAc` — its +2
-  applies under any AC calc).
-- **Carried gear, consumables, loot** → `add-item` `consumable` (potions/scrolls), `loot` (gems/trade
-  goods), `tool`, `wondrous` (magic trinkets). Use `equipped: false` for stowed items, `identified:
-  false` for mystery loot, `attunement` for magic items.
-- **Ammunition** → `add-item` `consumable` `ammo` with a `quantity`.
-- **Containers** → create a `container` first, then add items with `container: "<name>"` to nest them.
+Build the rest of what the creature carries and drops — COPY from the 2024 PHB/DMG compendiums first;
+defer item judgment to [[physical-item-builder]]:
+- **Find then copy:** `search-compendium` the gear (prefer `dnd-players-handbook.equipment`,
+  `dnd-dungeon-masters-guide.equipment`, `dnd5e.equipment24`) → `import-item` (`packId` + `itemId`,
+  `actorIdentifier`). Copies bring correct stats AND art.
+- **Worn armor / shield** → `import-item` the real armor/shield. Copied armor doesn't auto-drive AC; set
+  the actor's AC with `update-actor` if needed (a shield's bonus applies under any calc). When you must
+  AUTHOR body armor via `add-item`, pass `wireAc: true` to switch the actor to armor-based AC.
+- **Carried gear, consumables, loot** → `import-item` potions/scrolls, magic trinkets, tools, gems. Use
+  `equipped: false` for stowed items, `identified: false` for mystery loot.
+- **Custom magic gear** → copy the closest base, then modify (`update-actor-item` / `manage-activity` /
+  `manage-effect`) and rename. Author with `add-item` only as a last resort (and ASK first).
+- **Containers** → copy/create a `container` first, then place items with `container: "<name>"`.
 - **Coins** → already on the actor via `update-actor` `currency` (Step 3).
 
 ## Step 9 — Biography
@@ -147,6 +175,7 @@ or approximate.
   acceptance scripts bypass this via `dist/`.
 - Names must be unique on the actor — `add-feature` and attacks reject a duplicate name; rename or remove
   first. (`add-item` allows duplicate stacks.)
-- Keep `sourceRules` consistent across the build (a 2024 creature: pass `2024` everywhere).
+- Keep `sourceRules` consistent across the build — **2024 by default** (the tools default to 2024; pass
+  `2014` only when the user explicitly wants legacy content).
 - Per-item corrections after the fact → `update-actor-item` (dot-path patch); per-actor corrections →
   `update-actor`.
