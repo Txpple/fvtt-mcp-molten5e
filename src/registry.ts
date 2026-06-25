@@ -10,6 +10,7 @@ import type { FoundryBridge } from './foundry.js';
 import { Logger } from './logger.js';
 
 import { ActorTools } from './tools/actor.js';
+import { ItemTools } from './tools/items.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
@@ -59,6 +60,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const { foundry, logger } = deps;
 
   const actorTools = new ActorTools({ foundry, logger });
+  const itemTools = new ItemTools({ foundry, logger });
   const compendiumTools = new CompendiumTools({ foundry, logger });
   const sceneTools = new SceneTools({ foundry, logger });
   const actorCreationTools = new ActorCreationTools({ foundry, logger });
@@ -101,6 +103,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const defByName = new Map<string, any>();
   for (const def of [
     ...actorTools.getToolDefinitions(),
+    ...itemTools.getToolDefinitions(),
     ...compendiumTools.getToolDefinitions(),
     ...sceneTools.getToolDefinitions(),
     ...actorCreationTools.getToolDefinitions(),
@@ -127,18 +130,21 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   }
 
   const handlers: Record<string, (args: any) => Promise<any>> = {
-    // Actor reads / world items
+    // Actor reads (ActorTools)
     'get-actor': args => actorTools.handleGetCharacter(args),
     'list-actors': args => actorTools.handleListCharacters(args),
     'get-actor-entity': args => actorTools.handleGetCharacterEntity(args),
     'search-actor-contents': args => actorTools.handleSearchCharacterItems(args),
-    'create-item': args => actorTools.handleManageWorldItems({ ...args, action: 'create' }),
-    'list-items': args => actorTools.handleManageWorldItems({ ...args, action: 'list' }),
-    'get-item': args => actorTools.handleManageWorldItems({ ...args, action: 'get' }),
-    'update-item': args => actorTools.handleManageWorldItems({ ...args, action: 'update' }),
-    'delete-item': args => actorTools.handleManageWorldItems({ ...args, action: 'delete' }),
+
+    // World-item lifecycle (ItemTools): CRUD on sidebar Items + remove-from-actor. Each name routes
+    // through the handleManageWorldItems dispatcher with a pre-stamped `action`.
+    'create-item': args => itemTools.handleManageWorldItems({ ...args, action: 'create' }),
+    'list-items': args => itemTools.handleManageWorldItems({ ...args, action: 'list' }),
+    'get-item': args => itemTools.handleManageWorldItems({ ...args, action: 'get' }),
+    'update-item': args => itemTools.handleManageWorldItems({ ...args, action: 'update' }),
+    'delete-item': args => itemTools.handleManageWorldItems({ ...args, action: 'delete' }),
     'remove-from-actor': args =>
-      actorTools.handleManageWorldItems({ ...args, action: 'remove-from-actor' }),
+      itemTools.handleManageWorldItems({ ...args, action: 'remove-from-actor' }),
 
     // Compendium
     'search-compendium': args => compendiumTools.handleSearchCompendium(args),
@@ -190,7 +196,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         });
       }
       if (a.mode === 'items') {
-        return actorTools.handleManageWorldItems({
+        return itemTools.handleManageWorldItems({
           action: 'add-to-actor',
           actorIdentifier,
           items: a.items,
