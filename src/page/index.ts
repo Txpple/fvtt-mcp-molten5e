@@ -86,7 +86,7 @@ import { addAttackToActor, addAuraToActor, addAttackWithSaveToActor } from './dn
 import { setActorSpellcasting, addSpellsToActor, addHomebrewSpellToActor } from './dnd5e/spells.js';
 import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
 import { addItem, importItemFromCompendium } from './dnd5e/items.js';
-import { createPcActor, inspectAdvancementChoices } from './dnd5e/advancement.js';
+import { createPcActor, inspectAdvancementChoices, levelUpPc } from './dnd5e/advancement.js';
 
 const api = {
   // world / scene
@@ -188,6 +188,7 @@ const api = {
   // dnd5e PC authoring (leveling engine: type:character + advancement → @scale resolves natively)
   createPcActor,
   inspectAdvancementChoices,
+  levelUpPc,
 } satisfies Record<string, (...args: any[]) => unknown>;
 
 /**

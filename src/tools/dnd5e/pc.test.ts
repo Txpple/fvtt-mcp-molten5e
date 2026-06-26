@@ -21,15 +21,17 @@ function makeTool(respond: (name: string) => any) {
 }
 
 describe('PC tool definitions', () => {
-  it('advertises create-pc (requires name + className) and inspect-pc-advancement', () => {
+  it('advertises create-pc, inspect-pc-advancement, and level-up-pc', () => {
     const { tool } = makeTool(() => ({}));
     const defs = tool.getToolDefinitions();
     const names = defs.map(d => d.name);
-    expect(names).toEqual(['create-pc', 'inspect-pc-advancement']);
+    expect(names).toEqual(['create-pc', 'inspect-pc-advancement', 'level-up-pc']);
     const createPc = defs.find(d => d.name === 'create-pc') as any;
     expect(createPc.inputSchema.required).toEqual(['name', 'className']);
     // choices is the nested record map (no zod tuple)
     expect(Object.keys(createPc.inputSchema.properties)).toContain('choices');
+    const levelUp = defs.find(d => d.name === 'level-up-pc') as any;
+    expect(levelUp.inputSchema.required).toEqual(['actorIdentifier', 'className']);
   });
 });
 
@@ -191,5 +193,80 @@ describe('handleInspectPcAdvancement', () => {
     await expect(
       tool.handleInspectPcAdvancement({ className: 'Fighter', classUuid: 'Compendium.x.Item.y' })
     ).rejects.toThrow();
+  });
+});
+
+describe('handleLevelUpPc', () => {
+  it('forwards to levelUpPc and shapes a success message with the class breakdown', async () => {
+    const { tool, calls } = makeTool(name =>
+      name === 'levelUpPc'
+        ? {
+            success: true,
+            actor: {
+              id: 'p1',
+              name: 'Borin',
+              className: 'Wizard',
+              level: 6,
+              classLevel: 2,
+              hp: 44,
+              classes: [
+                { name: 'Fighter', levels: 4 },
+                { name: 'Wizard', levels: 2 },
+              ],
+            },
+            applied: [
+              {
+                source: 'class',
+                level: 2,
+                type: 'ItemGrant',
+                title: 'Class Features',
+                result: 'applied',
+              },
+            ],
+            warnings: [],
+          }
+        : {}
+    );
+    const res = await tool.handleLevelUpPc({ actorIdentifier: 'Borin', className: 'Wizard' });
+    const call = calls.find(([n]) => n === 'levelUpPc');
+    expect(call?.[1].actorIdentifier).toBe('Borin');
+    expect(call?.[1].hpMode).toBe('avg'); // default
+    expect(res.success).toBe(true);
+    expect(res.message).toContain('Fighter 4 / Wizard 2');
+    expect(res.message).toContain('character level 6');
+  });
+
+  it('shapes a needsChoices response (e.g. subclass at level 3) without changing the PC', async () => {
+    const { tool } = makeTool(name =>
+      name === 'levelUpPc'
+        ? {
+            success: false,
+            needsChoices: [
+              {
+                id: 'sub',
+                source: 'class',
+                level: 3,
+                type: 'Subclass',
+                title: 'Subclass',
+                dataKey: 'uuid',
+                count: 1,
+                options: [{ value: 'u1', label: 'Champion' }],
+              },
+            ],
+            warnings: ['pick a subclass'],
+          }
+        : {}
+    );
+    const res = await tool.handleLevelUpPc({ actorIdentifier: 'Borin', className: 'Fighter' });
+    expect(res.success).toBe(false);
+    expect(res.needsChoices).toHaveLength(1);
+    expect(res.message).toContain('was NOT changed');
+    expect(res.message).toContain('Champion');
+  });
+
+  it('rejects a call missing actorIdentifier / className', async () => {
+    const { tool } = makeTool(() => ({}));
+    await expect(tool.handleLevelUpPc({ className: 'Wizard' })).rejects.toThrow();
+    await expect(tool.handleLevelUpPc({ actorIdentifier: 'Borin' })).rejects.toThrow();
   });
 });

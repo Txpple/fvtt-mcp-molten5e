@@ -83,6 +83,16 @@ const InspectPcAdvancementSchema = z
     }
   });
 
+const LevelUpPcSchema = z.object({
+  actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
+  className: z.string().min(1, 'className cannot be empty'),
+  // choices for the NEW level (keyed level → advancement-id → data) — e.g. a subclass at the class's
+  // level 3 → choices: { "3": { "<subclass-adv-id>": { uuid } } }.
+  choices: z.record(z.string(), z.record(z.string(), ChoiceDataSchema)).optional(),
+  hpMode: z.enum(['avg', 'max']).default('avg'),
+  acceptDefaults: z.boolean().default(false),
+});
+
 const CREATE_PC_DESCRIPTION =
   'Build a player character (type:character) headlessly from premium class + species + background by ' +
   'NAME, running real dnd5e advancement so @scale.* (rage damage, sneak attack, breath weapon, …) ' +
@@ -104,6 +114,17 @@ const INSPECT_PC_ADVANCEMENT_DESCRIPTION =
   "advancement's id, type (Trait/ItemChoice/Subclass), how many to pick, and the legal options — so " +
   "the skill can ask the DM and fill create-pc's `choices` map without inventing anything. Resolve by " +
   'className OR classUuid (exactly one); premium books only, never the SRD. Touches no actor.';
+
+const LEVEL_UP_PC_DESCRIPTION =
+  "Add ONE level to an existing PC (type:character) and apply that level's advancement IN PLACE. " +
+  'Same `className` as a class the PC already has → a single-class level-up; a class it does NOT have → ' +
+  'a MULTICLASS add (the PC gets the 2024 multiclass proficiency SUBSET, not the full first-level kit). ' +
+  "HP/features/subclass(@ the class's level 3)/spell-slots scale; @scale stays native. Like create-pc: " +
+  'call with no/partial choices to get a `needsChoices[]` dry-run (e.g. the subclass options at level 3 — ' +
+  'the actor is NOT touched); fill `choices` (level → advancement-id → {chosen|selected|uuid}) and ' +
+  're-call. ASI ability bumps are NOT applied here — raise the final scores with update-actor; a feat ' +
+  'taken at an ASI tier is added with add-feature. Required: actorIdentifier, className. Returns ' +
+  '{success, actor (incl. classLevel + classes[]), applied[], needsChoices[], unresolvedScale[], warnings[]}.';
 
 // ---------------------------------------------------------------------------
 // Options interface
@@ -140,6 +161,11 @@ export class DnD5ePcTools {
         name: 'inspect-pc-advancement',
         description: INSPECT_PC_ADVANCEMENT_DESCRIPTION,
         inputSchema: toInputSchema(InspectPcAdvancementSchema),
+      },
+      {
+        name: 'level-up-pc',
+        description: LEVEL_UP_PC_DESCRIPTION,
+        inputSchema: toInputSchema(LevelUpPcSchema),
       },
     ];
   }
@@ -178,6 +204,29 @@ export class DnD5ePcTools {
       return this.formatInspectResponse(result);
     } catch (error) {
       this.errorHandler.handleToolError(error, 'inspect-pc-advancement', 'advancement inspection');
+    }
+  }
+
+  async handleLevelUpPc(args: any): Promise<any> {
+    const parsed = LevelUpPcSchema.parse(args);
+
+    this.logger.info('Leveling up D&D 5e PC', {
+      actor: parsed.actorIdentifier,
+      className: parsed.className,
+      acceptDefaults: parsed.acceptDefaults,
+    });
+
+    try {
+      await assertDnd5e(this.foundry, this.logger, 'level-up-pc');
+      const result = await this.foundry.call('levelUpPc', parsed);
+      this.logger.info('Level-up returned', {
+        success: result?.success,
+        level: result?.actor?.level,
+        needsChoices: result?.needsChoices?.length ?? 0,
+      });
+      return this.formatLevelUpResponse(result, parsed);
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'level-up-pc', 'PC level-up');
     }
   }
 
@@ -236,6 +285,58 @@ export class DnD5ePcTools {
             .join('\n')}`
         : '';
 
+    const warnings = result?.warnings ?? [];
+    const warningSection =
+      warnings.length > 0
+        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map((w: string) => `- ${w}`).join('\n')}`
+        : '';
+
+    return {
+      summary,
+      success: true,
+      actor: result?.actor,
+      applied: result?.applied,
+      unresolvedScale: unresolved,
+      warnings,
+      message: `${summary}\n\n${lines.join('\n')}${unresolvedSection}${warningSection}`,
+    };
+  }
+
+  private formatLevelUpResponse(result: any, params: any): any {
+    // Under-specified (e.g. a subclass pick missing at level 3): nothing was changed.
+    if (result?.success === false && Array.isArray(result?.needsChoices)) {
+      const lines = result.needsChoices.map((c: any) => this.formatChoiceLine(c));
+      const summary = `⚠️ Leveling ${params.className} needs ${result.needsChoices.length} choice(s)`;
+      return {
+        summary,
+        success: false,
+        needsChoices: result.needsChoices,
+        warnings: result.warnings ?? [],
+        message:
+          `${summary} — the PC was NOT changed.\n\n${lines.join('\n')}\n\n` +
+          'Fill the `choices` map and re-call level-up-pc (or pass acceptDefaults:true).',
+      };
+    }
+
+    const actor = result?.actor ?? {};
+    const classesLine = (actor.classes ?? []).map((c: any) => `${c.name} ${c.levels}`).join(' / ');
+    const summary = `✅ "${actor.name}" leveled up: ${actor.className} ${actor.classLevel} (character level ${actor.level})`;
+    const lines = [
+      `**Actor:** ${actor.name} (id: \`${actor.id}\`)`,
+      `**Classes:** ${classesLine || `${actor.className} ${actor.classLevel}`}`,
+      `**HP:** ${actor.hp ?? '—'}`,
+    ];
+    if (Array.isArray(result?.applied)) {
+      lines.push(`**Advancements applied this level:** ${result.applied.length}`);
+    }
+
+    const unresolved = result?.unresolvedScale ?? [];
+    const unresolvedSection =
+      unresolved.length > 0
+        ? `\n\n⚠️ **Unresolved @scale (${unresolved.length})**:\n${unresolved
+            .map((u: any) => `- ${u.itemName}: \`${u.formula}\``)
+            .join('\n')}`
+        : '';
     const warnings = result?.warnings ?? [];
     const warningSection =
       warnings.length > 0

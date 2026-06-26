@@ -165,9 +165,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       actorCreationTools.handleCreateActorFromCompendium(args),
     'author-npc': args => dnd5eNpcTools.handleCreateNpc(args),
     // PC authoring (design.md §7 — siblings to author-npc, NEVER fused into createNpc):
-    // create-pc (type:character + advancement → @scale resolves) + inspect-pc-advancement (read-only).
+    // create-pc (type:character + advancement → @scale resolves) + inspect-pc-advancement (read-only)
+    // + level-up-pc (add a class level: single-class level-up or multiclass).
     'create-pc': args => dnd5ePcTools.handleCreatePc(args),
     'inspect-pc-advancement': args => dnd5ePcTools.handleInspectPcAdvancement(args),
+    'level-up-pc': args => dnd5ePcTools.handleLevelUpPc(args),
     'delete-actor': args => actorCreationTools.handleDeleteActor(args),
     'delete-folder': args => actorCreationTools.handleDeleteFolder(args),
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),

@@ -45,11 +45,11 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 83 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 84 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(83);
+    expect(names.length).toBe(84);
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
@@ -65,6 +65,7 @@ describe('tool registry', () => {
     const names = new Set(tools.map(t => t.name));
     expect(names.has('create-pc')).toBe(true);
     expect(names.has('inspect-pc-advancement')).toBe(true);
+    expect(names.has('level-up-pc')).toBe(true);
     // create-pc's `choices` map is a nested z.record (level → adv-id → data), NOT a zod tuple —
     // the 2020-12-validity sweep above guards it, but pin the advertised shape too.
     const createPc = tools.find(t => t.name === 'create-pc') as any;
@@ -224,15 +225,30 @@ describe('tool registry', () => {
         };
       if (name === 'inspectAdvancementChoices')
         return { class: { name: 'Wizard' }, level: 1, choices: [], spellcasting: 'full' };
+      if (name === 'levelUpPc')
+        return {
+          success: true,
+          actor: {
+            id: 'p1',
+            name: 'Aria',
+            className: 'Wizard',
+            level: 2,
+            classLevel: 2,
+            hp: 14,
+            classes: [{ name: 'Wizard', levels: 2 }],
+          },
+        };
       return {};
     });
     const { dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
 
     await dispatch('create-pc', { name: 'Aria', className: 'Wizard' });
     await dispatch('inspect-pc-advancement', { className: 'Wizard' });
+    await dispatch('level-up-pc', { actorIdentifier: 'Aria', className: 'Wizard' });
 
     const ops = calls.map(([op]) => op);
     expect(ops.filter(op => op === 'createPcActor').length).toBe(1);
     expect(ops.filter(op => op === 'inspectAdvancementChoices').length).toBe(1);
+    expect(ops.filter(op => op === 'levelUpPc').length).toBe(1);
   });
 });

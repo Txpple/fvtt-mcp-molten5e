@@ -420,6 +420,143 @@ try {
     (e5?.unresolvedScale?.length ?? 0) === 0,
     `E10: no unresolved @scale on the L5 Fighter (${JSON.stringify(e5?.unresolvedScale)})`
   );
+
+  // ---- Test F (v3): LEVEL-UP the L5 Fighter in place → 6 (same class) ----
+  const f6 = await withNodeTimeout(
+    f.call('levelUpPc', {
+      actorIdentifier: e5.actor.id,
+      className: 'Fighter',
+      acceptDefaults: true,
+    }),
+    120_000,
+    'levelUp6'
+  );
+  console.log('\n--- Test F: level-up Fighter 5 → 6 ---');
+  console.log(
+    JSON.stringify({ success: f6?.success, actor: f6?.actor, warnings: f6?.warnings }, null, 2)
+  );
+  assert(f6?.success === true, 'F1: leveled up in place (success)');
+  assert(f6?.actor?.level === 6, `F2: character level = 6 (got ${f6?.actor?.level})`);
+  // +avg6 + CON14(+2) = +8 → 44 → 52
+  assert(f6?.actor?.hp === 52, `F3: HP delta on level-up = +8 (44 → 52) (got ${f6?.actor?.hp})`);
+
+  // ---- Test G (v3): MULTICLASS the same PC into Wizard 1 → character level 7 ----
+  const g7 = await withNodeTimeout(
+    f.call('levelUpPc', {
+      actorIdentifier: e5.actor.id,
+      className: 'Wizard',
+      acceptDefaults: true,
+    }),
+    120_000,
+    'multiclass'
+  );
+  console.log('\n--- Test G: multiclass into Wizard ---');
+  console.log(
+    JSON.stringify({ success: g7?.success, actor: g7?.actor, warnings: g7?.warnings }, null, 2)
+  );
+  assert(g7?.success === true, 'G1: multiclassed (success)');
+  assert(
+    g7?.actor?.level === 7,
+    `G2: character level = 7 (Fighter 6 / Wizard 1) (got ${g7?.actor?.level})`
+  );
+  assert(
+    (g7?.actor?.classes || []).some(c => c.name === 'Fighter' && c.levels === 6) &&
+      (g7?.actor?.classes || []).some(c => c.name === 'Wizard' && c.levels === 1),
+    `G3: two class items (${JSON.stringify(g7?.actor?.classes)})`
+  );
+  // 2nd class first level = AVG d6 (4) + CON(+2) = +6 → 52 → 58
+  assert(g7?.actor?.hp === 58, `G4: multiclass HP = +avg6(d6=4)+CON2 → 58 (got ${g7?.actor?.hp})`);
+  const mcRead = await withNodeTimeout(
+    f.evaluate(id => {
+      const a = globalThis.game.actors.get(id);
+      a.reset?.();
+      return {
+        spell1: a.system?.spells?.spell1?.max,
+        saves: Object.entries(a.system?.abilities || {})
+          .filter(([, v]) => v?.proficient)
+          .map(([k]) => k),
+      };
+    }, e5.actor.id),
+    60_000,
+    'mcRead'
+  );
+  console.log(JSON.stringify(mcRead, null, 2));
+  assert(
+    mcRead?.spell1 >= 2,
+    `G5: multiclass Wizard spell slots auto-derive (spell1.max=${mcRead?.spell1})`
+  );
+  assert(
+    mcRead?.saves?.includes('str') &&
+      mcRead?.saves?.includes('con') &&
+      !mcRead?.saves?.includes('int'),
+    `G6: multiclass proficiency SUBSET — Fighter saves kept, Wizard's INT save NOT granted (saves: ${mcRead?.saves?.join(', ')})`
+  );
+
+  // ---- Test H (v3): level-up DRY-RUN surfaces the subclass choice (build L2 → level to 3) ----
+  const h2Name = `${TAG} Rogue L2`;
+  const h2Dry = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: h2Name,
+      className: 'Rogue',
+      abilities: { str: 10, dex: 16, con: 13, int: 12, wis: 11, cha: 8 },
+      level: 2,
+    }),
+    120_000,
+    'h2Dry'
+  );
+  const h2 = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: h2Name,
+      className: 'Rogue',
+      abilities: { str: 10, dex: 16, con: 13, int: 12, wis: 11, cha: 8 },
+      choices: fillChoices(h2Dry?.needsChoices ?? []),
+      acceptDefaults: true,
+      level: 2,
+    }),
+    180_000,
+    'h2Build'
+  );
+  createdNames.push(h2Name);
+  assert(h2?.success === true, 'H1: base Rogue L2 built');
+  const h3Dry = await withNodeTimeout(
+    f.call('levelUpPc', { actorIdentifier: h2.actor.id, className: 'Rogue' }),
+    120_000,
+    'h3Dry'
+  );
+  console.log('\n--- Test H: level-up Rogue 2 → 3 dry-run ---');
+  console.log(
+    JSON.stringify(
+      h3Dry?.needsChoices?.map(c => ({ title: c.title, type: c.type, opts: c.options?.length })),
+      null,
+      2
+    )
+  );
+  const h3Sub = h3Dry?.needsChoices?.find(c => c.type === 'Subclass');
+  assert(
+    h3Dry?.success === false && !!h3Sub,
+    'H2: level-up to 3 dry-run surfaces the Subclass choice (no change)'
+  );
+  assert(
+    (h3Sub?.options?.length ?? 0) > 0,
+    `H3: subclass options enriched (${(h3Sub?.options || [])
+      .slice(0, 3)
+      .map(o => o.label)
+      .join(', ')})`
+  );
+  const h3 = await withNodeTimeout(
+    f.call('levelUpPc', {
+      actorIdentifier: h2.actor.id,
+      className: 'Rogue',
+      choices: fillChoices(h3Dry?.needsChoices ?? []),
+      acceptDefaults: true,
+    }),
+    180_000,
+    'h3Build'
+  );
+  assert(
+    h3?.success === true && h3?.actor?.level === 3,
+    `H4: leveled to 3 with a subclass (level ${h3?.actor?.level})`
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-pc] FATAL: ${e?.message || String(e)}`);

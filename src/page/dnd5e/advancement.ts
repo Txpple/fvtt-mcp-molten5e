@@ -21,7 +21,12 @@
 //   • The AdvancementManager is NEVER touched (its .close() prompts a discard Dialog → headless hang).
 
 import { isPremiumBookPack } from '../../utils/compendium-sources.js';
-import { findUnresolvedScaleTokens, getOrCreateFolder, toSource } from '../_shared.js';
+import {
+  findUnresolvedScaleTokens,
+  getOrCreateFolder,
+  resolveActorFuzzy,
+  toSource,
+} from '../_shared.js';
 import { addSpellsToActor } from './spells.js';
 
 // =============================================================================
@@ -94,9 +99,18 @@ interface RawAdvancement {
   type: string;
   title: string;
   levels: number[];
+  /** '' (always) | 'primary' (original class only) | 'secondary' (multiclass only) — the 2024 multiclass subset. */
+  classRestriction: string;
   /** the live advancement object (carries .apply + .configuration). null in unit mocks. */
   adv: any;
   configuration: any;
+}
+
+/** Should an advancement with this classRestriction be applied for a class taken in this role? */
+function allowedForRole(classRestriction: string, classRole?: 'primary' | 'secondary'): boolean {
+  if (!classRole) return true; // species/background/subclass — restriction never set
+  if (classRole === 'primary') return classRestriction !== 'secondary';
+  return classRestriction !== 'primary'; // secondary (multiclass) — skip primary-only profs
 }
 
 export interface PcBuildResult {
@@ -110,6 +124,9 @@ export interface PcBuildResult {
     level: number;
     hp: number | null;
     folder: string | null;
+    /** level-up only: the new level IN the leveled class + the full class breakdown (multiclass). */
+    classLevel?: number;
+    classes?: Array<{ name: string; levels: number }>;
   };
   applied?: Array<{ source: string; level: number; type: string; title: string; result: string }>;
   needsChoices?: AdvancementChoice[];
@@ -269,6 +286,7 @@ function extractAdvancements(item: any): RawAdvancement[] {
         type,
         title: adv.title,
         levels: normalizeLevels(adv.levels ?? (adv.level != null ? [adv.level] : [])),
+        classRestriction: adv.classRestriction ?? adv.level?.classRestriction ?? '',
         adv,
         configuration: adv.configuration ?? {},
       });
@@ -320,11 +338,14 @@ async function findSubclassesFor(
 export async function collectAdvancementChoices(
   item: any,
   levels: number[],
-  source: AdvancementChoice['source']
+  source: AdvancementChoice['source'],
+  classRole?: 'primary' | 'secondary'
 ): Promise<AdvancementChoice[]> {
   const want = new Set(levels);
   const out: AdvancementChoice[] = [];
   for (const raw of extractAdvancements(item)) {
+    // multiclass: don't surface a choice the class won't actually grant in this role
+    if (!allowedForRole(raw.classRestriction, classRole)) continue;
     for (const lvl of raw.levels) {
       if (!want.has(lvl)) continue;
       const labels = raw.type === 'ItemChoice' ? labelsForPool(raw.configuration) : undefined;
@@ -354,7 +375,8 @@ async function applyItemAdvancements(
   choices: PcChoiceMap | undefined,
   applied: PcBuildResult['applied'],
   warnings: string[],
-  hpMode: 'avg' | 'max' = 'avg'
+  hpMode: 'avg' | 'max' = 'avg',
+  classRole?: 'primary' | 'secondary'
 ): Promise<void> {
   const want = new Set(levels);
   const todo = extractAdvancements(item)
@@ -364,6 +386,13 @@ async function applyItemAdvancements(
   for (const { raw, level } of todo) {
     const rec = { source, level, type: raw.type, title: raw.title, result: 'applied' };
     try {
+      // Multiclass subset: a class taken as primary (original) skips 'secondary'-only advancements
+      // and vice-versa (2024 rules — proven via classRestriction in scripts/spike-pc-v3.mjs).
+      if (!allowedForRole(raw.classRestriction, classRole)) {
+        rec.result = `skipped (${raw.classRestriction}-only; this class is ${classRole})`;
+        applied?.push(rec);
+        continue;
+      }
       // HP per level: {initial:true} only sets the original class's L1; every other level MUST pass
       // explicit data {[level]: mode}, else HP under-counts (proven: scripts/spike-pc-level.mjs).
       if (raw.type === 'HitPoints') {
@@ -532,7 +561,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
   const levels = levelsUpTo(level);
   const hpMode = plan.hpMode ?? 'avg';
   const choiceSpecs: AdvancementChoice[] = [
-    ...(await collectAdvancementChoices(classRes.doc, levels, 'class')),
+    ...(await collectAdvancementChoices(classRes.doc, levels, 'class', 'primary')),
     ...(speciesRes ? await collectAdvancementChoices(speciesRes.doc, levels, 'species') : []),
     ...(backgroundRes
       ? await collectAdvancementChoices(backgroundRes.doc, levels, 'background')
@@ -585,7 +614,8 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
       plan.choices,
       applied,
       warnings,
-      hpMode
+      hpMode,
+      'primary'
     );
 
     // Subclass (level 3+) — the class's Subclass advancement EMBEDS the subclass item but does NOT run
@@ -708,6 +738,179 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     } catch (e) {
       warnings.push(`Temp actor cleanup failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+    if (disableTouched) {
+      try {
+        await game.settings.set('dnd5e', 'disableAdvancements', priorDisable);
+      } catch {
+        /* best-effort restore */
+      }
+    }
+  }
+}
+
+// =============================================================================
+// levelUpPc — add ONE class level to an existing persisted PC (the page op behind level-up-pc).
+//
+// Same class as a current one → a single-class level-up; a class the PC doesn't have → a MULTICLASS
+// add. Mutates the actor IN PLACE (proven in scripts/spike-pc-v3.mjs): bump/embed the class, apply
+// ONLY the new level's advancements (prior value-state is preserved, so L1..N don't re-apply, and the
+// classRestriction filter gives a multiclass its 2024 proficiency subset), then persist via
+// actor.update(toObject). Ability-score increases at ASI tiers stay the skill's job (final scores +
+// update-actor); a feat is added with add-feature.
+// =============================================================================
+
+export interface LevelUpPlan {
+  actorIdentifier: string;
+  className: string;
+  choices?: PcChoiceMap;
+  hpMode?: 'avg' | 'max';
+  acceptDefaults?: boolean;
+}
+
+export async function levelUpPc(plan: LevelUpPlan): Promise<PcBuildResult> {
+  if (game.system.id !== 'dnd5e') {
+    throw new Error(`levelUpPc requires D&D 5e. Current system: "${game.system.id}".`);
+  }
+  const warnings: string[] = [];
+  const hpMode = plan.hpMode ?? 'avg';
+
+  // 1. Resolve the actor — must be an existing character.
+  const actor = resolveActorFuzzy(plan.actorIdentifier);
+  if (!actor) throw new Error(`PC not found: "${plan.actorIdentifier}". Use the exact name or id.`);
+  if (actor.type !== 'character') {
+    throw new Error(
+      `"${actor.name}" is a ${actor.type}, not a player character — level-up-pc only levels PCs.`
+    );
+  }
+
+  // 2. Resolve the class by name (premium-gated).
+  const classRes = await resolvePremiumDocByType('class', plan.className);
+  if (!classRes) {
+    throw new Error(
+      `Class "${plan.className}" not found in the premium books (design.md §2.3). Try search-compendium.`
+    );
+  }
+  const classIdentifier = classRes.doc.system?.identifier;
+
+  // 3. Existing class → bump; new class → multiclass add. Role: the originalClass is primary, any
+  //    other class is a multiclass secondary (drives the classRestriction proficiency subset).
+  const existing = actor.items.find(
+    (i: any) => i.type === 'class' && i.system?.identifier === classIdentifier
+  );
+  const isNewClass = !existing;
+  const newClassLevel = isNewClass ? 1 : (existing.system?.levels ?? 0) + 1;
+  if (newClassLevel > 20) {
+    throw new Error(`${classRes.doc.name} is already at level ${newClassLevel - 1} (max 20).`);
+  }
+  const currentCharLevel = actor.items
+    .filter((i: any) => i.type === 'class')
+    .reduce((sum: number, i: any) => sum + (i.system?.levels ?? 0), 0);
+  if (currentCharLevel >= 20) {
+    throw new Error(`"${actor.name}" is already character level 20.`);
+  }
+  const originalClassId = actor.system?.details?.originalClass;
+  const role: 'primary' | 'secondary' =
+    !isNewClass && existing.id === originalClassId ? 'primary' : 'secondary';
+
+  // 4. Required choices at the NEW level (from the source doc, BEFORE mutating) — a dry-run / under-
+  //    specified call returns needsChoices and does NOT touch the actor.
+  const specs = await collectAdvancementChoices(classRes.doc, [newClassLevel], 'class', role);
+  const missing = computeMissingChoices(specs, plan.choices);
+  if (missing.length > 0 && !plan.acceptDefaults) {
+    return {
+      success: false,
+      needsChoices: missing,
+      warnings: [
+        `${classRes.doc.name} level ${newClassLevel} needs ${missing.length} choice(s) (e.g. a subclass ` +
+          'at level 3). Fill the `choices` map (keyed by level → advancement id) and re-call, or pass ' +
+          'acceptDefaults:true.',
+      ],
+    };
+  }
+
+  // 5. Mutate IN PLACE. disableAdvancements true during the apply; restored in finally.
+  const applied: PcBuildResult['applied'] = [];
+  let priorDisable: unknown;
+  let disableTouched = false;
+  try {
+    try {
+      priorDisable = game.settings.get('dnd5e', 'disableAdvancements');
+      await game.settings.set('dnd5e', 'disableAdvancements', true);
+      disableTouched = true;
+    } catch (e) {
+      warnings.push(
+        `Could not set disableAdvancements: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+
+    let classItemId: string;
+    if (isNewClass) {
+      const cdata = classRes.doc.toObject();
+      delete cdata._id;
+      cdata.system = cdata.system ?? {};
+      cdata.system.levels = 1;
+      const [added] = await actor.createEmbeddedDocuments('Item', [cdata]);
+      classItemId = added.id;
+    } else {
+      await actor.updateEmbeddedDocuments('Item', [
+        { _id: existing.id, 'system.levels': newClassLevel },
+      ]);
+      classItemId = existing.id;
+    }
+    actor.reset?.();
+
+    await applyItemAdvancements(
+      actor.items.get(classItemId),
+      'class',
+      [newClassLevel],
+      plan.choices,
+      applied,
+      warnings,
+      hpMode,
+      role
+    );
+
+    // Subclass features fire AT the new level only (never re-grant lower-level subclass features).
+    const subclassItem = actor.items.find((i: any) => i.type === 'subclass');
+    if (subclassItem) {
+      await applyItemAdvancements(
+        actor.items.get(subclassItem.id),
+        'subclass',
+        [newClassLevel],
+        plan.choices,
+        applied,
+        warnings,
+        hpMode
+      );
+    }
+
+    // 6. Persist the in-memory apply() mutations (apply uses updateSource — in-memory only).
+    await actor.update(actor.toObject());
+    const fresh = game.actors.get(actor.id);
+    fresh.reset?.();
+    const unresolvedScale = findGenuinelyUnresolvedScale(fresh);
+
+    return {
+      success: true,
+      actor: {
+        id: fresh.id,
+        name: fresh.name,
+        className: classRes.doc.name,
+        species: null,
+        background: null,
+        level: fresh.system?.details?.level ?? currentCharLevel + 1,
+        hp: fresh.system?.attributes?.hp?.max ?? null,
+        folder: fresh.folder?.id ?? null,
+        classLevel: newClassLevel,
+        classes: fresh.items
+          .filter((i: any) => i.type === 'class')
+          .map((i: any) => ({ name: i.name, levels: i.system?.levels ?? 0 })),
+      },
+      applied,
+      ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
+      warnings,
+    };
+  } finally {
     if (disableTouched) {
       try {
         await game.settings.set('dnd5e', 'disableAdvancements', priorDisable);
