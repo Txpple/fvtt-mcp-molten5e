@@ -23,7 +23,6 @@ import {
   removeActorItems,
   updateActor,
   updateActorItem,
-  manageActivity,
 } from './actors.js';
 import { searchCompendium, getAvailablePacks, getCompendiumDocumentFull } from './compendium.js';
 import {
@@ -86,6 +85,7 @@ import { addAttackToActor, addAuraToActor, addAttackWithSaveToActor } from './dn
 import { setActorSpellcasting, addSpellsToActor, addHomebrewSpellToActor } from './dnd5e/spells.js';
 import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
 import { addItem, importItemFromCompendium } from './dnd5e/items.js';
+import { manageActivity } from './dnd5e/manage-activity.js';
 import { createPcActor, inspectAdvancementChoices, levelUpPc } from './dnd5e/advancement.js';
 
 const api = {
@@ -108,7 +108,6 @@ const api = {
   removeActorItems,
   updateActor,
   updateActorItem,
-  manageActivity,
   // compendium
   searchCompendium,
   getAvailablePacks,
@@ -185,6 +184,7 @@ const api = {
   addFeaturesFromCompendium,
   addItem,
   importItemFromCompendium,
+  manageActivity,
   // dnd5e PC authoring (leveling engine: type:character + advancement → @scale resolves natively)
   createPcActor,
   inspectAdvancementChoices,

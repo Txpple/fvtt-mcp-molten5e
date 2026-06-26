@@ -290,6 +290,44 @@ export function resolveActorFuzzy(identifier: string): any {
   return undefined;
 }
 
+/**
+ * Resolve an embedded Item on an actor by exact id, then exact name (case-insensitive), then a
+ * case-insensitive substring on name (optionally constrained to a `type`). Returns undefined when
+ * nothing matches. Shared by the embedded-item editors (updateActorItem, manageActivity, manageEffect).
+ */
+export function resolveActorItem(actor: any, identifier: string, type?: string): any {
+  if (!identifier) return undefined;
+  const byId = actor.items?.get?.(identifier);
+  if (byId && (!type || byId.type === type)) return byId;
+  const idLower = identifier.toLowerCase();
+  const typeOk = (i: any) => !type || i.type === type;
+  return (
+    actor.items?.find((i: any) => typeOk(i) && i.name?.toLowerCase() === idLower) ??
+    actor.items?.find((i: any) => typeOk(i) && i.name?.toLowerCase().includes(idLower))
+  );
+}
+
+/** Resolve a world Item by exact id, then exact name, then a case-insensitive substring. */
+export function resolveWorldItem(identifier: string): any {
+  const byId = game.items?.get?.(identifier);
+  if (byId) return byId;
+  const idLower = identifier.toLowerCase();
+  return (
+    game.items?.getName?.(identifier) ||
+    game.items?.find?.((i: any) => i.name?.toLowerCase() === idLower) ||
+    game.items?.find?.((i: any) => i.name?.toLowerCase().includes(idLower))
+  );
+}
+
+/**
+ * Turn a dot-path into a Foundry deletion key by prefixing its LAST segment with `-=`
+ * (e.g. "system.activities.abc" -> "system.activities.-=abc"), which removes that key on update.
+ */
+export function toDeletionKey(path: string): string {
+  const idx = path.lastIndexOf('.');
+  return idx < 0 ? `-=${path}` : `${path.slice(0, idx)}.-=${path.slice(idx + 1)}`;
+}
+
 /** Resolve a JournalEntry by exact id then exact name (STRICT — no fuzzy/substring). */
 export function resolveJournalStrict(identifier: string): any {
   return (

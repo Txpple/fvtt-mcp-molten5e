@@ -10,8 +10,7 @@
 //    `phase` defaults to "initial". `value` is stored as a string.
 //  - `transfer` (item effects) makes the effect apply to the owning actor; default true for items.
 
-import { resolveActorFuzzy } from './_shared.js';
-import { resolveActorItem, resolveWorldItem } from './actors.js';
+import { resolveActorFuzzy, resolveActorItem, resolveWorldItem } from './_shared.js';
 
 /** Legacy numeric ActiveEffect mode → v14 string type (CONST.ACTIVE_EFFECT_MODES). */
 const MODE_NUM_TO_TYPE: Record<number, string> = {
