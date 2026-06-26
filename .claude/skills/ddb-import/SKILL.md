@@ -89,19 +89,30 @@ entity has a **clear** 2024 premium equivalent, canonicalize to it and **tell th
 mapped (e.g. "DDB had the 2014 *Variant Human*; using the 2024 *Human*"). When the match is **ambiguous
 or absent**, do not guess — take it to Step 4.
 
-## Step 4 — The STOP-and-ASK gate (§2.4)
+## Step 4 — No-match content: author a faithful copy + FLAG the GM
 
-Collect into ONE list: every `plan.unresolved[]` entry **plus** anything from Step 3 that wouldn't
-canonicalize. For each, present it and ask how to handle it. **Never** substitute a near-name, drop the
-entry silently, reach for the SRD, or author a fake to paper over a miss. Options to offer the user,
-per the policy:
-- **Homebrew / custom** (a homebrew feat, `customBackground`, a custom item): skip it, pick a real
-  premium analog *they* name, or — only with explicit permission — author it as a last resort
-  (copy→modify→rename).
-- **Legacy with no 2024 equivalent** / **a book we don't own**: ask which premium entry to use, or to
-  drop it.
+**This is the import policy (the GM has authorized it for DDB imports — the §2.3 "explicit permission"
+path).** The use case is *parity*: a GM reproducing a player's sheet for play, so **nothing is silently
+lost**. After Step 3, handle anything still unresolved (a `plan.unresolved[]` entry, or a name that
+wouldn't canonicalize) **compendium-first, author-as-fallback, never drop**:
 
-Partial coverage + this ask-loop is the **normal** outcome, not a failure — set that expectation.
+- **Always prefer a real premium entry first.** Re-check with `search-compendium` for variant names,
+  lineage splits, and `"(Varies)"` focuses (e.g. DDB "Staff" → premium *Arcane Focus (Varies)*; DDB
+  "Robe" → premium *Robe*) before concluding there's no match.
+- **If it genuinely isn't in the books, AUTHOR a faithful copy and FLAG it for GM review.** Use the DDB
+  text the parser captured (`plan.feats[].description` / `plan.inventory[].description`):
+  - a feat / feature → `add-feature` mode `feature`, `featureType: "passive"`, with the description;
+  - a custom item → `import-item` the closest base then rename, else `add-item` with the description.
+  - **Prepend a clear marker to the description**, e.g. *"⚠️ GM REVIEW — imported from D&D Beyond
+    (homebrew / 3rd-party); verify mechanics."* If you can't infer the mechanics from the text, author
+    it as a **passive** feature carrying the text + flag, and the GM finishes it.
+- **Never** silently drop an entry, reach for the SRD, or fabricate mechanics the DDB text doesn't give.
+- **Collect every authored-and-flagged entry into your final report** so the GM knows exactly what to
+  review.
+
+The one thing still worth a quick **ASK** (not authoring): a genuinely ambiguous *mapping* fork between
+real premium options (e.g. which of two plausible 2024 subclasses a renamed legacy subclass maps to).
+Authoring is for content with **no** premium home; asking is for a real choice between premium entries.
 
 ## Step 5 — Discover advancement ids and key the choices
 
@@ -135,9 +146,12 @@ natively. If `needsChoices[]` comes back, fill the gaps and re-call — nothing 
 
 `create-pc` adds no gear/feats. After the PC exists (reuse [[pc-builder]] Step 6, defer item judgment
 to [[physical-item-builder]]):
-- **Inventory** — for each `plan.inventory[]` line, `search-compendium-items` → **`import-item`**
-  (`actorIdentifier` = the new PC, `equipped`/`container` from the line). Normalize `"<item>, +N"` to
-  the magic-variant entry. Anything homebrew went through Step 4.
+- **Inventory — import the FULL kit (mundane gear included) for parity.** For each `plan.inventory[]`
+  line, `search-compendium-items` → **`import-item`** (`actorIdentifier` = the new PC, `equipped` and
+  `quantity` from the line). Normalize `"<item>, +N"` to the magic-variant entry and DDB's "Item, Sub"
+  naming to the premium entry (e.g. "Traveler's Clothes" → *Clothes, Traveler's*; "Bullseye Lantern" →
+  *Lantern, Bullseye*). Any item with **no** premium match goes through Step 4 (author from
+  `plan.inventory[].description` + flag) — never dropped.
 - **Currency** — `update-actor` with `plan.currency`.
 - **Feats** — for each genuinely **player-chosen** feat in `plan.feats[]`, **`add-feature`** mode
   `compendium-features` with the canonicalized name. **Skip the noise DDB lists as "feats":** the
@@ -148,11 +162,17 @@ to [[physical-item-builder]]):
 
 ## Step 8 — Finishing pass
 
-- **Art** → `set-actor-art`. Prefer the character's own DDB portrait (`plan.art.avatarUrl`) — download
-  it and `upload-asset` to the world, then point `set-actor-art` at the Data-relative path. If there's
-  no avatar, fall back to the **deterministic class-pregen default** ([[pc-builder]] Step 7 — the PHB
-  pregen art for the **primary** class).
-- **Ownership** → `set-actor-ownership` — assign the **player** as owner.
+- **Art (the DDB avatar is the default)** → download `plan.art.avatarUrl`, `upload-asset` it into the
+  world (e.g. `worlds/<world>/assets/portraits/<name>.jpeg`), then `set-actor-art` at that Data-relative
+  path — it sets **portrait + token**. Only when the character has **no** DDB avatar, fall back to the
+  deterministic class-pregen default ([[pc-builder]] Step 7, primary class).
+- **Biography** → `update-actor` `biography` from the DDB free-text the parser captured. Render
+  `plan.bio.entries` as labeled blocks — each a `**<label>:** <text>` line (HTML
+  `<p><strong>label:</strong> text</p>`) — so the player's Organizations / Backstory / Ideals / Bonds /
+  Flaws / Faith / Alignment / Physical land in the Foundry bio verbatim (e.g. **Organizations:** A member
+  of the league of shadows.). DDB fields don't all map 1:1 to Foundry fields — this is where the rest go.
+- **Ownership** → `set-actor-ownership` — assign the **player** as owner (or leave GM if the GM owns the
+  table's PCs).
 - **Folder** → file the PC (the engine files new PCs under "Foundry MCP Characters"; `move-documents`
   if the table organizes differently).
 

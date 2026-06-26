@@ -87,6 +87,31 @@ const FIGHTING_STYLES = new Set([
   'druidic warrior',
 ]);
 
+/** DDB alignmentId (1-9) -> name. */
+const ALIGNMENTS: Record<number, string> = {
+  1: 'Lawful Good',
+  2: 'Neutral Good',
+  3: 'Chaotic Good',
+  4: 'Lawful Neutral',
+  5: 'Neutral',
+  6: 'Chaotic Neutral',
+  7: 'Lawful Evil',
+  8: 'Neutral Evil',
+  9: 'Chaotic Evil',
+};
+
+/** Strip HTML tags + entities and collapse whitespace from a DDB rich-text field. */
+function stripHtml(s: unknown): string {
+  return typeof s === 'string'
+    ? s
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&[a-z]+;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+([.,;:!?')\]])/g, '$1')
+        .trim()
+    : '';
+}
+
 // ---------------------------------------------------------------------------
 // Output types — the published seam contract between the parse tool and the ddb-import skill.
 // ---------------------------------------------------------------------------
@@ -136,11 +161,15 @@ export interface DdbInventoryItem {
   rarity: string | null;
   /** Nested inside a non-character container (e.g. a Bag of Holding), not the character. */
   inContainer: boolean;
+  /** DDB item description (HTML stripped) — lets the skill author a faithful copy of a no-match item. */
+  description: string;
 }
 
 export interface DdbFeat {
   name: string;
   isHomebrew: boolean;
+  /** DDB feat description (HTML stripped) — lets the skill author a no-match/3rd-party feat + flag it. */
+  description: string;
 }
 
 export interface DdbSpell {
@@ -221,6 +250,8 @@ export interface DdbCharacterPlan {
   currency: { cp: number; sp: number; gp: number; ep: number; pp: number };
   hp: { max: number; mode: 'fixed' | 'rolled' };
   art: { avatarUrl: string | null };
+  /** DDB free-text notes/traits/identity mapped to ordered, labeled blocks for the Foundry biography. */
+  bio: { entries: Array<{ label: string; text: string }> };
   flags: { useHomebrew: boolean; privacyType: number };
   /** Everything the skill must STOP-and-ASK about (§2.4): homebrew, 2014-legacy, custom. */
   unresolved: DdbUnresolved[];
@@ -534,6 +565,49 @@ function spellEntry(s: any, source: DdbSpell['source'], className: string | null
 }
 
 // ---------------------------------------------------------------------------
+// Biography — DDB free-text notes/traits/identity → ordered, labeled blocks (only non-empty). The
+// skill renders these as `**Label:** text` into the Foundry bio so nothing the player wrote is lost.
+// ---------------------------------------------------------------------------
+
+function buildBio(data: any): { entries: Array<{ label: string; text: string }> } {
+  const entries: Array<{ label: string; text: string }> = [];
+  const push = (label: string, value: unknown) => {
+    const text = stripHtml(value);
+    if (text) entries.push({ label, text });
+  };
+  const n = data?.notes ?? {};
+  push('Organizations', n.organizations);
+  push('Allies', n.allies);
+  push('Enemies', n.enemies);
+  push('Backstory', n.backstory);
+  push('Other Holdings', n.otherHoldings);
+  push('Personal Possessions', n.personalPossessions);
+  push('Other Notes', n.otherNotes);
+  const t = data?.traits ?? {};
+  push('Appearance', t.appearance);
+  push('Personality Traits', t.personalityTraits);
+  push('Ideals', t.ideals);
+  push('Bonds', t.bonds);
+  push('Flaws', t.flaws);
+  push('Faith', data?.faith);
+  if (data?.alignmentId && ALIGNMENTS[data.alignmentId])
+    push('Alignment', ALIGNMENTS[data.alignmentId]);
+  const phys = [
+    data?.gender,
+    data?.age != null ? `Age ${data.age}` : null,
+    data?.height,
+    data?.weight != null ? `${data.weight} lb` : null,
+    data?.hair ? `${data.hair} hair` : null,
+    data?.eyes ? `${data.eyes} eyes` : null,
+    data?.skin ? `${data.skin} skin` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  if (phys) entries.push({ label: 'Physical', text: phys });
+  return { entries };
+}
+
+// ---------------------------------------------------------------------------
 // Top-level parse
 // ---------------------------------------------------------------------------
 
@@ -631,12 +705,14 @@ export function parseDdbCharacter(input: any): DdbCharacterPlan {
       isMagic: !!def.magic,
       rarity: def.rarity ?? null,
       inContainer: i?.containerEntityId != null && i.containerEntityId !== data.id,
+      description: stripHtml(def.description),
     };
   });
 
   const feats: DdbFeat[] = (data.feats ?? []).map((f: any) => ({
     name: f?.definition?.name ?? '(unknown feat)',
     isHomebrew: !!f?.definition?.isHomebrew,
+    description: stripHtml(f?.definition?.description),
   }));
 
   const cur = data.currencies ?? {};
@@ -734,6 +810,7 @@ export function parseDdbCharacter(input: any): DdbCharacterPlan {
     currency,
     hp,
     art: { avatarUrl: data.decorations?.avatarUrl ?? data.avatarUrl ?? null },
+    bio: buildBio(data),
     flags: {
       useHomebrew: !!data.preferences?.useHomebrewContent,
       privacyType: data.preferences?.privacyType ?? 0,

@@ -190,6 +190,10 @@ export class DnD5eDdbImportTools {
       `**Spells:** ${plan.spells.cantrips.length} cantrips, ${plan.spells.prepared.length} prepared/known · **Inventory:** ${plan.inventory.length} · **Feats:** ${plan.feats.length}`,
     ];
 
+    if (plan.bio.entries.length) {
+      lines.push(`**Bio notes (→ biography):** ${plan.bio.entries.map(e => e.label).join(', ')}`);
+    }
+
     if (plan.unresolved.length > 0) {
       const byReason = (r: string) =>
         plan.unresolved.filter(u => u.reason === r).map(u => `${u.kind} "${u.name}"`);

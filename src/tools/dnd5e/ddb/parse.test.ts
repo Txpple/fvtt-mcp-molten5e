@@ -198,6 +198,32 @@ describe('parseDdbCharacter — proficiencies', () => {
   });
 });
 
+describe('parseDdbCharacter — biography', () => {
+  it('maps DDB notes/traits/identity to labeled bio blocks (non-empty only, HTML stripped)', () => {
+    const c = minimalCharacter({
+      notes: { organizations: 'A member of the <b>league of shadows</b>.', backstory: null },
+      traits: { ideals: 'Freedom.', bonds: '   ' },
+      faith: 'Lathander',
+      alignmentId: 3,
+    });
+    const plan = parseDdbCharacter(c);
+    const labels = plan.bio.entries.map(e => e.label);
+    expect(labels).toEqual(
+      expect.arrayContaining(['Organizations', 'Ideals', 'Faith', 'Alignment'])
+    );
+    expect(plan.bio.entries.find(e => e.label === 'Organizations')?.text).toBe(
+      'A member of the league of shadows.' // HTML stripped
+    );
+    expect(plan.bio.entries.find(e => e.label === 'Alignment')?.text).toBe('Chaotic Good');
+    expect(labels).not.toContain('Bonds'); // whitespace-only dropped
+    expect(labels).not.toContain('Backstory'); // null dropped
+  });
+
+  it('emits an empty bio when DDB has no notes/traits', () => {
+    expect(parseDdbCharacter(minimalCharacter()).bio.entries).toEqual([]);
+  });
+});
+
 describe('unwrapDdb', () => {
   it('unwraps the v5 envelope and accepts a bare data object', () => {
     const bare = minimalCharacter();
@@ -272,6 +298,7 @@ describe('parseDdbCharacter — fixture: character-25755022 (multiclass, legacy,
 
   it('feats, currency, hp override', () => {
     expect(plan.feats.map(f => f.name)).toEqual(expect.arrayContaining(['Mobile', 'Sharpshooter']));
+    expect(plan.feats.every(f => typeof f.description === 'string')).toBe(true);
     expect(plan.currency.gp).toBe(15);
     expect(plan.hp.max).toBe(73); // overrideHitPoints wins
   });
