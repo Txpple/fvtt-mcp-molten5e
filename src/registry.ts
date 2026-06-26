@@ -14,7 +14,7 @@ import { ItemTools } from './tools/items.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
-import { QuestCreationTools } from './tools/quest-creation.js';
+import { JournalTools } from './tools/journal.js';
 import { OwnershipTools } from './tools/ownership.js';
 
 import { DnD5eAddFeatureTool } from './tools/dnd5e/add-feature.js';
@@ -33,6 +33,7 @@ import { buildAddFeatureTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
 import { AssetBridgeTools } from './tools/asset-bridge.js';
+import { PlaylistTools } from './tools/playlist.js';
 import { TableTools } from './tools/tables.js';
 import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
@@ -84,13 +85,14 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   // DDB import: a Node-only tool (no Foundry — it fetches a public character or parses pasted JSON).
   const dnd5eDdbImportTools = new DnD5eDdbImportTools({ logger });
 
-  const questCreationTools = new QuestCreationTools({ foundry, logger });
+  const journalTools = new JournalTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
 
   // Plane-B Molten file tools (WebDAV). `foundry` lets the destructive ones consult
   // find-asset-references before acting.
   const moltenTools = new MoltenTools({ logger, foundry });
   const assetBridgeTools = new AssetBridgeTools({ foundry, logger });
+  const playlistTools = new PlaylistTools({ foundry, logger });
   const tableTools = new TableTools({ foundry, logger });
   const cardsTools = new CardsTools({ foundry, logger });
   const chatTools = new ChatTools({ foundry, logger });
@@ -120,10 +122,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eImportItemTool.getToolDefinitions(),
     ...dnd5eDdbImportTools.getToolDefinitions(),
     addFeatureTool,
-    ...questCreationTools.getToolDefinitions(),
+    ...journalTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
     ...moltenTools.getToolDefinitions(),
     ...assetBridgeTools.getToolDefinitions(),
+    ...playlistTools.getToolDefinitions(),
     ...tableTools.getToolDefinitions(),
     ...cardsTools.getToolDefinitions(),
     ...chatTools.getToolDefinitions(),
@@ -215,14 +218,14 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     },
 
     // Quests / journals
-    'create-quest-journal': args => questCreationTools.handleCreateQuestJournal(args),
-    'link-quest-to-npc': args => questCreationTools.handleLinkQuestToNPC(args),
-    'update-quest-journal': args => questCreationTools.handleUpdateQuestJournal(args),
-    'list-journals': args => questCreationTools.handleListJournals(args),
-    'search-journals': args => questCreationTools.handleSearchJournals(args),
-    'create-journal': args => questCreationTools.handleCreateJournal(args),
-    'update-journal': args => questCreationTools.handleUpdateJournal(args),
-    'delete-journal': args => questCreationTools.handleDeleteJournal(args),
+    'create-quest-journal': args => journalTools.handleCreateQuestJournal(args),
+    'link-quest-to-npc': args => journalTools.handleLinkQuestToNPC(args),
+    'update-quest-journal': args => journalTools.handleUpdateQuestJournal(args),
+    'list-journals': args => journalTools.handleListJournals(args),
+    'search-journals': args => journalTools.handleSearchJournals(args),
+    'create-journal': args => journalTools.handleCreateJournal(args),
+    'update-journal': args => journalTools.handleUpdateJournal(args),
+    'delete-journal': args => journalTools.handleDeleteJournal(args),
 
     // Ownership
     'set-actor-ownership': args => ownershipTools.handleToolCall('set-actor-ownership', args),
@@ -242,16 +245,20 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     // Asset composition + reference integrity (Plane A)
     'find-asset-references': args => assetBridgeTools.handleFindAssetReferences(args),
     'relink-asset': args => assetBridgeTools.handleRelinkAsset(args),
-    'create-playlist': args => assetBridgeTools.handleCreatePlaylist(args),
-    'create-scene': args => assetBridgeTools.handleCreateScene(args),
     'set-actor-art': args => assetBridgeTools.handleSetActorArt(args),
     'add-journal-image': args => assetBridgeTools.handleAddJournalImage(args),
-    'list-scenes': args => assetBridgeTools.handleListScenes(args),
-    'update-scene': args => assetBridgeTools.handleUpdateScene(args),
-    'delete-scene': args => assetBridgeTools.handleDeleteScene(args),
-    'list-playlists': args => assetBridgeTools.handleListPlaylists(args),
-    'update-playlist': args => assetBridgeTools.handleUpdatePlaylist(args),
-    'delete-playlist': args => assetBridgeTools.handleDeletePlaylist(args),
+
+    // Scenes (authoring) — SceneTools also owns get-current-scene / get-world-info above
+    'create-scene': args => sceneTools.handleCreateScene(args),
+    'list-scenes': args => sceneTools.handleListScenes(args),
+    'update-scene': args => sceneTools.handleUpdateScene(args),
+    'delete-scene': args => sceneTools.handleDeleteScene(args),
+
+    // Playlists
+    'create-playlist': args => playlistTools.handleCreatePlaylist(args),
+    'list-playlists': args => playlistTools.handleListPlaylists(args),
+    'update-playlist': args => playlistTools.handleUpdatePlaylist(args),
+    'delete-playlist': args => playlistTools.handleDeletePlaylist(args),
 
     // Roll tables
     'create-rolltable': args => tableTools.handleCreateRollTable(args),

@@ -19,13 +19,22 @@ function build(response: any = {}) {
 }
 
 describe('SceneTools.getToolDefinitions', () => {
-  it('exposes exactly the two scene tools', () => {
+  it('exposes the scene reads + authoring tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['get-current-scene', 'get-world-info']);
+    expect(names).toEqual(
+      [
+        'create-scene',
+        'delete-scene',
+        'get-current-scene',
+        'get-world-info',
+        'list-scenes',
+        'update-scene',
+      ].sort()
+    );
   });
 
   it('every definition has an object inputSchema', () => {
@@ -226,5 +235,306 @@ describe('handleGetWorldInfo', () => {
     await expect(tools.handleGetWorldInfo({})).rejects.toThrow(
       'Failed to get world information: bridge down'
     );
+  });
+});
+
+describe('handleCreateScene', () => {
+  it('forwards a valid scene and formats result', async () => {
+    const { tools, calls } = build({
+      sceneName: 'Cavern',
+      sceneId: 'sc1',
+      active: false,
+      background: 'maps/cavern.webp',
+    });
+    const out = await tools.handleCreateScene({
+      name: 'Cavern',
+      backgroundPath: 'maps/cavern.webp',
+    });
+    expect(calls[0][0]).toBe('createScene');
+    expect(calls[0][1]).toMatchObject({
+      name: 'Cavern',
+      backgroundPath: 'maps/cavern.webp',
+      activate: false,
+    });
+    expect(out).toBe('Created scene "Cavern" (sc1)\n  background: maps/cavern.webp');
+  });
+
+  it('appends [active] when the scene is activated', async () => {
+    const { tools } = build({ sceneName: 'C', sceneId: 'sc1', active: true, background: 'b.webp' });
+    const out = await tools.handleCreateScene({
+      name: 'C',
+      backgroundPath: 'b.webp',
+      activate: true,
+    });
+    expect(out).toBe('Created scene "C" (sc1) [active]\n  background: b.webp');
+  });
+
+  it('rejects an empty name', async () => {
+    const { tools } = build();
+    await expect(tools.handleCreateScene({ name: '', backgroundPath: 'b.webp' })).rejects.toThrow();
+  });
+
+  it('rejects a missing backgroundPath', async () => {
+    const { tools } = build();
+    await expect(tools.handleCreateScene({ name: 'X' })).rejects.toThrow();
+  });
+
+  it('rejects a non-integer width', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', width: 12.5 })
+    ).rejects.toThrow();
+  });
+
+  it('rejects padding above 0.5', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', padding: 0.9 })
+    ).rejects.toThrow();
+  });
+
+  it('forwards the new scene fields to the bridge', async () => {
+    const { tools, calls } = build({ sceneName: 'X', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({
+      name: 'X',
+      backgroundPath: 'b',
+      gridDistance: 5,
+      gridUnits: 'ft',
+      tokenVision: true,
+      fogMode: 'shared',
+      darkness: 0.4,
+      globalLight: false,
+      weather: 'snow',
+      playlist: 'Ambience',
+      journal: 'Read-Aloud',
+    });
+    expect(calls[0][1]).toMatchObject({
+      gridDistance: 5,
+      gridUnits: 'ft',
+      tokenVision: true,
+      fogMode: 'shared',
+      darkness: 0.4,
+      globalLight: false,
+      weather: 'snow',
+      playlist: 'Ambience',
+      journal: 'Read-Aloud',
+    });
+  });
+
+  it('rejects an invalid fogMode', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', fogMode: 'sometimes' })
+    ).rejects.toThrow();
+  });
+
+  it('rejects darkness above 1', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateScene({ name: 'X', backgroundPath: 'b', darkness: 2 })
+    ).rejects.toThrow();
+  });
+
+  it('reports auto-detected dimensions and effective settings', async () => {
+    const { tools } = build({
+      sceneName: 'Cavern',
+      sceneId: 'sc1',
+      background: 'maps/cavern.webp',
+      width: 4000,
+      height: 3000,
+      autoSized: true,
+      settings: {
+        grid: { size: 100, type: 1, distance: 5, units: 'ft' },
+        tokenVision: true,
+        fogMode: 'individual',
+        darkness: 0.5,
+        globalLight: false,
+        weather: 'fog',
+        playlist: null,
+        journal: null,
+      },
+    });
+    const out = await tools.handleCreateScene({
+      name: 'Cavern',
+      backgroundPath: 'maps/cavern.webp',
+    });
+    expect(out).toContain('dimensions: 4000×3000px (auto from image)');
+    expect(out).toContain('grid 100px = 5 ft');
+    expect(out).toContain('vision on');
+    expect(out).toContain('fog individual');
+    expect(out).toContain('darkness 0.5');
+    expect(out).toContain('weather fog');
+    expect(out).not.toContain('global light on');
+  });
+});
+
+describe('handleListScenes', () => {
+  it('forwards .listScenes and formats scenes with dimensions + active', async () => {
+    const { tools, calls } = build([
+      {
+        name: 'Cavern',
+        id: 'sc1',
+        active: true,
+        dimensions: { width: 4000, height: 3000 },
+        gridSize: 100,
+        background: 'maps/cavern.webp',
+      },
+      { name: 'Empty', id: 'sc2', active: false, gridSize: 50 },
+    ]);
+    const out = await tools.handleListScenes({});
+    expect(calls[0][0]).toBe('listScenes');
+    expect(out).toContain('Scenes (2):');
+    expect(out).toContain('- "Cavern" (sc1) [active] — 4000×3000px, grid 100');
+    expect(out).toContain('background: maps/cavern.webp');
+    expect(out).toContain('- "Empty" (sc2) — ?px, grid 50');
+  });
+
+  it('passes filter and includeActiveOnly through', async () => {
+    const { tools, calls } = build([]);
+    await tools.handleListScenes({ filter: 'cav', includeActiveOnly: true });
+    expect(calls[0][1]).toMatchObject({ filter: 'cav', includeActiveOnly: true });
+  });
+
+  it('reports no scenes for an empty array', async () => {
+    const { tools } = build([]);
+    const out = await tools.handleListScenes({});
+    expect(out).toBe('No scenes found.');
+  });
+
+  it('reports no scenes for a non-array result', async () => {
+    const { tools } = build(undefined);
+    const out = await tools.handleListScenes({});
+    expect(out).toBe('No scenes found.');
+  });
+});
+
+describe('handleUpdateScene', () => {
+  it('forwards a valid update and formats result', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      sceneName: 'Cavern',
+      sceneId: 'sc1',
+      background: 'maps/new.webp',
+    });
+    const out = await tools.handleUpdateScene({
+      sceneIdentifier: 'sc1',
+      backgroundPath: 'maps/new.webp',
+    });
+    expect(calls[0][0]).toBe('updateScene');
+    expect(calls[0][1]).toMatchObject({ sceneIdentifier: 'sc1', backgroundPath: 'maps/new.webp' });
+    expect(out).toBe('Updated scene "Cavern" (sc1)\n  background: maps/new.webp');
+  });
+
+  it('reports not-found branch when updated === false', async () => {
+    const { tools } = build({ updated: false, notFound: 'Ghost' });
+    const out = await tools.handleUpdateScene({ sceneIdentifier: 'Ghost' });
+    expect(out).toBe('Scene not found: "Ghost". Nothing changed.');
+  });
+
+  it('rejects an empty sceneIdentifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleUpdateScene({ sceneIdentifier: '' })).rejects.toThrow();
+  });
+
+  it('rejects an empty backgroundPath when provided', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateScene({ sceneIdentifier: 's', backgroundPath: '' })
+    ).rejects.toThrow();
+  });
+
+  it('rejects padding above 0.5', async () => {
+    const { tools } = build();
+    await expect(tools.handleUpdateScene({ sceneIdentifier: 's', padding: 0.9 })).rejects.toThrow();
+  });
+
+  it('forwards the new scene fields and clears links with ""', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      sceneName: 'C',
+      sceneId: 'sc1',
+      background: 'b',
+    });
+    await tools.handleUpdateScene({
+      sceneIdentifier: 'sc1',
+      darkness: 1,
+      globalLight: true,
+      weather: '',
+      playlist: '',
+      journal: 'Notes',
+    });
+    expect(calls[0][1]).toMatchObject({
+      darkness: 1,
+      globalLight: true,
+      weather: '',
+      playlist: '',
+      journal: 'Notes',
+    });
+  });
+
+  it('rejects an invalid fogMode', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateScene({ sceneIdentifier: 's', fogMode: 'maybe' })
+    ).rejects.toThrow();
+  });
+
+  it('appends effective settings to the update result', async () => {
+    const { tools } = build({
+      updated: true,
+      sceneName: 'C',
+      sceneId: 'sc1',
+      background: 'b',
+      settings: {
+        grid: { size: 100, type: 1, distance: 5, units: 'ft' },
+        tokenVision: false,
+        fogMode: 'shared',
+        darkness: 0,
+        globalLight: true,
+        weather: '',
+        playlist: 'pl1',
+        journal: null,
+      },
+    });
+    const out = await tools.handleUpdateScene({ sceneIdentifier: 'sc1', globalLight: true });
+    expect(out).toContain('vision off');
+    expect(out).toContain('fog shared');
+    expect(out).toContain('global light on');
+    expect(out).toContain('playlist pl1');
+    expect(out).not.toContain('darkness'); // 0 is suppressed
+    expect(out).not.toContain('weather'); // empty is suppressed
+  });
+});
+
+describe('handleDeleteScene', () => {
+  it('forwards .deleteScenes and lists deleted', async () => {
+    const { tools, calls } = build({
+      deletedCount: 1,
+      deleted: [{ name: 'Cavern', id: 'sc1' }],
+      notFound: [],
+    });
+    const out = await tools.handleDeleteScene({ identifiers: ['sc1'] });
+    expect(calls[0][0]).toBe('deleteScenes');
+    expect(calls[0][1]).toMatchObject({ identifiers: ['sc1'] });
+    expect(out).toContain('Deleted 1 scene(s):');
+    expect(out).toContain('- "Cavern" (sc1)');
+    expect(out).not.toContain('not found:');
+  });
+
+  it('appends not-found list when some ids do not resolve', async () => {
+    const { tools } = build({ deletedCount: 0, deleted: [], notFound: ['ghost'] });
+    const out = await tools.handleDeleteScene({ identifiers: ['ghost'] });
+    expect(out).toContain('Deleted 0 scene(s):');
+    expect(out).toContain('not found: ghost');
+  });
+
+  it('rejects an empty identifiers array', async () => {
+    const { tools } = build();
+    await expect(tools.handleDeleteScene({ identifiers: [] })).rejects.toThrow();
+  });
+
+  it('rejects an identifier that is an empty string', async () => {
+    const { tools } = build();
+    await expect(tools.handleDeleteScene({ identifiers: [''] })).rejects.toThrow();
   });
 });

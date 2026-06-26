@@ -1,5 +1,5 @@
 /**
- * Unit tests for QuestCreationTools.
+ * Unit tests for JournalTools.
  *
  * Eight handlers, each: zod.parse(args) -> one or more
  * foundry.call('<op>', data) calls -> a result
@@ -12,16 +12,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { QuestCreationTools } from './quest-creation.js';
+import { JournalTools } from './journal.js';
 import { makeLogger, makeFoundry } from './test-helpers.js';
 
 function build(response: any = {}) {
   const { foundry, calls } = makeFoundry(response);
-  const tools = new QuestCreationTools({ foundry, logger: makeLogger() });
+  const tools = new JournalTools({ foundry, logger: makeLogger() });
   return { tools, calls, foundry };
 }
 
-describe('QuestCreationTools.getToolDefinitions', () => {
+describe('JournalTools.getToolDefinitions', () => {
   it('exposes exactly the eight expected tools', () => {
     const { tools } = build();
     const names = tools

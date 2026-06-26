@@ -169,17 +169,17 @@ const DeleteJournalSchema = z.object({
     .describe('Exact ids (preferred) or exact names of journals to delete.'),
 });
 
-export interface QuestCreationToolsOptions {
+export interface JournalToolsOptions {
   foundry: FoundryBridge;
   logger: Logger;
 }
 
-export class QuestCreationTools {
+export class JournalTools {
   private foundry: FoundryBridge;
   private logger: Logger;
   private errorHandler: ErrorHandler;
 
-  constructor(options: QuestCreationToolsOptions) {
+  constructor(options: JournalToolsOptions) {
     this.foundry = options.foundry;
     this.logger = options.logger;
     this.errorHandler = new ErrorHandler(this.logger);
