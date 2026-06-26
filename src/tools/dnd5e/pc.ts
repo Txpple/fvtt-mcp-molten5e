@@ -54,8 +54,10 @@ const CreatePcSchema = z.object({
       prepared: z.array(z.string()).optional(),
     })
     .optional(),
-  // v1: level 1 only. Widens in v2 (leveling 1→N reuses the same engine).
-  level: z.literal(1).default(1),
+  // Character level 1..20. HP/subclass/spell-slots scale with it; subclass is granted at level 3.
+  level: z.number().int().min(1).max(20).default(1),
+  // HP per level past the first: 'avg' (2024 fixed average, default) or 'max'. L1 is always max.
+  hpMode: z.enum(['avg', 'max']).default('avg'),
   sourceRules: z.enum(['2014', '2024']).default('2024'),
   folder: z.string().optional(),
   // When required picks are missing, the tool returns needsChoices WITHOUT persisting (no litter).
@@ -88,10 +90,13 @@ const CREATE_PC_DESCRIPTION =
   '(design.md §2.3); a missing class/species/background is an error, not invented. The SKILL owns ' +
   'the math: pass FINAL ability scores (point-buy/array/ASI already applied) and the player CHOICES ' +
   '(skills, fighting style, ancestry…) in `choices` (level → advancement-id → {chosen|selected|uuid}). ' +
-  'Call with no/partial choices first to get a `needsChoices[]` dry-run (legal options per choice, ' +
-  'NOTHING is created); fill the map and re-call. Caster L1 spell slots auto-derive from the class; ' +
-  'pass `spells.cantrips`/`spells.prepared` (names) to add chosen spells. v1 = level 1. Equipment is ' +
-  'composed separately by the skill (import-item) — this tool does not add gear. Returns ' +
+  'Call with no/partial choices first to get a `needsChoices[]` dry-run (legal options per choice — ' +
+  'incl. the available subclasses at level 3 — NOTHING is created); fill the map and re-call. ' +
+  'Levels 1-20: HP/features/subclass/spell-slots scale with `level` (subclass at L3 via a `choices` ' +
+  'uuid; HP per level `hpMode` avg|max). Caster spell slots auto-derive from the class; pass ' +
+  '`spells.cantrips`/`spells.prepared` (names) to add chosen spells. ASI ability-increases ride in the ' +
+  'FINAL scores (not applied separately); a feat taken at an ASI tier is added by the skill via ' +
+  'add-feature/import-item, like equipment — this tool adds no gear or ASI-feats. Returns ' +
   '{success, actor, applied[], needsChoices[], unresolvedScale[], warnings[]}.';
 
 const INSPECT_PC_ADVANCEMENT_DESCRIPTION =

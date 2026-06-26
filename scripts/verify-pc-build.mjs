@@ -48,7 +48,8 @@ const f = new Foundry({
 
 const createdNames = [];
 
-// Build a choices map from a needsChoices[] list: concrete (non-wildcard) trait keys, pool uuids.
+// Build a choices map from a needsChoices[] list: concrete (non-wildcard) trait keys, pool uuids,
+// and the first available subclass for a Subclass (uuid) choice.
 function fillChoices(needs) {
   const choices = {};
   for (const c of needs) {
@@ -60,6 +61,8 @@ function fillChoices(needs) {
     } else if (c.dataKey === 'selected') {
       const picks = c.options.map(o => o.value).slice(0, c.count);
       if (picks.length) choices[lvl][c.id] = { selected: picks };
+    } else if (c.dataKey === 'uuid') {
+      if (c.options?.length) choices[lvl][c.id] = { uuid: c.options[0].value };
     }
   }
   return choices;
@@ -293,6 +296,129 @@ try {
   assert(
     (wizRead?.cantrips?.length ?? 0) >= 2,
     `D3: chosen cantrips imported (${wizRead?.cantrips?.join(', ')})`
+  );
+
+  // ---- Test E (v2): a LEVEL-5 Fighter — multi-level HP, subclass@3 + its features, @scale scales ----
+  const lvl5Name = `${TAG} Fighter L5`;
+  const e5Dry = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: lvl5Name,
+      className: 'Fighter',
+      background: 'Soldier',
+      abilities: { str: 16, dex: 13, con: 14, int: 10, wis: 12, cha: 8 },
+      level: 5,
+    }),
+    120_000,
+    'e5Dry'
+  );
+  console.log('\n--- Test E: level-5 Fighter dry-run needsChoices ---');
+  console.log(
+    JSON.stringify(
+      e5Dry?.needsChoices?.map(c => ({
+        src: c.source,
+        title: c.title,
+        type: c.type,
+        level: c.level,
+        count: c.count,
+        opts: c.options?.length,
+      })),
+      null,
+      2
+    )
+  );
+  const subChoice = e5Dry?.needsChoices?.find(c => c.type === 'Subclass');
+  assert(!!subChoice, 'E1: needsChoices includes the Subclass choice at level 3');
+  assert(
+    (subChoice?.options?.length ?? 0) > 0,
+    `E2: Subclass choice is enriched with the class's subclasses (${subChoice?.options?.length} options: ${(
+      subChoice?.options || []
+    )
+      .slice(0, 3)
+      .map(o => o.label)
+      .join(', ')}…)`
+  );
+
+  const e5Choices = fillChoices(e5Dry?.needsChoices ?? []);
+  // pick Champion specifically (deterministic) so we can assert its known L3 features
+  const champOpt = subChoice?.options?.find(o => /^champion$/i.test(o.label || ''));
+  assert(
+    !!champOpt,
+    `E2b: Champion is among the Fighter subclass options (${(subChoice?.options || []).map(o => o.label).join(', ')})`
+  );
+  if (champOpt) e5Choices[String(subChoice.level)][subChoice.id] = { uuid: champOpt.value };
+  const e5 = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: lvl5Name,
+      className: 'Fighter',
+      background: 'Soldier',
+      abilities: { str: 16, dex: 13, con: 14, int: 10, wis: 12, cha: 8 },
+      choices: e5Choices,
+      acceptDefaults: true,
+      level: 5,
+    }),
+    180_000,
+    'e5Build'
+  );
+  createdNames.push(lvl5Name);
+  console.log('\n--- Test E: level-5 Fighter build ---');
+  console.log(
+    JSON.stringify(
+      {
+        success: e5?.success,
+        actor: e5?.actor,
+        unresolvedScale: e5?.unresolvedScale,
+        warnings: e5?.warnings,
+      },
+      null,
+      2
+    )
+  );
+  assert(e5?.success === true, 'E3: level-5 Fighter built + persisted');
+  // d10: L1 max 10 + L2-5 avg 6×4 = 24 → 34 base + CON14(+2)×5 = +10 → 44
+  assert(
+    e5?.actor?.hp === 44,
+    `E4: multi-level HP correct = 44 (d10 max+4×avg6 +CON14×5) (got ${e5?.actor?.hp})`
+  );
+  const e5Read = await withNodeTimeout(
+    f.evaluate(id => {
+      const a = globalThis.game.actors.get(id);
+      a.reset?.();
+      const rd = a.getRollData();
+      return {
+        level: a.system?.details?.level,
+        subclass: a.items.find(i => i.type === 'subclass')?.name ?? null,
+        feats: a.items.filter(i => i.type === 'feat').map(i => i.name),
+        secondWind: String(
+          globalThis.Roll.replaceFormulaData('@scale.fighter.second-wind', rd, {
+            missing: '0',
+            warn: false,
+          })
+        ),
+        extraAttack: a.items.some(i => /extra attack/i.test(i.name)),
+      };
+    }, e5.actor.id),
+    60_000,
+    'e5Read'
+  );
+  console.log('\n--- Test E readback ---');
+  console.log(JSON.stringify(e5Read, null, 2));
+  assert(e5Read?.level === 5, `E5: persisted character level = 5 (got ${e5Read?.level})`);
+  assert(
+    e5Read?.subclass === 'Champion',
+    `E6: chosen subclass present (Champion; got ${e5Read?.subclass})`
+  );
+  assert(
+    e5Read?.feats?.some(n => /improved critical|remarkable athlete/i.test(n)),
+    `E7: subclass FEATURES granted by advancing the subclass item (feats: ${e5Read?.feats?.join(', ')})`
+  );
+  assert(e5Read?.extraAttack === true, 'E8: level-5 class feature present (Extra Attack)');
+  assert(
+    e5Read?.secondWind === '3',
+    `E9: @scale scales with level (Fighter L5 second-wind uses = 3; got ${e5Read?.secondWind})`
+  );
+  assert(
+    (e5?.unresolvedScale?.length ?? 0) === 0,
+    `E10: no unresolved @scale on the L5 Fighter (${JSON.stringify(e5?.unresolvedScale)})`
   );
 } catch (e) {
   fails++;

@@ -58,8 +58,10 @@ export interface PcBuildPlan {
   choices?: PcChoiceMap;
   /** Caster spell picks by NAME (cantrips always-prepared; leveled go to the spellbook). */
   spells?: { cantrips?: string[]; prepared?: string[] };
-  /** v1: 1. The engine loops levels {0..level} so v2 widening is data, not new code. */
+  /** Character level 1..20 (v2). The engine loops levels {0..level}; HP/subclass/slots scale with it. */
   level?: number;
+  /** HP per level past the first: 'avg' (2024 fixed average, default) or 'max'. L1 (original class) is always max. */
+  hpMode?: 'avg' | 'max';
   sourceRules?: string;
   folder?: string;
   /**
@@ -71,10 +73,10 @@ export interface PcBuildPlan {
   acceptDefaults?: boolean;
 }
 
-/** One choice point a class/species/background advancement exposes (descriptive — never auto-picked). */
+/** One choice point a class/species/background/subclass advancement exposes (descriptive — never auto-picked). */
 export interface AdvancementChoice {
   id: string;
-  source: 'class' | 'species' | 'background';
+  source: 'class' | 'species' | 'background' | 'subclass';
   level: number;
   type: string; // 'Trait' | 'ItemChoice' | 'Subclass'
   title: string;
@@ -291,16 +293,35 @@ function labelsForPool(configuration: any): Map<string, string> {
   return labels;
 }
 
+/** Premium subclass items whose classIdentifier matches — populates the L3 Subclass choice's options. */
+async function findSubclassesFor(
+  classIdentifier: string | undefined
+): Promise<Array<{ value: string; label?: string }>> {
+  if (!classIdentifier) return [];
+  const out: Array<{ value: string; label?: string }> = [];
+  for (const pack of game.packs) {
+    if (pack.documentName !== 'Item' || !isPremiumBookPack(pack.metadata.id)) continue;
+    const idx = await pack.getIndex({ fields: ['type', 'system.classIdentifier'] });
+    for (const e of idx as any) {
+      if (e.type === 'subclass' && e.system?.classIdentifier === classIdentifier) {
+        out.push({ value: `Compendium.${pack.metadata.id}.Item.${e._id}`, label: e.name });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Collect the player-facing choice points an item exposes at the given character levels. LIVE
  * (walks item.advancement). The pure summarizeChoice does the per-advancement shaping; this adds
- * live option labels and the level/source framing.
+ * live option labels (ItemChoice) + the available subclass list (Subclass), and the level/source
+ * framing. ASYNC because the Subclass enrichment scans premium packs for matching subclasses.
  */
-export function collectAdvancementChoices(
+export async function collectAdvancementChoices(
   item: any,
   levels: number[],
   source: AdvancementChoice['source']
-): AdvancementChoice[] {
+): Promise<AdvancementChoice[]> {
   const want = new Set(levels);
   const out: AdvancementChoice[] = [];
   for (const raw of extractAdvancements(item)) {
@@ -308,7 +329,12 @@ export function collectAdvancementChoices(
       if (!want.has(lvl)) continue;
       const labels = raw.type === 'ItemChoice' ? labelsForPool(raw.configuration) : undefined;
       const choice = summarizeChoice(raw, lvl, source, labels);
-      if (choice) out.push(choice);
+      if (!choice) continue;
+      // Subclass options aren't on the advancement config — scan the books for this class's subclasses.
+      if (choice.type === 'Subclass' && source === 'class') {
+        choice.options = await findSubclassesFor(item.system?.identifier);
+      }
+      out.push(choice);
     }
   }
   return out;
@@ -323,11 +349,12 @@ export function collectAdvancementChoices(
  */
 async function applyItemAdvancements(
   item: any,
-  source: 'class' | 'species' | 'background',
+  source: 'class' | 'species' | 'background' | 'subclass',
   levels: number[],
   choices: PcChoiceMap | undefined,
   applied: PcBuildResult['applied'],
-  warnings: string[]
+  warnings: string[],
+  hpMode: 'avg' | 'max' = 'avg'
 ): Promise<void> {
   const want = new Set(levels);
   const todo = extractAdvancements(item)
@@ -337,12 +364,24 @@ async function applyItemAdvancements(
   for (const { raw, level } of todo) {
     const rec = { source, level, type: raw.type, title: raw.title, result: 'applied' };
     try {
-      if (raw.type === 'AbilityScoreImprovement' && source !== 'class') {
-        rec.result = 'skipped (skill owns final ability scores)';
+      // HP per level: {initial:true} only sets the original class's L1; every other level MUST pass
+      // explicit data {[level]: mode}, else HP under-counts (proven: scripts/spike-pc-level.mjs).
+      if (raw.type === 'HitPoints') {
+        const mode = level === 1 && item.isOriginalClass ? 'max' : hpMode;
+        await raw.adv.apply(level, { [level]: mode });
+        rec.result = `hp:${mode}`;
         applied?.push(rec);
         continue;
       }
-      // 1) forced / automatic grants (HP max, mandatory features, forced profs)
+      // ASI: SKIP — the skill owns FINAL ability scores (design.md §2.1); a feat taken at an ASI tier
+      // is composed by the skill (import-item / add-feature), like equipment. (A 2024 class ASI no-ops
+      // under {initial} anyway: fixed all-0 + allowFeat → type=null.)
+      if (raw.type === 'AbilityScoreImprovement') {
+        rec.result = 'skipped (ability scores owned by the skill)';
+        applied?.push(rec);
+        continue;
+      }
+      // 1) forced / automatic grants (mandatory features, forced profs)
       await raw.adv.apply(level, {}, { initial: true });
       // 2) supplied player picks — NO initial (initial clobbers data.chosen for Trait)
       const data = choices?.[String(level)]?.[raw.id];
@@ -443,7 +482,7 @@ export async function inspectAdvancementChoices(args: {
     );
   }
 
-  const choices = collectAdvancementChoices(doc, levelsUpTo(level), 'class');
+  const choices = await collectAdvancementChoices(doc, levelsUpTo(level), 'class');
   return {
     class: { name: doc.name, identifier: doc.system?.identifier ?? null, pack: packId },
     level,
@@ -491,10 +530,13 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
   // 2. Compute required choices + what's missing — from the SOURCE docs, BEFORE any actor exists
   //    (so an incomplete request never litters a junk actor).
   const levels = levelsUpTo(level);
+  const hpMode = plan.hpMode ?? 'avg';
   const choiceSpecs: AdvancementChoice[] = [
-    ...collectAdvancementChoices(classRes.doc, levels, 'class'),
-    ...(speciesRes ? collectAdvancementChoices(speciesRes.doc, levels, 'species') : []),
-    ...(backgroundRes ? collectAdvancementChoices(backgroundRes.doc, levels, 'background') : []),
+    ...(await collectAdvancementChoices(classRes.doc, levels, 'class')),
+    ...(speciesRes ? await collectAdvancementChoices(speciesRes.doc, levels, 'species') : []),
+    ...(backgroundRes
+      ? await collectAdvancementChoices(backgroundRes.doc, levels, 'background')
+      : []),
   ];
   const missing = computeMissingChoices(choiceSpecs, plan.choices);
   if (missing.length > 0 && !plan.acceptDefaults) {
@@ -542,8 +584,24 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
       levels,
       plan.choices,
       applied,
-      warnings
+      warnings,
+      hpMode
     );
+
+    // Subclass (level 3+) — the class's Subclass advancement EMBEDS the subclass item but does NOT run
+    // its own advancements; run them now so subclass features land (proven: scripts/spike-pc-level.mjs).
+    const subclassItem = tmp.items.find((i: any) => i.type === 'subclass');
+    if (subclassItem) {
+      await applyItemAdvancements(
+        tmp.items.get(subclassItem.id),
+        'subclass',
+        levels,
+        plan.choices,
+        applied,
+        warnings,
+        hpMode
+      );
+    }
 
     // Species — level-0 racial features (incl. the ItemChoice that yields racial @scale).
     if (speciesRes) {
