@@ -84,20 +84,47 @@ async function getOrCreateFolder(folderName: string, type: string): Promise<stri
 /**
  * Delete many world documents by exact id or exact name using a resolver.
  * STRICT resolution — no fuzzy matching. Best-effort (no rollback).
+ * With `dryRun`, resolves the targets and reports what WOULD be deleted — nothing is removed.
  */
 async function deleteByResolver(
   _op: string,
   identifiers: string[],
-  resolver: (id: string) => any
+  resolver: (id: string) => any,
+  opts?: { dryRun?: boolean }
 ): Promise<{
   success: boolean;
   deletedCount: number;
   deleted: Array<{ id: string; name: string }>;
+  dryRun?: boolean;
+  wouldDelete?: Array<{ id: string; name: string }>;
   notFound?: string[];
   failed?: Array<{ id: string; name: string; error: string }>;
 }> {
   if (!Array.isArray(identifiers) || identifiers.length === 0) {
     throw new Error('identifiers array is required and must contain at least one entry');
+  }
+
+  // Dry-run: resolve and report the set that WOULD be destroyed, deleting nothing. Lets a caller
+  // confirm exactly which documents a bulk delete will permanently remove before committing.
+  if (opts?.dryRun) {
+    const wouldDelete: Array<{ id: string; name: string }> = [];
+    const notFoundDry: string[] = [];
+    for (const identifier of identifiers) {
+      const doc = resolver(identifier);
+      if (!doc) {
+        notFoundDry.push(identifier);
+        continue;
+      }
+      wouldDelete.push({ id: doc.id ?? identifier, name: doc.name ?? '' });
+    }
+    return {
+      success: true,
+      dryRun: true,
+      deletedCount: 0,
+      deleted: [],
+      wouldDelete,
+      ...(notFoundDry.length > 0 ? { notFound: notFoundDry } : {}),
+    };
   }
 
   const deleted: Array<{ id: string; name: string }> = [];
@@ -261,18 +288,23 @@ export async function moveDocuments(data: {
 /**
  * Permanently delete many world documents of a single type by exact id or
  * exact name. STRICT resolution — no fuzzy matching.
+ * With `dryRun`, returns the set that WOULD be deleted without removing anything.
  */
 export async function bulkDelete(data: {
   documentType: string;
   identifiers: string[];
+  dryRun?: boolean;
 }): Promise<unknown> {
   if (!WORLD_DOC_TYPES.includes(data.documentType)) {
     throw new Error(
       `Unknown documentType "${data.documentType}". Valid: ${WORLD_DOC_TYPES.join(', ')}`
     );
   }
-  return deleteByResolver(`bulkDelete:${data.documentType}`, data.identifiers, id =>
-    resolveDocStrict(data.documentType, id)
+  return deleteByResolver(
+    `bulkDelete:${data.documentType}`,
+    data.identifiers,
+    id => resolveDocStrict(data.documentType, id),
+    { dryRun: !!data.dryRun }
   );
 }
 

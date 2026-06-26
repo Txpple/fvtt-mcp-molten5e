@@ -60,6 +60,13 @@ const BulkDeleteSchema = z.object({
     .array(z.string().min(1))
     .min(1)
     .describe('Exact ids (preferred) or exact names to delete.'),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Preview only: report exactly which documents WOULD be deleted (and which were not found) ' +
+        'without deleting anything. Run a dry-run first to confirm an irreversible bulk delete.'
+    ),
 });
 
 export class OrganizationTools {
@@ -92,7 +99,8 @@ export class OrganizationTools {
         name: 'bulk-delete',
         description:
           'Permanently delete many world documents of a single type by exact id or exact name. ' +
-          'STRICT resolution — no fuzzy/substring matching. For folders use delete-folder. GM-only.',
+          'STRICT resolution — no fuzzy/substring matching. IRREVERSIBLE — pass dryRun:true first to ' +
+          'preview exactly what would be deleted. For folders use delete-folder. GM-only.',
         inputSchema: toInputSchema(BulkDeleteSchema),
       },
     ];
@@ -119,7 +127,18 @@ export class OrganizationTools {
 
   async handleBulkDelete(args: any): Promise<string> {
     const parsed = BulkDeleteSchema.parse(args ?? {});
-    const result = await this.foundry.call('bulkDelete', parsed);
+    const result: any = await this.foundry.call('bulkDelete', parsed);
+    if (result?.dryRun) {
+      const would = result.wouldDelete ?? [];
+      const lines = would.map((d: any) => `  - ${d.name || '(unnamed)'} (${d.id})`).join('\n');
+      const notFound =
+        result.notFound && result.notFound.length > 0
+          ? `\n  not found: ${result.notFound.join(', ')}`
+          : '';
+      return would.length
+        ? `Dry run — would delete ${would.length} ${parsed.documentType} document(s):\n${lines}${notFound}\n\nRe-run without dryRun to delete them (IRREVERSIBLE).`
+        : `Dry run — nothing matched.${notFound}`;
+    }
     return formatDeletionResult(result, `${parsed.documentType} document(s)`);
   }
 }

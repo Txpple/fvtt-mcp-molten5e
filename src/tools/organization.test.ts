@@ -161,6 +161,27 @@ describe('handleBulkDelete', () => {
     expect(out).toContain('not found: nope');
   });
 
+  it('renders a dry-run preview without claiming anything was deleted', async () => {
+    const { tools, calls } = build({
+      dryRun: true,
+      deletedCount: 0,
+      deleted: [],
+      wouldDelete: [
+        { name: 'Goblin', id: 'g1' },
+        { name: 'Kobold', id: 'k1' },
+      ],
+    });
+    const out = await tools.handleBulkDelete({
+      documentType: 'Actor',
+      identifiers: ['g1', 'k1'],
+      dryRun: true,
+    });
+    expect(calls[0][1].dryRun).toBe(true);
+    expect(out).toContain('Dry run — would delete 2 Actor document(s)');
+    expect(out).toContain('Goblin (g1)');
+    expect(out).not.toContain('Deleted');
+  });
+
   it('rejects a missing documentType', async () => {
     const { tools } = build();
     await expect(tools.handleBulkDelete({ identifiers: ['x'] })).rejects.toThrow();
