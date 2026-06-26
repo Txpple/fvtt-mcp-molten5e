@@ -47,10 +47,10 @@ class/species/background not in the books is an **error, not invented**. If the 
 species that isn't in the library, stop and ask — don't substitute or fabricate.
 
 > **Scope = full PCs, levels 1–20, incl. multiclass.** `create-pc` builds a complete PC at any `level`
-> 1–20 (HP, features, **subclass at level 3**, spell slots all scale). **`level-up-pc`** adds one class
-> level to an existing PC — the same class (a level-up) or a new class (a **multiclass**). A multiclass
-> from scratch = `create-pc` the primary class, then `level-up-pc` into the second class (see "Levelling
-> & multiclassing" below). Everything PC-side is now wired.
+> 1–20 (HP, features, **subclass at level 3**, spell slots all scale), including a **multiclass build in
+> one call** via `multiclass: [{className, levels}]` (primary = `className`/`level`). **`level-up-pc`**
+> adds one class level to an existing PC — the same class (a level-up) or a new class (a **multiclass**).
+> See "Levelling up & multiclassing" below. Everything PC-side is now wired.
 
 ## The shape of a build
 
@@ -214,8 +214,18 @@ place. It's the "ding, you levelled" workflow AND the way to multiclass.
   multiclass proficiency subset** (e.g. multiclassing into Wizard grants no skills/saves; into Fighter,
   only some armor/weapons) — the tool handles that automatically. The new class's first level uses **avg**
   HP (never max — only the original class maxes its first level). Spell slots for a multiclass caster
-  derive automatically. **Build a multiclass from scratch** = `create-pc` the primary class (at whatever
-  level), then `level-up-pc` into the second class one level at a time.
+  derive automatically.
+- **Multiclass from scratch — two ways:**
+  - **One shot (preferred when you know the spread up front)** — `create-pc` with
+    `multiclass: [{ className, levels }, …]`. `className`/`level` is the **primary** class (the
+    originalClass — its first level maxes HP); each `multiclass[]` entry is a secondary class that gets
+    the 2024 proficiency subset and avg first-level HP. The total (primary `level` + every
+    `multiclass.levels`) must be ≤ 20; a class may appear only once. The `needsChoices[]` dry-run
+    aggregates **all** classes' picks (keyed level → advancement-id; ids disambiguate same-level picks);
+    for clarity you can also `inspect-pc-advancement` each class separately. The result reports a
+    `classes[]` breakdown when multiclassed. Spell slots for a multiclass caster derive automatically.
+  - **Incremental** — `create-pc` the primary class, then `level-up-pc` into the second class one level
+    at a time (the in-play path: "I'm dipping a level of Wizard at level 6").
 - **Choices on level-up** — same as `create-pc`: call with no/partial `choices` to get a `needsChoices[]`
   dry-run (e.g. the subclass options when the class reaches level 3) — **the PC is NOT changed** — then
   fill `choices` (keyed by the **class** level → advancement-id) and re-call. Ask the player for the

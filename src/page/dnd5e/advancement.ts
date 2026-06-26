@@ -65,6 +65,14 @@ export interface PcBuildPlan {
   spells?: { cantrips?: string[]; prepared?: string[] };
   /** Character level 1..20 (v2). The engine loops levels {0..level}; HP/subclass/slots scale with it. */
   level?: number;
+  /**
+   * Additional classes for a multiclass PC built in ONE call (v4). Each is a SECONDARY class — the
+   * `className`/`level` above is the PRIMARY (the originalClass). A secondary class gets the 2024
+   * multiclass proficiency SUBSET (via classRestriction) and its first level's HP is the average, not
+   * max. Total character level (primary `level` + every multiclass `levels`) must be ≤ 20, and a class
+   * may appear only once (use levelUpPc to add further levels to an existing class).
+   */
+  multiclass?: Array<{ className: string; levels: number }>;
   /** HP per level past the first: 'avg' (2024 fixed average, default) or 'max'. L1 (original class) is always max. */
   hpMode?: 'avg' | 'max';
   sourceRules?: string;
@@ -107,7 +115,10 @@ interface RawAdvancement {
 }
 
 /** Should an advancement with this classRestriction be applied for a class taken in this role? */
-function allowedForRole(classRestriction: string, classRole?: 'primary' | 'secondary'): boolean {
+export function allowedForRole(
+  classRestriction: string,
+  classRole?: 'primary' | 'secondary'
+): boolean {
   if (!classRole) return true; // species/background/subclass — restriction never set
   if (classRole === 'primary') return classRestriction !== 'secondary';
   return classRestriction !== 'primary'; // secondary (multiclass) — skip primary-only profs
@@ -467,6 +478,65 @@ function findGenuinelyUnresolvedScale(
   return out;
 }
 
+/**
+ * Embed ONE class on the build actor at `classLevel`, then apply its advancements across [0..classLevel]
+ * — followed by its subclass's OWN advancements (matched by classIdentifier, so a multiclass build
+ * applies each class's subclass to the right class). The PRIMARY class is flagged the originalClass
+ * BEFORE its HitPoints apply (so its L1 HP is max); a SECONDARY (multiclass) class is not, so its first
+ * level's HP is the average and the 2024 classRestriction proficiency subset applies. Returns the
+ * embedded class item id. Shared by createPcActor's primary + multiclass paths.
+ */
+async function embedClassAndApply(
+  tmp: any,
+  classDoc: any,
+  classLevel: number,
+  role: 'primary' | 'secondary',
+  choices: PcChoiceMap | undefined,
+  applied: PcBuildResult['applied'],
+  warnings: string[],
+  hpMode: 'avg' | 'max'
+): Promise<string> {
+  const classLevels = levelsUpTo(classLevel);
+  const classData = classDoc.toObject();
+  delete classData._id;
+  classData.system = classData.system ?? {};
+  classData.system.levels = classLevel;
+  const [classItem] = await tmp.createEmbeddedDocuments('Item', [classData]);
+  if (role === 'primary') {
+    tmp.updateSource({ 'system.details.originalClass': classItem.id });
+  }
+  await applyItemAdvancements(
+    tmp.items.get(classItem.id),
+    'class',
+    classLevels,
+    choices,
+    applied,
+    warnings,
+    hpMode,
+    role
+  );
+
+  // Subclass (level 3+): the class's Subclass advancement EMBEDS the subclass item but does NOT run its
+  // own advancements; run them now so subclass features land (proven: scripts/spike-pc-level.mjs).
+  // Matched by classIdentifier so a multiclass build never runs class A's subclass against class B.
+  const classId = classDoc.system?.identifier;
+  const subclassItem = tmp.items.find(
+    (i: any) => i.type === 'subclass' && i.system?.classIdentifier === classId
+  );
+  if (subclassItem) {
+    await applyItemAdvancements(
+      tmp.items.get(subclassItem.id),
+      'subclass',
+      classLevels,
+      choices,
+      applied,
+      warnings,
+      hpMode
+    );
+  }
+  return classItem.id;
+}
+
 // =============================================================================
 // inspectAdvancementChoices — read-only introspection (backs inspect-pc-advancement).
 // =============================================================================
@@ -556,17 +626,57 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     );
   }
 
+  // Multiclass (v4) — each additional class is a SECONDARY class (gets the 2024 proficiency subset).
+  // Resolve premium-gated, reject a class appearing twice + a total level over 20, BEFORE any actor
+  // exists (a bad request never litters a junk actor).
+  const multiclassRes: Array<{ doc: any; levels: number; name: string }> = [];
+  const seenClassIds = new Set<unknown>([classRes.doc.system?.identifier]);
+  for (const mc of plan.multiclass ?? []) {
+    const res = await resolvePremiumDocByType('class', mc.className);
+    if (!res) {
+      throw new Error(
+        `Multiclass "${mc.className}" not found in the premium books (design.md §2.3 — never the SRD). ` +
+          'Use the exact PHB class name; try search-compendium.'
+      );
+    }
+    const id = res.doc.system?.identifier;
+    if (seenClassIds.has(id)) {
+      throw new Error(
+        `Class "${mc.className}" is listed more than once — a PC cannot multiclass into the same class. ` +
+          'Use level-up-pc to add further levels to a class the PC already has.'
+      );
+    }
+    seenClassIds.add(id);
+    multiclassRes.push({ doc: res.doc, levels: mc.levels, name: res.doc.name });
+  }
+  const totalLevel = level + multiclassRes.reduce((s, m) => s + m.levels, 0);
+  if (totalLevel > 20) {
+    throw new Error(
+      `Total character level ${totalLevel} exceeds 20 (primary ${classRes.doc.name} ${level}` +
+        `${multiclassRes.map(m => ` + ${m.name} ${m.levels}`).join('')}).`
+    );
+  }
+
   // 2. Compute required choices + what's missing — from the SOURCE docs, BEFORE any actor exists
-  //    (so an incomplete request never litters a junk actor).
+  //    (so an incomplete request never litters a junk actor). Each class contributes its own choice
+  //    points (primary vs secondary role drives the multiclass proficiency subset); the flat choices
+  //    map disambiguates by advancement id, so two classes' same-level picks never collide.
   const levels = levelsUpTo(level);
   const hpMode = plan.hpMode ?? 'avg';
   const choiceSpecs: AdvancementChoice[] = [
     ...(await collectAdvancementChoices(classRes.doc, levels, 'class', 'primary')),
-    ...(speciesRes ? await collectAdvancementChoices(speciesRes.doc, levels, 'species') : []),
-    ...(backgroundRes
-      ? await collectAdvancementChoices(backgroundRes.doc, levels, 'background')
-      : []),
   ];
+  for (const mc of multiclassRes) {
+    choiceSpecs.push(
+      ...(await collectAdvancementChoices(mc.doc, levelsUpTo(mc.levels), 'class', 'secondary'))
+    );
+  }
+  if (speciesRes) {
+    choiceSpecs.push(...(await collectAdvancementChoices(speciesRes.doc, levels, 'species')));
+  }
+  if (backgroundRes) {
+    choiceSpecs.push(...(await collectAdvancementChoices(backgroundRes.doc, levels, 'background')));
+  }
   const missing = computeMissingChoices(choiceSpecs, plan.choices);
   if (missing.length > 0 && !plan.acceptDefaults) {
     return {
@@ -600,32 +710,25 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     tmp = await ActorClass.create({ name: `__mcp_pc_build_${plan.name}`, type: 'character' });
     if (!tmp) throw new Error('Failed to create the temporary build actor');
 
-    // Class — embed at system.levels=N, flag original BEFORE applying HitPoints, then apply.
-    const classData = classRes.doc.toObject();
-    delete classData._id;
-    classData.system = classData.system ?? {};
-    classData.system.levels = level;
-    const [classItem] = await tmp.createEmbeddedDocuments('Item', [classData]);
-    tmp.updateSource({ 'system.details.originalClass': classItem.id });
-    await applyItemAdvancements(
-      tmp.items.get(classItem.id),
-      'class',
-      levels,
+    // Primary class — embed at system.levels=`level`, flag the originalClass (so its L1 HP is max),
+    // apply its advancements + its subclass's. Multiclass classes follow as SECONDARY (each gets the
+    // 2024 proficiency subset; first-level HP is the average).
+    await embedClassAndApply(
+      tmp,
+      classRes.doc,
+      level,
+      'primary',
       plan.choices,
       applied,
       warnings,
-      hpMode,
-      'primary'
+      hpMode
     );
-
-    // Subclass (level 3+) — the class's Subclass advancement EMBEDS the subclass item but does NOT run
-    // its own advancements; run them now so subclass features land (proven: scripts/spike-pc-level.mjs).
-    const subclassItem = tmp.items.find((i: any) => i.type === 'subclass');
-    if (subclassItem) {
-      await applyItemAdvancements(
-        tmp.items.get(subclassItem.id),
-        'subclass',
-        levels,
+    for (const mc of multiclassRes) {
+      await embedClassAndApply(
+        tmp,
+        mc.doc,
+        mc.levels,
+        'secondary',
         plan.choices,
         applied,
         warnings,
@@ -702,8 +805,12 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     // Re-fetch FRESH + reset() so derived data (HP, @scale) re-prepares from persisted source.
     let fresh = game.actors.get(real.id);
     fresh.reset?.();
-    // Defensive: re-anchor originalClass if the persisted class item id drifted.
-    const classOnFresh = fresh.items.find((i: any) => i.type === 'class');
+    // Defensive: re-anchor originalClass to the PRIMARY class (matched by identifier) if the persisted
+    // class item id drifted — `.find` alone would pick an arbitrary class on a multiclass actor.
+    const primaryClassId = classRes.doc.system?.identifier;
+    const classOnFresh =
+      fresh.items.find((i: any) => i.type === 'class' && i.system?.identifier === primaryClassId) ??
+      fresh.items.find((i: any) => i.type === 'class');
     if (classOnFresh && fresh.system?.details?.originalClass !== classOnFresh.id) {
       await fresh.update({ 'system.details.originalClass': classOnFresh.id });
       fresh = game.actors.get(real.id);
@@ -720,9 +827,16 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
         className: classRes.doc.name,
         species: speciesRes?.doc.name ?? null,
         background: backgroundRes?.doc.name ?? null,
-        level,
+        level: totalLevel,
         hp: fresh.system?.attributes?.hp?.max ?? null,
         folder: folderId ?? null,
+        ...(multiclassRes.length > 0
+          ? {
+              classes: fresh.items
+                .filter((i: any) => i.type === 'class')
+                .map((i: any) => ({ name: i.name, levels: i.system?.levels ?? 0 })),
+            }
+          : {}),
       },
       applied,
       ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),

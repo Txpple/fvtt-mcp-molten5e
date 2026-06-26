@@ -13,6 +13,7 @@ import {
   summarizeChoice,
   isChoiceSatisfied,
   computeMissingChoices,
+  allowedForRole,
   type AdvancementChoice,
   type PcChoiceMap,
 } from './advancement.js';
@@ -172,6 +173,26 @@ describe('summarizeChoice', () => {
         'class'
       )
     ).toBeNull();
+  });
+});
+
+describe('allowedForRole (the 2024 multiclass proficiency-subset rule)', () => {
+  it('species/background/subclass (no role) always apply', () => {
+    expect(allowedForRole('', undefined)).toBe(true);
+    expect(allowedForRole('primary', undefined)).toBe(true);
+    expect(allowedForRole('secondary', undefined)).toBe(true);
+  });
+
+  it('a PRIMARY (original) class applies everything except secondary-only advancements', () => {
+    expect(allowedForRole('', 'primary')).toBe(true);
+    expect(allowedForRole('primary', 'primary')).toBe(true);
+    expect(allowedForRole('secondary', 'primary')).toBe(false);
+  });
+
+  it('a SECONDARY (multiclass) class skips the primary-only profs, keeps the rest', () => {
+    expect(allowedForRole('', 'secondary')).toBe(true);
+    expect(allowedForRole('secondary', 'secondary')).toBe(true);
+    expect(allowedForRole('primary', 'secondary')).toBe(false);
   });
 });
 

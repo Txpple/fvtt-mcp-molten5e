@@ -96,6 +96,56 @@ describe('handleCreatePc', () => {
     expect(res.message).toContain('HP:');
   });
 
+  it('forwards a multiclass[] plan and renders the class breakdown', async () => {
+    const { tool, calls } = makeTool(name =>
+      name === 'createPcActor'
+        ? {
+            success: true,
+            actor: {
+              id: 'p1',
+              name: 'Vesh',
+              className: 'Fighter',
+              level: 2,
+              hp: 14,
+              classes: [
+                { name: 'Fighter', levels: 1 },
+                { name: 'Wizard', levels: 1 },
+              ],
+            },
+            applied: [],
+            warnings: [],
+          }
+        : {}
+    );
+    const res = await tool.handleCreatePc({
+      name: 'Vesh',
+      className: 'Fighter',
+      multiclass: [{ className: 'Wizard', levels: 1 }],
+    });
+    const call = calls.find(([n]) => n === 'createPcActor');
+    expect(call?.[1].multiclass).toEqual([{ className: 'Wizard', levels: 1 }]);
+    expect(res.success).toBe(true);
+    expect(res.message).toContain('Fighter 1 / Wizard 1');
+  });
+
+  it('rejects a multiclass entry with an empty className or non-positive levels', async () => {
+    const { tool } = makeTool(() => ({}));
+    await expect(
+      tool.handleCreatePc({
+        name: 'X',
+        className: 'Fighter',
+        multiclass: [{ className: '', levels: 1 }],
+      })
+    ).rejects.toThrow();
+    await expect(
+      tool.handleCreatePc({
+        name: 'X',
+        className: 'Fighter',
+        multiclass: [{ className: 'Wizard', levels: 0 }],
+      })
+    ).rejects.toThrow();
+  });
+
   it('shapes a needsChoices dry-run response (success:false, nothing created)', async () => {
     const { tool } = makeTool(name =>
       name === 'createPcActor'

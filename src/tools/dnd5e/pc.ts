@@ -55,7 +55,19 @@ const CreatePcSchema = z.object({
     })
     .optional(),
   // Character level 1..20. HP/subclass/spell-slots scale with it; subclass is granted at level 3.
+  // For a multiclass PC this is the PRIMARY class's level (see `multiclass`).
   level: z.number().int().min(1).max(20).default(1),
+  // Multiclass: additional SECONDARY classes built in the same call (className/level above is the
+  // primary / originalClass). Each gets the 2024 multiclass proficiency subset; total character level
+  // (level + every multiclass.levels) must be ≤ 20; a class may appear only once.
+  multiclass: z
+    .array(
+      z.object({
+        className: z.string().min(1, 'multiclass className cannot be empty'),
+        levels: z.number().int().min(1).max(19),
+      })
+    )
+    .optional(),
   // HP per level past the first: 'avg' (2024 fixed average, default) or 'max'. L1 is always max.
   hpMode: z.enum(['avg', 'max']).default('avg'),
   sourceRules: z.enum(['2014', '2024']).default('2024'),
@@ -103,7 +115,9 @@ const CREATE_PC_DESCRIPTION =
   'Call with no/partial choices first to get a `needsChoices[]` dry-run (legal options per choice — ' +
   'incl. the available subclasses at level 3 — NOTHING is created); fill the map and re-call. ' +
   'Levels 1-20: HP/features/subclass/spell-slots scale with `level` (subclass at L3 via a `choices` ' +
-  'uuid; HP per level `hpMode` avg|max). Caster spell slots auto-derive from the class; pass ' +
+  'uuid; HP per level `hpMode` avg|max). Multiclass in ONE call via `multiclass:[{className,levels}]` ' +
+  '(className/level is the primary; each multiclass class gets the 2024 proficiency subset; total ≤ 20). ' +
+  'Caster spell slots auto-derive from the class; pass ' +
   '`spells.cantrips`/`spells.prepared` (names) to add chosen spells. ASI ability-increases ride in the ' +
   'FINAL scores (not applied separately); a feat taken at an ASI tier is added by the skill via ' +
   'add-feature/import-item, like equipment — this tool adds no gear or ASI-feats. Returns ' +
@@ -268,6 +282,13 @@ export class DnD5ePcTools {
       `**Build:** ${actor.className}${actor.species ? ` · ${actor.species}` : ''}${actor.background ? ` · ${actor.background}` : ''} (level ${actor.level})`,
       `**HP:** ${actor.hp ?? '—'}`,
     ];
+    if (Array.isArray(actor.classes) && actor.classes.length > 1) {
+      lines.splice(
+        2,
+        0,
+        `**Classes:** ${actor.classes.map((c: any) => `${c.name} ${c.levels}`).join(' / ')}`
+      );
+    }
     if (actor.folder) lines.push(`**Folder:** ${actor.folder}`);
     if (Array.isArray(result?.applied)) {
       const choices = result.applied.filter((a: any) => /\+choice/.test(a.result));

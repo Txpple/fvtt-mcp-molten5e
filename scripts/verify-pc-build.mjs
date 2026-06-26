@@ -557,6 +557,114 @@ try {
     h3?.success === true && h3?.actor?.level === 3,
     `H4: leveled to 3 with a subclass (level ${h3?.actor?.level})`
   );
+
+  // ---- Test I (v4): ONE-SHOT MULTICLASS from create-pc — Fighter 1 / Wizard 1 in a single call ----
+  const mcName = `${TAG} MC Fighter-Wizard`;
+  const iDry = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: mcName,
+      className: 'Fighter',
+      multiclass: [{ className: 'Wizard', levels: 1 }],
+      abilities: { str: 15, dex: 13, con: 14, int: 14, wis: 10, cha: 8 },
+      level: 1,
+    }),
+    120_000,
+    'iDry'
+  );
+  console.log('\n--- Test I: one-shot multiclass dry-run ---');
+  console.log(
+    JSON.stringify(
+      iDry?.needsChoices?.map(c => ({
+        src: c.source,
+        title: c.title,
+        type: c.type,
+        level: c.level,
+      })),
+      null,
+      2
+    )
+  );
+  assert(iDry?.success === false, 'I1: one-shot multiclass dry-run refuses without choices');
+  // The classRestriction subset applies at choice-COLLECTION time too: the secondary (multiclass)
+  // Wizard's skill-proficiency Trait is classRestriction:'primary', so it is NOT surfaced — only the
+  // primary Fighter's skill Trait appears (exactly one).
+  const skillTraitCount =
+    iDry?.needsChoices?.filter(c => c.type === 'Trait' && /skill/i.test(c.title)).length ?? 0;
+  assert(
+    skillTraitCount === 1,
+    `I2: multiclass subset at the choice level — only the PRIMARY class's Skill Trait surfaces, not the secondary Wizard's primary-only one (${skillTraitCount})`
+  );
+
+  const i = await withNodeTimeout(
+    f.call('createPcActor', {
+      name: mcName,
+      className: 'Fighter',
+      multiclass: [{ className: 'Wizard', levels: 1 }],
+      abilities: { str: 15, dex: 13, con: 14, int: 14, wis: 10, cha: 8 },
+      choices: fillChoices(iDry?.needsChoices ?? []),
+      acceptDefaults: true,
+      level: 1,
+    }),
+    180_000,
+    'iBuild'
+  );
+  createdNames.push(mcName);
+  console.log('\n--- Test I: one-shot multiclass build ---');
+  console.log(
+    JSON.stringify(
+      {
+        success: i?.success,
+        actor: i?.actor,
+        unresolvedScale: i?.unresolvedScale,
+        warnings: i?.warnings,
+      },
+      null,
+      2
+    )
+  );
+  assert(i?.success === true, 'I3: one-shot multiclass built + persisted');
+  assert(i?.actor?.level === 2, `I4: total character level = 2 (got ${i?.actor?.level})`);
+  assert(
+    (i?.actor?.classes || []).some(c => c.name === 'Fighter' && c.levels === 1) &&
+      (i?.actor?.classes || []).some(c => c.name === 'Wizard' && c.levels === 1),
+    `I5: two class items Fighter 1 / Wizard 1 (${JSON.stringify(i?.actor?.classes)})`
+  );
+  // Fighter L1 max d10(10)+CON2=12  +  Wizard L1 avg d6(4)+CON2=6  → 18
+  assert(
+    i?.actor?.hp === 18,
+    `I6: multiclass HP = 18 (Fighter d10 max + Wizard d6 avg + CON×2) (got ${i?.actor?.hp})`
+  );
+  const iRead = await withNodeTimeout(
+    f.evaluate(id => {
+      const a = globalThis.game.actors.get(id);
+      a.reset?.();
+      const cls = a.items.filter(it => it.type === 'class');
+      return {
+        primaryClass: cls.find(c => c.id === a.system?.details?.originalClass)?.name ?? null,
+        spell1: a.system?.spells?.spell1?.max,
+        saves: Object.entries(a.system?.abilities || {})
+          .filter(([, v]) => v?.proficient)
+          .map(([k]) => k),
+      };
+    }, i.actor.id),
+    60_000,
+    'iRead'
+  );
+  console.log(JSON.stringify(iRead, null, 2));
+  assert(
+    iRead?.primaryClass === 'Fighter',
+    `I7: originalClass anchored to the PRIMARY (Fighter) (got ${iRead?.primaryClass})`
+  );
+  assert(
+    iRead?.spell1 >= 2,
+    `I8: multiclass Wizard spell slots auto-derive (spell1.max=${iRead?.spell1})`
+  );
+  assert(
+    iRead?.saves?.includes('str') &&
+      iRead?.saves?.includes('con') &&
+      !iRead?.saves?.includes('int'),
+    `I9: multiclass proficiency SUBSET — Fighter str/con saves kept, Wizard INT save NOT granted (saves: ${iRead?.saves?.join(', ')})`
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-pc] FATAL: ${e?.message || String(e)}`);
