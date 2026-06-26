@@ -126,6 +126,79 @@ export function allowedForRole(
   return classRestriction !== 'primary'; // secondary (multiclass) — skip primary-only profs
 }
 
+/** What `applyItemAdvancements` decides to do for ONE advancement at ONE level — pure, no side effects. */
+export type AdvancementStep =
+  | { kind: 'skip'; reason: string }
+  | { kind: 'apply'; data: Record<string, unknown>; initial: boolean; result?: string };
+
+export interface AdvancementPlanInput {
+  type: string;
+  classRestriction: string;
+  level: number;
+  // `| undefined` (not just optional) so callers can pass the threaded classRole through verbatim under
+  // exactOptionalPropertyTypes (species/background/subclass have no role).
+  classRole?: 'primary' | 'secondary' | undefined;
+  /** the class item carrying this advancement is the originalClass (its L1 HP is max). */
+  isOriginalClass: boolean;
+  hpMode: 'avg' | 'max';
+  /** the supplied choice for this level+advancement (choices[String(level)][id]), if any. */
+  choiceData?: { chosen?: unknown; selected?: unknown; uuid?: unknown } | undefined;
+}
+
+/**
+ * The apply-sequencing DECISION for one advancement, extracted PURE so the subtle ordering (the
+ * 2024 multiclass role subset, original-L1-max HP, the ASI skip, and the two-step forced-then-pick
+ * apply for Trait/ItemChoice/Subclass) is unit-testable offline. `applyItemAdvancements` executes
+ * the returned steps (the only side effect — advancement.apply — stays there). Mirrors design.md's
+ * "tools own deterministic correctness." Levels: {initial:true} only sets the original class's L1;
+ * every other level passes explicit HP data, else HP under-counts. {initial} clobbers data.chosen for
+ * a Trait, so a supplied pick is a SECOND apply with no initial.
+ */
+export function planAdvancementApply(input: AdvancementPlanInput): AdvancementStep[] {
+  const { type, classRestriction, level, classRole, isOriginalClass, hpMode, choiceData } = input;
+
+  if (!allowedForRole(classRestriction, classRole)) {
+    return [
+      { kind: 'skip', reason: `skipped (${classRestriction}-only; this class is ${classRole})` },
+    ];
+  }
+  if (type === 'HitPoints') {
+    const mode = level === 1 && isOriginalClass ? 'max' : hpMode;
+    return [{ kind: 'apply', data: { [level]: mode }, initial: false, result: `hp:${mode}` }];
+  }
+  if (type === 'AbilityScoreImprovement') {
+    // The skill owns FINAL ability scores (§2.1); a feat at an ASI tier is composed via add-feature.
+    return [{ kind: 'skip', reason: 'skipped (ability scores owned by the skill)' }];
+  }
+
+  // 1) forced / automatic grants, then 2) the supplied player pick (no initial — it clobbers data).
+  const steps: AdvancementStep[] = [{ kind: 'apply', data: {}, initial: true }];
+  const d = choiceData;
+  if (d && type === 'Trait' && Array.isArray(d.chosen) && d.chosen.length) {
+    steps.push({
+      kind: 'apply',
+      data: { chosen: d.chosen },
+      initial: false,
+      result: 'applied (+choice)',
+    });
+  } else if (d && type === 'ItemChoice' && Array.isArray(d.selected) && d.selected.length) {
+    steps.push({
+      kind: 'apply',
+      data: { selected: d.selected },
+      initial: false,
+      result: 'applied (+choice)',
+    });
+  } else if (d && type === 'Subclass' && typeof d.uuid === 'string') {
+    steps.push({
+      kind: 'apply',
+      data: { uuid: d.uuid },
+      initial: false,
+      result: 'applied (+choice)',
+    });
+  }
+  return steps;
+}
+
 export interface PcBuildResult {
   success: boolean;
   actor?: {
@@ -410,53 +483,28 @@ async function applyItemAdvancements(
   for (const { raw, level } of todo) {
     const rec = { source, level, type: raw.type, title: raw.title, result: 'applied' };
     try {
-      // Multiclass subset: a class taken as primary (original) skips 'secondary'-only advancements
-      // and vice-versa (2024 rules — proven via classRestriction in scripts/spike-pc-v3.mjs).
-      if (!allowedForRole(raw.classRestriction, classRole)) {
-        rec.result = `skipped (${raw.classRestriction}-only; this class is ${classRole})`;
-        applied?.push(rec);
-        continue;
-      }
-      // HP per level: {initial:true} only sets the original class's L1; every other level MUST pass
-      // explicit data {[level]: mode}, else HP under-counts (proven: scripts/spike-pc-level.mjs).
-      if (raw.type === 'HitPoints') {
-        const mode = level === 1 && item.isOriginalClass ? 'max' : hpMode;
-        await raw.adv.apply(level, { [level]: mode });
-        rec.result = `hp:${mode}`;
-        applied?.push(rec);
-        continue;
-      }
-      // ASI: SKIP — the skill owns FINAL ability scores (design.md §2.1); a feat taken at an ASI tier
-      // is composed by the skill (import-item / add-feature), like equipment. (A 2024 class ASI no-ops
-      // under {initial} anyway: fixed all-0 + allowFeat → type=null.)
-      if (raw.type === 'AbilityScoreImprovement') {
-        rec.result = 'skipped (ability scores owned by the skill)';
-        applied?.push(rec);
-        continue;
-      }
-      // 1) forced / automatic grants (mandatory features, forced profs)
-      await raw.adv.apply(level, {}, { initial: true });
-      // 2) supplied player picks — NO initial (initial clobbers data.chosen for Trait)
-      const data = choices?.[String(level)]?.[raw.id];
-      if (
-        data &&
-        raw.type === 'Trait' &&
-        Array.isArray((data as any).chosen) &&
-        (data as any).chosen.length
-      ) {
-        await raw.adv.apply(level, { chosen: (data as any).chosen });
-        rec.result = 'applied (+choice)';
-      } else if (
-        data &&
-        raw.type === 'ItemChoice' &&
-        Array.isArray((data as any).selected) &&
-        (data as any).selected.length
-      ) {
-        await raw.adv.apply(level, { selected: (data as any).selected });
-        rec.result = 'applied (+choice)';
-      } else if (data && raw.type === 'Subclass' && typeof (data as any).uuid === 'string') {
-        await raw.adv.apply(level, { uuid: (data as any).uuid });
-        rec.result = 'applied (+choice)';
+      // The DECISION (role subset, original-L1-max HP, ASI skip, two-step forced-then-pick) is the pure
+      // planAdvancementApply (unit-tested); here we only EXECUTE its steps. The only side effect — the
+      // live advancement.apply — stays in this loop.
+      const steps = planAdvancementApply({
+        type: raw.type,
+        classRestriction: raw.classRestriction,
+        level,
+        classRole,
+        isOriginalClass: !!item.isOriginalClass,
+        hpMode,
+        choiceData: choices?.[String(level)]?.[raw.id] as AdvancementPlanInput['choiceData'],
+      });
+      for (const step of steps) {
+        if (step.kind === 'skip') {
+          rec.result = step.reason;
+        } else if (step.initial) {
+          await raw.adv.apply(level, step.data, { initial: true });
+          if (step.result) rec.result = step.result;
+        } else {
+          await raw.adv.apply(level, step.data);
+          if (step.result) rec.result = step.result;
+        }
       }
     } catch (e) {
       rec.result = `error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;

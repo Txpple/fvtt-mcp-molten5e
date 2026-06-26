@@ -14,7 +14,9 @@ import {
   isChoiceSatisfied,
   computeMissingChoices,
   allowedForRole,
+  planAdvancementApply,
   type AdvancementChoice,
+  type AdvancementPlanInput,
   type PcChoiceMap,
 } from './advancement.js';
 
@@ -193,6 +195,146 @@ describe('allowedForRole (the 2024 multiclass proficiency-subset rule)', () => {
     expect(allowedForRole('', 'secondary')).toBe(true);
     expect(allowedForRole('secondary', 'secondary')).toBe(true);
     expect(allowedForRole('primary', 'secondary')).toBe(false);
+  });
+});
+
+describe('planAdvancementApply (the pure apply-sequencing decision)', () => {
+  const base: AdvancementPlanInput = {
+    type: 'ItemGrant',
+    classRestriction: '',
+    level: 1,
+    classRole: undefined,
+    isOriginalClass: false,
+    hpMode: 'avg',
+  };
+
+  it('skips an advancement whose classRestriction excludes this role (2024 multiclass subset)', () => {
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'Trait',
+        classRestriction: 'primary',
+        classRole: 'secondary',
+      })
+    ).toEqual([{ kind: 'skip', reason: 'skipped (primary-only; this class is secondary)' }]);
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'HitPoints',
+        classRestriction: 'secondary',
+        classRole: 'primary',
+      })
+    ).toEqual([{ kind: 'skip', reason: 'skipped (secondary-only; this class is primary)' }]);
+  });
+
+  it('original class L1 HP is max; a secondary class L1 (and every level past 1) uses hpMode', () => {
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'HitPoints',
+        level: 1,
+        classRole: 'primary',
+        isOriginalClass: true,
+      })
+    ).toEqual([{ kind: 'apply', data: { 1: 'max' }, initial: false, result: 'hp:max' }]);
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'HitPoints',
+        level: 1,
+        classRole: 'secondary',
+        isOriginalClass: false,
+      })
+    ).toEqual([{ kind: 'apply', data: { 1: 'avg' }, initial: false, result: 'hp:avg' }]);
+    // level > 1 follows hpMode even on the original class (only L1 is forced max)
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'HitPoints',
+        level: 5,
+        classRole: 'primary',
+        isOriginalClass: true,
+        hpMode: 'max',
+      })
+    ).toEqual([{ kind: 'apply', data: { 5: 'max' }, initial: false, result: 'hp:max' }]);
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'HitPoints',
+        level: 3,
+        classRole: 'primary',
+        isOriginalClass: true,
+        hpMode: 'avg',
+      })
+    ).toEqual([{ kind: 'apply', data: { 3: 'avg' }, initial: false, result: 'hp:avg' }]);
+  });
+
+  it('skips ASI — the skill owns final ability scores (§2.1)', () => {
+    expect(planAdvancementApply({ ...base, type: 'AbilityScoreImprovement' })).toEqual([
+      { kind: 'skip', reason: 'skipped (ability scores owned by the skill)' },
+    ]);
+  });
+
+  it('a forced-only advancement (no supplied pick) is a single initial:true apply', () => {
+    expect(planAdvancementApply({ ...base, type: 'ItemGrant' })).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+    ]);
+    // a Trait/ItemChoice/Subclass with NO (or empty) choice data → forced only, no second apply
+    expect(planAdvancementApply({ ...base, type: 'Trait', choiceData: { chosen: [] } })).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+    ]);
+    expect(planAdvancementApply({ ...base, type: 'Subclass' })).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+    ]);
+  });
+
+  it('a supplied Trait pick is forced-then-pick (the {initial} clobber workaround)', () => {
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'Trait',
+        choiceData: { chosen: ['skills:acr', 'skills:ath'] },
+      })
+    ).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+      {
+        kind: 'apply',
+        data: { chosen: ['skills:acr', 'skills:ath'] },
+        initial: false,
+        result: 'applied (+choice)',
+      },
+    ]);
+  });
+
+  it('a supplied ItemChoice pick uses selected[]; a Subclass pick uses uuid', () => {
+    expect(
+      planAdvancementApply({ ...base, type: 'ItemChoice', choiceData: { selected: ['u1'] } })
+    ).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+      { kind: 'apply', data: { selected: ['u1'] }, initial: false, result: 'applied (+choice)' },
+    ]);
+    expect(
+      planAdvancementApply({
+        ...base,
+        type: 'Subclass',
+        level: 3,
+        choiceData: { uuid: 'Compendium.x.Item.y' },
+      })
+    ).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+      {
+        kind: 'apply',
+        data: { uuid: 'Compendium.x.Item.y' },
+        initial: false,
+        result: 'applied (+choice)',
+      },
+    ]);
+  });
+
+  it('ignores mismatched choice data (a uuid supplied for a Trait is not applied)', () => {
+    expect(planAdvancementApply({ ...base, type: 'Trait', choiceData: { uuid: 'x' } })).toEqual([
+      { kind: 'apply', data: {}, initial: true },
+    ]);
   });
 });
 
