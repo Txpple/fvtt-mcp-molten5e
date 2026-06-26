@@ -76,6 +76,14 @@ name forward:
 - `search-compendium` (substring, premium-first) to find the real entry by name.
 - `search-compendium-spells` / `search-compendium-items` (faceted, return a usable uuid) for spells/gear.
 
+**Lineage-split species.** Some 2024 species are **split by sub-lineage in the premium books** while
+DDB stores a single species name plus a legacy/lineage *option*. Combine them to get the exact entry:
+the plan's `species.fullName` + the matching `options.other` legacy → the real premium name. E.g. DDB
+species "Tiefling" + `options.other: ["Infernal Legacy"]` → premium **"Tiefling, Infernal"** (the books
+have Tiefling, Abyssal/Chthonic/Infernal — there is no bare "Tiefling"). `search-compendium` the base
+name to see the variants, then pass the exact one to `create-pc`. Watch for this on Tiefling (and any
+species whose `search-compendium` returns several "<Name>, <lineage>" entries).
+
 **Edition rule (your house rule): confirm the obvious, ask the ambiguous.** When a `2014`/legacy DDB
 entity has a **clear** 2024 premium equivalent, canonicalize to it and **tell the user** what you
 mapped (e.g. "DDB had the 2014 *Variant Human*; using the 2024 *Human*"). When the match is **ambiguous
