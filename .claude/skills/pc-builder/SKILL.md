@@ -28,13 +28,14 @@ level (a Barbarian's rage damage, a Rogue's sneak attack, a Dragonborn's breath 
 hand-patch dangling `@scale` dice the way [[stat-block-builder]] does for NPCs. If you want a *monster*
 that happens to use a PC race, that's the NPC builder; this skill is for actual player characters.
 
-Tools used: **`create-pc`** (build + persist the PC, running advancement), **`inspect-pc-advancement`**
+Tools used: **`create-pc`** (build + persist the PC, running advancement), **`level-up-pc`** (add ONE
+class level to an existing PC — single-class level-up OR multiclass), **`inspect-pc-advancement`**
 (read-only: what choices a class needs at a level + the legal options), `search-compendium`
 (name lookup to confirm a class/species/background/spell exists in the premium books),
 `search-compendium-spells` (find spells by facet for casters), **`import-item`** (starting equipment —
-copy real gear from the PHB), `set-actor-art`, `set-actor-ownership` (assign the *player* as owner),
-`move-documents` (file the PC), `get-actor` / `get-actor-entity` (read back). Defer gear judgment to
-[[physical-item-builder]].
+copy real gear from the PHB), `add-feature` (a feat taken at an ASI tier), `set-actor-art`,
+`set-actor-ownership` (assign the *player* as owner), `move-documents` (file the PC), `get-actor` /
+`get-actor-entity` (read back). Defer gear judgment to [[physical-item-builder]].
 
 ## Authoring policy — READ FIRST
 
@@ -45,11 +46,11 @@ match → **STOP and ASK** · authoring, not play. `create-pc` enforces premium-
 class/species/background not in the books is an **error, not invented**. If the user wants a class or
 species that isn't in the library, stop and ask — don't substitute or fabricate.
 
-> **Scope = a single class, levels 1–20.** `create-pc` builds a complete PC at any `level` 1–20:
-> HP, features, **subclass (granted at level 3)**, and spell slots all scale with the level. Still
-> deferred: **multiclassing** (a second class) and **levelling an existing PC up** — both are future
-> versions. If the user asks for a multiclass build, build the primary class at the level and tell
-> them multiclassing isn't wired yet.
+> **Scope = full PCs, levels 1–20, incl. multiclass.** `create-pc` builds a complete PC at any `level`
+> 1–20 (HP, features, **subclass at level 3**, spell slots all scale). **`level-up-pc`** adds one class
+> level to an existing PC — the same class (a level-up) or a new class (a **multiclass**). A multiclass
+> from scratch = `create-pc` the primary class, then `level-up-pc` into the second class (see "Levelling
+> & multiclassing" below). Everything PC-side is now wired.
 
 ## The shape of a build
 
@@ -201,6 +202,31 @@ weapon) should show a real die, not `@scale.…` or 0. Report the full build —
 final abilities, HP, the chosen skills/feats/fighting-style/ancestry, spells, equipment,
 art/ownership/folder — and flag anything you asked about, approximated, or left to `acceptDefaults`.
 
+## Levelling up & multiclassing (`level-up-pc`)
+
+`level-up-pc` adds **one class level** to an existing PC and applies just that level's advancement in
+place. It's the "ding, you levelled" workflow AND the way to multiclass.
+
+- **Single-class level-up** — `level-up-pc` `{ actorIdentifier, className: <a class the PC already has> }`.
+  HP grows by `hpMode` (avg|max), new features land, and the subclass is asked for when that class hits
+  **its** level 3. Call once per level (the in-play model); for a big jump, call it repeatedly.
+- **Multiclass** — `level-up-pc` `{ actorIdentifier, className: <a NEW class> }`. The PC gains the **2024
+  multiclass proficiency subset** (e.g. multiclassing into Wizard grants no skills/saves; into Fighter,
+  only some armor/weapons) — the tool handles that automatically. The new class's first level uses **avg**
+  HP (never max — only the original class maxes its first level). Spell slots for a multiclass caster
+  derive automatically. **Build a multiclass from scratch** = `create-pc` the primary class (at whatever
+  level), then `level-up-pc` into the second class one level at a time.
+- **Choices on level-up** — same as `create-pc`: call with no/partial `choices` to get a `needsChoices[]`
+  dry-run (e.g. the subclass options when the class reaches level 3) — **the PC is NOT changed** — then
+  fill `choices` (keyed by the **class** level → advancement-id) and re-call. Ask the player for the
+  meaningful picks.
+- **Ability scores & feats on level-up** — `level-up-pc` does NOT apply ASI ability bumps. When the
+  player takes an **ASI** at 4/8/12/16/19, raise the final scores yourself with `update-actor`; when they
+  take a **feat**, add it with `add-feature` (compendium-features). HP re-derives from the new CON.
+- **Multiclass spellcasting caveat** — the combined-caster slot table is dnd5e's job and mostly
+  auto-derives, but spell *preparation* limits across two casters can get fiddly; read back and sanity-
+  check a multiclass caster's slots/prepared, and tell the player what you see.
+
 ## Notes
 
 - **A new tool/param needs a Claude Code restart** to load into the running MCP server; the live verify
@@ -213,9 +239,10 @@ art/ownership/folder — and flag anything you asked about, approximated, or lef
   choices sit at level `"0"`, class L1 choices at `"1"`, the subclass at `"3"`, and any higher-level
   Trait/ItemChoice pick at its own level. Re-run `inspect-pc-advancement` at the target `level` to see
   every choice the build will ask for.
-- **Levelling:** `create-pc` builds at any `level` 1–20 in one shot (HP per level via `hpMode`
-  avg|max; subclass at 3; slots/features/@scale scale). **Multiclassing** (a second class) and
-  **levelling an existing PC up** are not wired yet — say so if asked, and build the single-class PC.
+- **Levelling:** `create-pc` builds at any `level` 1–20 in one shot; **`level-up-pc`** adds one level to
+  an existing PC (same class or a multiclass). See "Levelling up & multiclassing" above. The choices map
+  is the same shape for both, keyed by the **class** level.
 - The skill owns judgment (which class/species/background/subclass, the ability math, the picks, the
-  gear); the tools own correctness (name→uuid, advancement sequencing, persist, @scale). Don't reach
-  past that line — e.g. don't try to set proficiencies or HP directly; let advancement do it.
+  gear); the tools own correctness (name→uuid, advancement sequencing, persist, @scale, the multiclass
+  proficiency subset). Don't reach past that line — e.g. don't try to set proficiencies or HP directly;
+  let advancement do it.
