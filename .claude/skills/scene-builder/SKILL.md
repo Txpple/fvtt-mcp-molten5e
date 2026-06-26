@@ -5,9 +5,10 @@ description: >-
   "make a scene from this map", "set up this battlemap", "turn this image into a scene", "create a
   scene", "import a map", or asks to set scene mood/lighting/weather/fog (e.g. "make it night", "add
   snow", "make this a dark cave", "attach this playlist/journal to the scene"). Prompts for a map if
-  none is given, auto-sizes the scene to the image, looks at the map to suggest big-brush mood
-  (weather / darkness / vision), and offers to attach a playlist or journal. The tools own
-  correctness (field paths, enum mapping, name→id, image probing); this skill owns the judgment.
+  none is given, auto-sizes the scene to the image, **looks for an accompanying sidecar JSON next to
+  the map to import its walls + lighting**, looks at the map to suggest big-brush mood (weather /
+  darkness / vision), and offers to attach a playlist or journal. The tools own correctness (field
+  paths, enum mapping, name→id, image probing); this skill owns the judgment.
 ---
 
 # Scene builder
@@ -32,11 +33,44 @@ A scene without a background is rarely what the user wants. If no image was give
 Ask for the path/file if you don't have one. The background must be a Data-relative path (what
 `upload-asset` returns and `list-assets` shows).
 
-## Step 1 — Dimensions are automatic
+## Step 0.5 — Look for an accompanying sidecar JSON (walls + lighting)
 
-**Do NOT compute or ask for width/height.** `create-scene` auto-detects the image's pixel size when
-you omit `width`/`height` — that's the intended path. Only pass explicit dimensions if the user
-specifically wants a non-native size. (The tool reports the detected size in its result.)
+Battlemaps very often ship a **sidecar JSON next to the image** — a `map.jpg` with a `map.json` (or
+`<mapname>.json`) beside it — carrying pre-built **walls** and **ambient lights** so the map is
+playable on arrival. **Whenever a local map file is given, check its folder for a sidecar** before
+creating the scene:
+
+- Look for a JSON with the **same basename** as the map (`cavern.jpg` → `cavern.json`), then any
+  single `.json` in the same directory.
+- **Read it** and check the shape. This skill + `create-scene` handle the **Foundry scene-export
+  sidecar**: a top-level object with `walls` (entries shaped `{ c:[x0,y0,x1,y1], move, sense, sound,
+  door }`) and/or `lights` (entries shaped `{ x, y, dim, bright, tintColor, tintAlpha }`), plus scene
+  fields like `width`, `height`, `grid`, `gridDistance`, `gridUnits`, `padding`, `gridColor`,
+  `gridAlpha`, `globalLight`, `darkness`. Both the legacy and the modern (v14 `sight`/`light`,
+  `config{}`) field shapes are accepted — the tool normalizes either to v14. **This is exactly what
+  Dungeon Alchemist's "legacy" Foundry export (and similar map packs) produce.**
+- **Always import via `create-scene`, NOT Foundry's native right-click "Import Data".** That native
+  menu (and the Dungeon Alchemist help page that recommends it) is **stale for Foundry v14**: v14
+  removed the legacy-field migration, so importing this shape natively silently DROPS the data — every
+  wall falls back to NORMAL vision (wrong for limited/secret/none walls) and lights collapse to
+  0-radius with no tint. `create-scene` does the legacy→v14 conversion the native path no longer does
+  (verified live, 2026-06-26).
+- Pass the sidecar's `walls` and `lights` arrays straight into `create-scene` (`walls:` / `lights:`).
+  **Don't transform the coordinates** — they're absolute canvas pixels and the tool writes them
+  verbatim. The tool reports how many walls/lights it placed.
+- **Not a Foundry sidecar?** A **Universal VTT** file (`.uvtt` / `.dd2vtt` / `.df2vtt`, or a JSON with
+  `resolution`/`pixels_per_grid`/`line_of_sight`/`portals` and a base64 `image`) uses grid-unit
+  coordinates and a different schema — `create-scene` does **not** convert that yet. Don't feed it in
+  raw (the coordinates would be wrong); tell the user it isn't supported yet rather than mangle it.
+- No sidecar found, or the map is a plain illustration? Just skip this step.
+
+## Step 1 — Dimensions: auto, EXCEPT when a sidecar provides them
+
+**Normally do NOT compute or ask for width/height** — `create-scene` auto-detects the image's pixel
+size when you omit `width`/`height`. **But when you're importing a sidecar's walls/lights, pass the
+sidecar's own `width`, `height`, `gridSize` (its `grid`), `padding`, `gridDistance`, and `gridUnits`
+explicitly.** The wall/light coordinates were authored against that exact canvas, so reproducing it
+1:1 keeps them aligned. (The tool reports the size it used.)
 
 ## Step 2 — Battlemap or illustration? (one up-front question)
 
@@ -97,14 +131,36 @@ create-scene {
 }
 ```
 
+With a sidecar (walls + lighting from `map.json`), pass its placeables and its canvas fields so the
+coordinates line up — report back the wall/light counts the tool placed:
+
+```
+create-scene {
+  name: "Eerie Temple",
+  backgroundPath: "worlds/<world>/assets/maps/eerie-temple.jpg",
+  width: 13050, height: 6450,         // from the sidecar
+  gridSize: 150,                       // sidecar `grid`
+  gridDistance: 5, gridUnits: "ft",
+  padding: 0, gridColor: "#000000", gridAlpha: 0.2,
+  globalLight: true, darkness: 0.3,    // sidecar lighting
+  walls:  [ /* sidecar.walls  verbatim */ ],
+  lights: [ /* sidecar.lights verbatim */ ],
+  activate: false
+}
+```
+
 To adjust an existing scene later, use `update-scene` with the same fields (and `""` to clear a
-`playlist`/`journal` link).
+`playlist`/`journal` link). `update-scene` is document-only — it does **not** add walls/lights, so
+import those at `create-scene` time.
 
 ## Boundaries
 
 - Never proceed without a background image; offer upload or pick-from-assets instead.
-- Don't hand-compute dimensions — let `create-scene` auto-detect them.
+- Don't hand-compute dimensions — let `create-scene` auto-detect them, **except** when importing a
+  sidecar: then pass the sidecar's own width/height/grid/padding so wall/light pixels stay aligned.
+- Always check for a sidecar JSON next to a local map; import its `walls`/`lights` verbatim (don't
+  rescale coordinates). Decline Universal VTT (`.uvtt`/`.dd2vtt`) sidecars cleanly — not yet supported.
 - Mood is suggested and confirmed, never silently applied. Keep it to big strokes (1–2 effects).
-- Scene-document only: this skill never places or moves tokens/walls/lights (out of scope). If a tool
-  returns a refusal or reason (e.g. unknown weather, ambiguous link name), surface it rather than
-  working around it.
+- The tool places walls/lights only at create time, only from a supplied sidecar — this skill never
+  hand-authors or moves placeables. If a tool returns a refusal or reason (e.g. unknown weather,
+  ambiguous link name, skipped walls), surface it rather than working around it.

@@ -70,6 +70,127 @@ export function normalizeWeatherKey(input: unknown, availableKeys: string[]): st
   );
 }
 
+// --- legacy scene-sidecar placeable conversion (walls + lights) --------------
+//
+// Map-pack sidecars (a map.jpg + map.json sitting next to it) ship walls/lights
+// in Foundry's LEGACY (pre-v10) flat shape, and the automatic migration shim was
+// REMOVED in Foundry v11/v12 — so we MUST translate to the v14 document shape
+// ourselves (live-verified against Foundry 14.364):
+//  - Wall restriction enums: legacy used small ints {0 NONE, 1 NORMAL, 2 LIMITED};
+//    v14 CONST.WALL_SENSE_TYPES is spaced {NONE 0, LIMITED 10, NORMAL 20,
+//    PROXIMITY 30, DISTANCE 40}. Values already in the v14 set pass through.
+//  - The legacy `sense` key was renamed to `sight` in v10 AND split to also drive
+//    `light`, so a legacy `sense` populates BOTH sight and light here.
+//  - `door` uses CONST.WALL_DOOR_TYPES {NONE 0, DOOR 1, SECRET 2} — identical
+//    across versions, so it passes through unchanged.
+//  - Lights moved from flat {dim,bright,tintColor,tintAlpha} onto a nested
+//    `config` data model: dim->config.dim, bright->config.bright,
+//    tintColor->config.color, tintAlpha->config.alpha. dim/bright are radii in
+//    grid-distance units (ft) in BOTH the legacy and v14 shapes → verbatim.
+// Wall `c` and light x/y are ABSOLUTE canvas pixels already (unlike UVTT grid
+// units), so coordinates are written verbatim — the scene is (re)created with the
+// sidecar's own width/height/grid/padding so that canvas space is reproduced 1:1.
+
+/** v14 CONST.WALL_SENSE_TYPES values — used for sight/sound/light/move channels. */
+const V14_WALL_RESTRICTION_VALUES = new Set([0, 10, 20, 30, 40]);
+/** Legacy small-int restriction code -> v14 WALL_SENSE_TYPES value. */
+const LEGACY_WALL_RESTRICTION_TO_V14: Record<number, number> = {
+  1: 20, // NORMAL
+  2: 10, // LIMITED
+  3: 30, // PROXIMITY
+  4: 40, // DISTANCE (reverse proximity)
+};
+
+/**
+ * Normalize a wall restriction code to the v14 WALL_SENSE_TYPES integer. Accepts
+ * either a legacy small int (1=NORMAL, 2=LIMITED, …) or a value already in the v14
+ * set (0/10/20/30/40, passed through). Non-positive / non-finite → 0 (NONE);
+ * unknown positive → 20 (NORMAL).
+ */
+export function toV14WallRestriction(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0; // NONE
+  if (V14_WALL_RESTRICTION_VALUES.has(n)) return n; // already v14
+  return LEGACY_WALL_RESTRICTION_TO_V14[n] ?? 20; // unknown positive → NORMAL
+}
+
+interface SidecarWall {
+  c?: number[];
+  move?: number;
+  sense?: number; // legacy
+  sight?: number; // v14
+  sound?: number;
+  light?: number;
+  door?: number;
+  ds?: number;
+  dir?: number;
+}
+
+/**
+ * Convert one sidecar wall (legacy `{c,move,sense,sound,door}` OR v14
+ * `{c,move,sight,sound,light,door}`) to a v14 WallDocument create object.
+ * Coordinates are written verbatim (absolute canvas pixels). Returns null when
+ * `c` is not a usable 4-number segment.
+ */
+export function sidecarWallToV14(w: SidecarWall): Record<string, unknown> | null {
+  const c = Array.isArray(w?.c) ? w.c.map(Number) : [];
+  if (c.length < 4 || c.some(n => !Number.isFinite(n))) return null;
+  const doc: Record<string, unknown> = { c: [c[0], c[1], c[2], c[3]] };
+
+  // sight: explicit v14 `sight` wins, else the legacy `sense` key.
+  const sightSrc = w.sight ?? w.sense;
+  if (sightSrc !== undefined) doc.sight = toV14WallRestriction(sightSrc);
+  // light: explicit `light`, else mirror legacy `sense` (v10 split sense→sight+light).
+  if (w.light !== undefined) doc.light = toV14WallRestriction(w.light);
+  else if (w.sight === undefined && w.sense !== undefined)
+    doc.light = toV14WallRestriction(w.sense);
+  if (w.move !== undefined) doc.move = toV14WallRestriction(w.move);
+  if (w.sound !== undefined) doc.sound = toV14WallRestriction(w.sound);
+  if (w.door !== undefined) doc.door = Number(w.door); // WALL_DOOR_TYPES — same across versions
+  if (w.ds !== undefined) doc.ds = Number(w.ds);
+  if (w.dir !== undefined) doc.dir = Number(w.dir);
+  return doc;
+}
+
+interface SidecarLight {
+  x?: number;
+  y?: number;
+  dim?: number;
+  bright?: number;
+  tintColor?: string; // legacy
+  tintAlpha?: number; // legacy
+  color?: string; // v14
+  alpha?: number; // v14
+  rotation?: number;
+  angle?: number;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Convert one sidecar light (legacy flat `{x,y,dim,bright,tintColor,tintAlpha}`
+ * OR v14 `{x,y,config}`) to a v14 AmbientLightDocument create object. x/y are
+ * top-level absolute pixels; all emission props nest under `config`.
+ */
+export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
+  const config: Record<string, unknown> = {};
+  if (typeof l.dim === 'number') config.dim = l.dim;
+  if (typeof l.bright === 'number') config.bright = l.bright;
+  const color = l.tintColor ?? l.color;
+  if (typeof color === 'string' && color.trim() !== '') config.color = color;
+  const alpha = l.tintAlpha ?? l.alpha;
+  if (typeof alpha === 'number') config.alpha = alpha;
+  if (typeof l.angle === 'number') config.angle = l.angle;
+  if (l.config && typeof l.config === 'object') Object.assign(config, l.config);
+
+  const doc: Record<string, unknown> = {
+    x: Number(l.x ?? 0),
+    y: Number(l.y ?? 0),
+    config,
+  };
+  if (typeof l.rotation === 'number') doc.rotation = l.rotation;
+  return doc;
+}
+
 /**
  * Map a token's disposition to a number. Foundry stores it as a number already;
  * anything else falls back to neutral (0). The Node tool maps the number to a
@@ -170,6 +291,8 @@ export function listScenes(args?: { filter?: string; includeActiveOnly?: boolean
 interface SceneFieldArgs {
   gridDistance?: number;
   gridUnits?: string;
+  gridColor?: string;
+  gridAlpha?: number;
   tokenVision?: boolean;
   fogMode?: string;
   darkness?: number;
@@ -185,8 +308,9 @@ interface SceneFieldArgs {
  * so we create the document then set the background there. When width/height are
  * omitted, the background image's natural pixel size is probed page-side and used
  * (the single biggest QOL win — no dimension math in the caller). Applies the
- * shared scene fields (grid scale, vision, fog, lighting, weather, links) and
- * optionally activates the new scene.
+ * shared scene fields (grid scale, vision, fog, lighting, weather, links),
+ * optionally imports walls/lights from a map sidecar, and optionally activates
+ * the new scene.
  */
 export async function createScene(
   args: {
@@ -198,6 +322,8 @@ export async function createScene(
     gridType?: number;
     padding?: number;
     activate?: boolean;
+    walls?: SidecarWall[];
+    lights?: SidecarLight[];
   } & SceneFieldArgs
 ): Promise<unknown> {
   if (!args.name || !args.backgroundPath) {
@@ -239,6 +365,12 @@ export async function createScene(
     const scene = await SceneClass.create(sceneData);
     // v14: the renderable background lives on the scene's initial level — set it there.
     await applySceneBackground(scene, src);
+
+    // Import walls/lights from a map sidecar, if supplied. These are embedded
+    // documents, so the scene must already exist. Best-effort + isolated: a
+    // failure to place placeables never voids the created scene.
+    const placeables = await importScenePlaceables(scene, args.walls, args.lights);
+
     if (args.activate && scene) await scene.activate();
 
     return {
@@ -251,6 +383,7 @@ export async function createScene(
       height: scene?.height,
       autoSized,
       settings: summarizeSceneSettings(scene),
+      ...placeables,
     };
   } catch (error) {
     throw new Error(
@@ -392,6 +525,8 @@ function buildSceneFields(args: SceneFieldArgs): Record<string, unknown> {
   const flat: Record<string, unknown> = {};
   if (typeof args.gridDistance === 'number') flat['grid.distance'] = args.gridDistance;
   if (typeof args.gridUnits === 'string') flat['grid.units'] = args.gridUnits;
+  if (typeof args.gridColor === 'string') flat['grid.color'] = args.gridColor;
+  if (typeof args.gridAlpha === 'number') flat['grid.alpha'] = args.gridAlpha;
   if (typeof args.tokenVision === 'boolean') flat.tokenVision = args.tokenVision;
   if (typeof args.fogMode === 'string') flat['fog.mode'] = fogModeToNumber(args.fogMode);
   if (typeof args.darkness === 'number') {
@@ -461,6 +596,60 @@ async function probeImageSize(
   } catch {
     return null;
   }
+}
+
+/**
+ * Create Wall / AmbientLight embedded documents on a freshly-created scene from
+ * the sidecar arrays. Each placeable kind is converted to the v14 shape and
+ * created in one batch with per-kind error isolation, so a bad lights array
+ * can't lose the walls (or the scene). Returns counts + any per-kind errors;
+ * returns nothing extra when no sidecar arrays were supplied.
+ */
+async function importScenePlaceables(
+  scene: any,
+  walls?: SidecarWall[],
+  lights?: SidecarLight[]
+): Promise<{ wallsCreated?: number; lightsCreated?: number; placeableErrors?: string[] }> {
+  if (!scene) return {};
+  const hasWalls = Array.isArray(walls) && walls.length > 0;
+  const hasLights = Array.isArray(lights) && lights.length > 0;
+  if (!hasWalls && !hasLights) return {};
+
+  const out: { wallsCreated?: number; lightsCreated?: number; placeableErrors?: string[] } = {};
+  const errors: string[] = [];
+
+  if (hasWalls) {
+    try {
+      const data = (walls as SidecarWall[])
+        .map(sidecarWallToV14)
+        .filter((w): w is Record<string, unknown> => w !== null);
+      const skipped = (walls as SidecarWall[]).length - data.length;
+      if (skipped > 0) errors.push(`${skipped} wall(s) skipped (missing/invalid coordinates)`);
+      if (data.length > 0) {
+        const created = await scene.createEmbeddedDocuments('Wall', data);
+        out.wallsCreated = created?.length ?? 0;
+      } else {
+        out.wallsCreated = 0;
+      }
+    } catch (e) {
+      out.wallsCreated = 0;
+      errors.push(`walls: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (hasLights) {
+    try {
+      const data = (lights as SidecarLight[]).map(sidecarLightToV14);
+      const created = await scene.createEmbeddedDocuments('AmbientLight', data);
+      out.lightsCreated = created?.length ?? 0;
+    } catch (e) {
+      out.lightsCreated = 0;
+      errors.push(`lights: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (errors.length > 0) out.placeableErrors = errors;
+  return out;
 }
 
 /**

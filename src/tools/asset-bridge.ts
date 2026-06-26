@@ -86,6 +86,13 @@ const sceneCommonFields = {
     .string()
     .optional()
     .describe('Distance unit label per cell, e.g. "ft" (dnd5e default).'),
+  gridColor: z.string().optional().describe('Grid line color as a hex string, e.g. "#000000".'),
+  gridAlpha: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Grid line opacity 0–1 (e.g. 0.2 for a faint grid).'),
   tokenVision: z
     .boolean()
     .optional()
@@ -120,9 +127,57 @@ const sceneCommonFields = {
     .describe('JournalEntry id or exact name to attach as scene notes. "" clears it.'),
 };
 
+// A wall placeable from a map sidecar JSON. Accepts the LEGACY Foundry shape
+// (`sense`, small-int enums) OR the v14 shape (`sight`/`light`, spaced enums);
+// the page side normalizes either to the v14 WallDocument. `c` is [x0,y0,x1,y1]
+// in ABSOLUTE canvas pixels. Passthrough so unknown keys (flags, etc.) survive.
+const SidecarWallSchema = z
+  .object({
+    c: z.array(z.number()).length(4).describe('Endpoint coords [x0,y0,x1,y1] in canvas pixels.'),
+    move: z.number().optional().describe('Movement restriction (legacy 1 or v14 20).'),
+    sense: z.number().optional().describe('Legacy sight restriction (→ v14 sight+light).'),
+    sight: z.number().optional().describe('v14 sight restriction.'),
+    sound: z.number().optional().describe('Sound restriction.'),
+    light: z.number().optional().describe('v14 light restriction.'),
+    door: z.number().optional().describe('Door type (0 none, 1 door, 2 secret).'),
+    ds: z.number().optional().describe('Door state (0 closed, 1 open, 2 locked).'),
+    dir: z.number().optional().describe('Wall direction (0 both, 1 left, 2 right).'),
+  })
+  .passthrough();
+
+// An ambient-light placeable from a map sidecar JSON. Accepts the LEGACY flat
+// shape (`dim/bright/tintColor/tintAlpha`) OR the v14 shape (`config{}`); the
+// page side nests emission props under `config`. x/y are absolute canvas pixels.
+const SidecarLightSchema = z
+  .object({
+    x: z.number().describe('Light center X in canvas pixels.'),
+    y: z.number().describe('Light center Y in canvas pixels.'),
+    dim: z.number().optional().describe('Dim radius in grid-distance units (e.g. ft).'),
+    bright: z.number().optional().describe('Bright radius in grid-distance units (e.g. ft).'),
+    tintColor: z.string().optional().describe('Legacy tint color hex (→ config.color).'),
+    tintAlpha: z.number().optional().describe('Legacy tint opacity 0–1 (→ config.alpha).'),
+    color: z.string().optional().describe('v14 tint color hex.'),
+    alpha: z.number().optional().describe('v14 tint opacity 0–1.'),
+    rotation: z.number().optional().describe('Light rotation in degrees.'),
+    angle: z.number().optional().describe('Emission cone angle in degrees (360 = full).'),
+  })
+  .passthrough();
+
 const CreateSceneSchema = z.object({
   name: z.string().min(1).describe('Scene name.'),
   backgroundPath: z.string().min(1).describe('Data-relative path to the background/map image.'),
+  walls: z
+    .array(SidecarWallSchema)
+    .optional()
+    .describe(
+      'Walls to import from a map sidecar JSON (the `walls` array of a Foundry scene-export ' +
+        'sidecar that ships next to a map). Created after the scene exists; coordinates are ' +
+        'absolute canvas pixels, so pass the sidecar width/height/gridSize/padding too.'
+    ),
+  lights: z
+    .array(SidecarLightSchema)
+    .optional()
+    .describe('Ambient lights to import from a map sidecar JSON (the `lights` array).'),
   width: z
     .number()
     .int()
@@ -267,8 +322,11 @@ export class AssetBridgeTools {
         description:
           'Bridge (composition). Create a Foundry Scene from a Data-relative background image path ' +
           '(e.g. an uploaded map). Width/height auto-detect from the image when omitted. Optionally ' +
-          'set grid size/type/distance/units, token vision, fog mode, lighting (darkness, global ' +
-          'light), weather, a linked playlist/journal, padding, and activate it. GM-only.',
+          'set grid size/type/distance/units/color/alpha, token vision, fog mode, lighting ' +
+          '(darkness, global light), weather, a linked playlist/journal, padding, and activate it. ' +
+          'Can also IMPORT walls + ambient lights from a map sidecar JSON (the `walls`/`lights` ' +
+          'arrays many battlemaps ship alongside the image): pass them and they are placed on the ' +
+          'new scene (legacy or v14 shapes both accepted, normalized to v14). GM-only.',
         inputSchema: toInputSchema(CreateSceneSchema),
       },
       {
@@ -394,10 +452,20 @@ export class AssetBridgeTools {
       result?.width && result?.height
         ? `\n  dimensions: ${result.width}×${result.height}px${result.autoSized ? ' (auto from image)' : ''}`
         : '';
+    const placeables: string[] = [];
+    if (typeof result?.wallsCreated === 'number') placeables.push(`${result.wallsCreated} wall(s)`);
+    if (typeof result?.lightsCreated === 'number')
+      placeables.push(`${result.lightsCreated} light(s)`);
+    const placeableLine = placeables.length ? `\n  imported: ${placeables.join(', ')}` : '';
+    const placeableErrs = Array.isArray(result?.placeableErrors)
+      ? result.placeableErrors.map((e: string) => `\n  ⚠ ${e}`).join('')
+      : '';
     return (
       `Created scene "${result?.sceneName}" (${result?.sceneId})` +
       `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}` +
       dims +
+      placeableLine +
+      placeableErrs +
       formatSceneSettings(result?.settings)
     );
   }
