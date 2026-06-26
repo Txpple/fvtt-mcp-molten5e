@@ -28,6 +28,7 @@ import { DnD5eManageEffectTool } from './tools/dnd5e/manage-effect.js';
 import { DnD5eConditionTool } from './tools/dnd5e/conditions.js';
 import { DnD5eAddItemTool } from './tools/dnd5e/add-item.js';
 import { DnD5eImportItemTool } from './tools/dnd5e/import-item.js';
+import { DnD5eDdbImportTools } from './tools/dnd5e/ddb-import.js';
 import { buildAddFeatureTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
@@ -80,6 +81,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const dnd5eConditionTool = new DnD5eConditionTool({ foundry, logger });
   const dnd5eAddItemTool = new DnD5eAddItemTool({ foundry, logger });
   const dnd5eImportItemTool = new DnD5eImportItemTool({ foundry, logger });
+  // DDB import: a Node-only tool (no Foundry — it fetches a public character or parses pasted JSON).
+  const dnd5eDdbImportTools = new DnD5eDdbImportTools({ logger });
 
   const questCreationTools = new QuestCreationTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
@@ -115,6 +118,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eConditionTool.getToolDefinitions(),
     ...dnd5eAddItemTool.getToolDefinitions(),
     ...dnd5eImportItemTool.getToolDefinitions(),
+    ...dnd5eDdbImportTools.getToolDefinitions(),
     addFeatureTool,
     ...questCreationTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
@@ -181,6 +185,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'apply-condition': args => dnd5eConditionTool.handleApplyCondition(args),
     'add-item': args => dnd5eAddItemTool.handleAddItem(args),
     'import-item': args => dnd5eImportItemTool.handleImportItem(args),
+    // DDB import (design.md §7): parse a D&D Beyond character → a normalized plan for the ddb-import
+    // skill. Pure + Node-only (public fetch or pasted JSON); the skill does canonicalization + build.
+    'parse-ddb-character': args => dnd5eDdbImportTools.handleParseDdbCharacter(args),
 
     // Actor authoring — unified add-feature entry (composes feature / compendium / items modes)
     'add-feature': args => {

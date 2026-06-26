@@ -230,6 +230,33 @@ this now, but nothing we do for NPCs may make it harder.
   pick options at each level), not a flat stat-block transcription. Keep this in mind so the NPC tools
   and the actor-authoring surface don't bake in npc-only assumptions.
 
+### Importing a D&D Beyond character *(in scope — content creation)*
+
+Players often build their PC on **D&D Beyond**; importing it is a PC content-creation capability (a
+faster front-end for the same leveling pipeline above, *not* a new product). It follows §2 + §3
+exactly — **hybrid, split on "skills decide / tools do":**
+
+- **A tool does the deterministic part** — `parse-ddb-character`: a pure parser of the D&D Beyond
+  character JSON (the public v5 endpoint `character-service.dndbeyond.com/character/v5/character/{id}`,
+  or a pasted/saved JSON blob) → a typed, **name-bearing, judgment-free** plan: final ability scores
+  (base + deduped `<ability>-score` modifiers, resolving `choose-an-ability-score`, honoring
+  overrides), classes/multiclass + subclasses, species, background, the derived
+  proficiencies/expertise/saves/languages/tools, the resolved option picks (fighting style, favored
+  enemy…), spells (known vs prepared), inventory, feats, currency, HP, and an `unresolved[]` list of
+  everything **flagged** homebrew / 2014-legacy / custom. It does **zero** compendium lookup, makes
+  **zero** mapping decisions, emits **raw DDB names**, and (per §2.3) never generates content — it is a
+  transcriber, so it can be unit-tested against a golden fixture.
+- **A skill decides the rest** — `ddb-import`: the access conversation (we **never** handle the
+  account-password-equivalent cobalt cookie — a private character is made Public or pasted), DDB-name →
+  exact premium-2024-name **canonicalization** via `search-compendium`, the **STOP-and-ASK gate** on
+  every homebrew / legacy / no-match entry (§2.4 — never substitute, drop, or reach for the SRD),
+  advancement-id discovery via `inspect-pc-advancement` to key `create-pc`'s `choices` map, then it
+  **delegates to the existing PC back half** (`create-pc` → `import-item` / `add-feature` /
+  `update-actor` → `set-actor-art` / `set-actor-ownership`). No new advancement primitive.
+- **Edition policy:** DDB is 2014-leaning, the library is 2024-premium. For a legacy entity with a
+  clear 2024 equivalent the skill **canonicalizes and tells the DM**; on an ambiguous or absent match
+  it **STOPS and ASKS**. Partial coverage + an ask-loop is the *normal* outcome, not an error path.
+
 ---
 
 ## 8. DM session assistance *(future phase)*

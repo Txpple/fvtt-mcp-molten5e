@@ -45,11 +45,17 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 85 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 86 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(85);
+    expect(names.length).toBe(86);
+  });
+
+  it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
+    const { tools, handlers } = build();
+    expect(tools.map(t => t.name)).toContain('parse-ddb-character');
+    expect(typeof handlers['parse-ddb-character']).toBe('function');
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
