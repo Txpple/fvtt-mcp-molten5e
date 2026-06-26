@@ -14,33 +14,16 @@
 // shape the tools + tests expect: { success, actor:{id,name}, item:{id,name,type}, warnings }.
 
 import { slugify, resolveActorFuzzy as findActorByIdentifier, DAMAGE_TYPES } from '../_shared.js';
+import { WEAPON_PROPERTIES } from '../../utils/dnd5e-canonical.js';
 import { buildActivity } from './activities.js';
 
 // =============================================================================
 // Method-specific constants (ported verbatim from the oracle).
 // =============================================================================
 
-// dnd5e 5.3.3 weapon property codes — the live CONFIG.DND5E.validProperties.weapon set (17).
-// Soft-validation only (warn, never block). Kept in sync with the copy in tools/dnd5e/add-feature.ts.
-const ATTACK_PROPERTY_CANONICAL = new Set([
-  'ada',
-  'amm',
-  'fin',
-  'fir',
-  'foc',
-  'hvy',
-  'lgt',
-  'lod',
-  'mgc',
-  'rch',
-  'rel',
-  'ret',
-  'sil',
-  'spc',
-  'thr',
-  'two',
-  'ver',
-]);
+// dnd5e 5.3.3 weapon property codes — soft validation (warn, never block).
+// Single-sourced in utils/dnd5e-canonical.ts (shared with the Node-side authoring tools).
+const ATTACK_PROPERTY_CANONICAL = WEAPON_PROPERTIES;
 
 // =============================================================================
 // Pure activity-assembly helpers (no Foundry globals) — unit-tested offline in

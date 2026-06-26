@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { PageApi } from './page/index.js';
+import { clearSystemCache } from './utils/system-detection.js';
 
 /**
  * The seam the rest of the codebase depends on. Tools import THIS (a type),
@@ -103,6 +104,10 @@ export class Foundry implements FoundryBridge {
 
   private async doConnect(): Promise<void> {
     this.ready = false;
+    // A reconnect (after a "Return to Setup" / box relaunch) could in principle bring up a different
+    // world, so drop the process-lifetime system-detection cache — it must re-detect, not trust a stale
+    // answer (harmless no-op on the first connect).
+    clearSystemCache();
     this.browser ??= await chromium.launch({ headless: this.cfg.headless ?? true });
     this.context ??= await this.browser.newContext({ viewport: { width: 1920, height: 1080 } });
 
@@ -400,7 +405,10 @@ export class Foundry implements FoundryBridge {
 
   /** Single page-side dispatch into the injected window.__fvtt bridge. */
   private async invoke<T>(name: string, args?: unknown): Promise<T> {
-    return (await this.page!.evaluate(
+    // Capture the page locally: a concurrent call entering recover() can null this.page mid-flight,
+    // and `this.page!` would then throw a TypeError on the deref.
+    const page = this.page!;
+    return (await page.evaluate(
       ({ n, a }) => {
         const fn = window.__fvtt?.[n];
         if (typeof fn !== 'function') throw new Error(`Unknown page function: ${n}`);
@@ -444,8 +452,9 @@ export class Foundry implements FoundryBridge {
   /** Escape hatch for one-off page logic (used sparingly; prefer named page functions). */
   async evaluate<T, A>(fn: (arg: A) => T, arg: A): Promise<T> {
     await this.ensureReady();
+    const page = this.page!; // capture before any await can null this.page (see invoke()).
     // Playwright's PageFunction generic is overly strict here; the escape hatch is rare.
-    return this.page!.evaluate(fn as any, arg as any);
+    return page.evaluate(fn as any, arg as any);
   }
 
   private async ensureReady(): Promise<void> {

@@ -4,44 +4,15 @@ import { Logger } from '../../logger.js';
 import { ErrorHandler } from '../../utils/error-handler.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
+import { CONDITIONS, DAMAGE_TYPES } from '../../utils/dnd5e-canonical.js';
 
 // ---------------------------------------------------------------------------
-// Canonical value sets for soft validation (warnings, not errors)
+// Canonical value sets for soft validation (warnings, not errors).
+// Single-sourced in utils/dnd5e-canonical.ts (shared with add-feature / add-item / the page layer).
 // ---------------------------------------------------------------------------
 
-const DAMAGE_CANONICAL = new Set([
-  'acid',
-  'bludgeoning',
-  'cold',
-  'fire',
-  'force',
-  'lightning',
-  'necrotic',
-  'piercing',
-  'poison',
-  'psychic',
-  'radiant',
-  'slashing',
-  'thunder',
-]);
-
-const CONDITION_CANONICAL = new Set([
-  'blinded',
-  'charmed',
-  'deafened',
-  'exhaustion',
-  'frightened',
-  'grappled',
-  'incapacitated',
-  'invisible',
-  'paralyzed',
-  'petrified',
-  'poisoned',
-  'prone',
-  'restrained',
-  'stunned',
-  'unconscious',
-]);
+const DAMAGE_CANONICAL = DAMAGE_TYPES;
+const CONDITION_CANONICAL = CONDITIONS;
 
 // ---------------------------------------------------------------------------
 // CR helpers

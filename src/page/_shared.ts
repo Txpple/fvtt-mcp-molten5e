@@ -336,27 +336,11 @@ export function resolveJournalStrict(identifier: string): any {
 }
 
 /**
- * Canonical dnd5e damage types. Used for soft validation (warn, never block) in
- * attack / aura / attack-with-save authoring and NPC creation. Identical across
- * every former per-file copy (ATTACK_/AURA_/ATTACK_WITH_SAVE_/NPC_DAMAGE_CANONICAL).
+ * Canonical dnd5e damage types for soft validation (warn, never block) in attack / aura /
+ * attack-with-save authoring and NPC creation. Re-exported from the single pure source
+ * (utils/dnd5e-canonical.ts) so the Node tools and the page layer share ONE definition.
  */
-export const DAMAGE_TYPES = new Set([
-  'acid',
-  'bludgeoning',
-  'cold',
-  'fire',
-  'force',
-  'lightning',
-  'necrotic',
-  'none', // dnd5e 5.3.3 CONFIG.DND5E.damageTypes
-  'piercing',
-  'poison',
-  'psychic',
-  'radiant',
-  'slashing',
-  'thunder',
-  'vitality', // dnd5e 5.3.3 CONFIG.DND5E.damageTypes
-]);
+export { DAMAGE_TYPES } from '../utils/dnd5e-canonical.js';
 
 /**
  * Resolve or create a Folder by name scoped to the given document type. Returns

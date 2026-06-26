@@ -28,7 +28,7 @@ export const AddFeaturesFromCompendiumSchema = z.object({
     .default([...DEFAULT_FEATURE_PACKS])
     .describe(
       'Premium-book pack IDs to search, in priority order (first match wins). ' +
-        'Defaults to ["dnd-monster-manual.features", "dnd-players-handbook.classes"] — MM monster ' +
+        `Defaults to ${JSON.stringify([...DEFAULT_FEATURE_PACKS])} — MM monster ` +
         'features, then PHB class features (the classes pack also holds the individual feature feats). ' +
         'SOURCE ONLY from the premium MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3). ' +
         'CAVEAT: a class/racial feature copied onto an NPC may carry an unresolved @scale.* damage/' +
@@ -78,7 +78,7 @@ export class DnD5eFeaturesFromCompendiumTools {
           '⚠️ IMPORTANT — feature names must be in English: the compendium uses English names. ' +
           'Translate BEFORE calling if the user provided names in another language.\n\n' +
           'compendiumPacks controls which premium-book pack(s) to search (priority order, first match wins):\n' +
-          '  - Default ["dnd-monster-manual.features", "dnd-players-handbook.classes"] → MM monster ' +
+          `  - Default ${JSON.stringify([...DEFAULT_FEATURE_PACKS])} → MM monster ` +
           'features, then PHB class features\n' +
           '  - SOURCE ONLY from the premium MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3)\n\n' +
           'NOTE: CLASS features ARE importable — the individual feature feats live in the classes ' +

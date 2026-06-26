@@ -4,6 +4,7 @@ import { Logger } from '../../logger.js';
 import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
+import { DAMAGE_TYPES, WEAPON_PROPERTIES } from '../../utils/dnd5e-canonical.js';
 
 /**
  * add-item — the structured dnd5e physical-item (loot/gear) builder. The inventory counterpart to
@@ -20,40 +21,9 @@ const RARITY = z.enum(['', 'common', 'uncommon', 'rare', 'veryRare', 'legendary'
 const ATTUNEMENT = z.enum(['', 'required', 'optional']);
 
 // dnd5e 5.3.3 damage types + weapon property codes — soft validation (warn, never block).
-const DAMAGE_CANONICAL = new Set([
-  'acid',
-  'bludgeoning',
-  'cold',
-  'fire',
-  'force',
-  'lightning',
-  'necrotic',
-  'piercing',
-  'poison',
-  'psychic',
-  'radiant',
-  'slashing',
-  'thunder',
-]);
-const PROPERTY_CANONICAL = new Set([
-  'ada',
-  'amm',
-  'fin',
-  'fir',
-  'foc',
-  'hvy',
-  'lgt',
-  'lod',
-  'mgc',
-  'rch',
-  'rel',
-  'ret',
-  'sil',
-  'spc',
-  'thr',
-  'two',
-  'ver',
-]);
+// Single-sourced in utils/dnd5e-canonical.ts (shared with add-feature / npc / the page layer).
+const DAMAGE_CANONICAL = DAMAGE_TYPES;
+const PROPERTY_CANONICAL = WEAPON_PROPERTIES;
 
 const damageShape = z
   .object({

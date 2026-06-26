@@ -6,48 +6,16 @@ import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { DEFAULT_SPELL_PACKS, assertNoSrdPacks } from '../../utils/compendium-sources.js';
+import { DAMAGE_TYPES, WEAPON_PROPERTIES } from '../../utils/dnd5e-canonical.js';
 
 // ---------------------------------------------------------------------------
 // Canonical value sets for soft validation (warnings, not errors)
 // ---------------------------------------------------------------------------
 
-const DAMAGE_CANONICAL = new Set([
-  'acid',
-  'bludgeoning',
-  'cold',
-  'fire',
-  'force',
-  'lightning',
-  'necrotic',
-  'piercing',
-  'poison',
-  'psychic',
-  'radiant',
-  'slashing',
-  'thunder',
-]);
-
-// dnd5e 5.3.3 weapon property codes — the live CONFIG.DND5E.validProperties.weapon set (17).
-// Soft-validation only (warn, never block). Kept in sync with the copy in page/dnd5e/attacks.ts.
-const ATTACK_PROPERTY_CANONICAL = new Set([
-  'ada',
-  'amm',
-  'fin',
-  'fir',
-  'foc',
-  'hvy',
-  'lgt',
-  'lod',
-  'mgc',
-  'rch',
-  'rel',
-  'ret',
-  'sil',
-  'spc',
-  'thr',
-  'two',
-  'ver',
-]);
+// Canonical dnd5e enum sets for soft validation (warn, never block) — single-sourced in
+// utils/dnd5e-canonical.ts so the damage/property sets can't drift across the authoring tools.
+const DAMAGE_CANONICAL = DAMAGE_TYPES;
+const ATTACK_PROPERTY_CANONICAL = WEAPON_PROPERTIES;
 
 const CLASS_DEFAULT_ABILITY: Record<string, string> = {
   wizard: 'int',
@@ -84,9 +52,13 @@ const damagePart = z.object({
 // add-feature is a discriminated tool: featureType selects one of seven per-mode handlers, each of
 // which strictly validates its own subset with its own zod schema below. This umbrella is the FLAT
 // advertised surface — every parameter any mode accepts, all optional except the two universal
-// keys — and getToolDefinitions() generates its inputSchema from it via toInputSchema(). Field
-// types/enums/defaults mirror the per-mode enforcement, so the advertised contract is generated,
-// never hand-written, and cannot silently drift.
+// keys — and getToolDefinitions() generates its inputSchema from it via toInputSchema().
+//
+// CAVEAT: the umbrella's field types/enums are hand-MAINTAINED in parallel with the per-mode
+// enforcement schemas (a true discriminated union doesn't fit MCP's flat-args model), so they CAN
+// drift. The drift is fail-safe — the umbrella only ever advertises looser constraints than the mode
+// enforces (e.g. a missing .int()), so a bad value passes the advertised schema and is then rejected
+// by the per-mode .parse() with a clear ZodError, never silently mis-applied. Keep them in sync.
 // ---------------------------------------------------------------------------
 
 export const AddFeatureSchema = z.object({
@@ -328,8 +300,8 @@ export const AddFeatureSchema = z.object({
     .default([...DEFAULT_SPELL_PACKS])
     .describe(
       'Premium-book pack IDs to search, in priority order (first match wins). ' +
-        'Default: ["dnd-players-handbook.spells"] (PHB). SOURCE ONLY from the premium MM/PHB/DMG ' +
-        'books — NEVER the dnd5e.* SRD packs (design.md §2.3). Used by: spells.'
+        `Default: ${JSON.stringify([...DEFAULT_SPELL_PACKS])} (PHB). SOURCE ONLY from the premium ` +
+        'MM/PHB/DMG books — NEVER the dnd5e.* SRD packs (design.md §2.3). Used by: spells.'
     ),
 
   // ── Feat widening (passive) ───────────────────────────────────────
@@ -496,7 +468,7 @@ export class DnD5eAddFeatureTool {
           'cleric/druid/ranger→WIS, sorcerer/warlock/bard/paladin→CHA), sourceRules\n\n' +
           '• spells — import EXISTING named spells from compendium. Names must be in English.\n' +
           '  Required: actorIdentifier, spellNames (max 50)\n' +
-          '  Optional: compendiumPacks (default ["dnd-players-handbook.spells"] — premium PHB; never the dnd5e.* SRD)\n\n' +
+          `  Optional: compendiumPacks (default ${JSON.stringify([...DEFAULT_SPELL_PACKS])} — premium PHB; never the dnd5e.* SRD)\n\n` +
           '• homebrew-spell — author a NEW spell from scratch (vs "spells" which imports).\n' +
           '  Required: actorIdentifier, featureName, spellLevel\n' +
           '  Optional: description, spellSchool, spellMethod (atwill/innate/ritual/pact/spell), ' +
