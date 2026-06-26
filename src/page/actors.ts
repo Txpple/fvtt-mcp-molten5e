@@ -826,7 +826,19 @@ async function addActorsToScene(placement: TokenPlacement): Promise<{
     }
   }
 
-  const createdTokens = await scene.createEmbeddedDocuments('Token', tokenData);
+  // Never call createEmbeddedDocuments with [] (it can throw), and if the create itself rejects, degrade
+  // into the errors[] channel instead of rejecting the whole call — so one un-placeable actor doesn't
+  // wipe token placement for the actors that DID prepare (caller: createActorFromCompendium).
+  let createdTokens: any[] = [];
+  if (tokenData.length > 0) {
+    try {
+      createdTokens = await scene.createEmbeddedDocuments('Token', tokenData);
+    } catch (error) {
+      errors.push(
+        `Failed to place ${tokenData.length} token(s) on the scene: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
 
   return {
     success: createdTokens.length > 0,

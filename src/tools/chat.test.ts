@@ -175,6 +175,19 @@ describe('delete-chat-messages', () => {
     expect(calls.length).toBe(0);
   });
 
+  it('refuses beforeTimestamp without confirm and does NOT call the bridge', async () => {
+    const { tools, calls } = build({});
+    const out = await tools.handleDeleteChatMessages({ beforeTimestamp: 1_700_000_000_000 });
+    expect(out).toMatch(/Refused/);
+    expect(calls.length).toBe(0);
+  });
+
+  it('forwards a beforeTimestamp purge when confirmed', async () => {
+    const { tools, calls } = build({ success: true, deletedCount: 3, deleted: [] });
+    await tools.handleDeleteChatMessages({ beforeTimestamp: 1_700_000_000_000, confirm: true });
+    expect(calls[0][0]).toBe('deleteChatMessages');
+  });
+
   it('forwards an id delete and formats via formatDeletionResult', async () => {
     const { tools, calls } = build({
       success: true,

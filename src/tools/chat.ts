@@ -139,7 +139,8 @@ const DeleteChatMessagesSchema = z
       .int()
       .optional()
       .describe(
-        'Delete all messages with timestamp (ms epoch) older than this — purge an old log.'
+        'Delete all messages with timestamp (ms epoch) older than this — purge an old log. ' +
+          'Bulk + irreversible, so requires confirm:true.'
       ),
     clearAll: z
       .boolean()
@@ -148,7 +149,10 @@ const DeleteChatMessagesSchema = z
     confirm: z
       .boolean()
       .default(false)
-      .describe('Must be true to run clearAll (an explicit guard — clear-all is irreversible).'),
+      .describe(
+        'Must be true to run a bulk delete (clearAll or beforeTimestamp) — an explicit guard, both are ' +
+          'irreversible. Not needed for a targeted ids delete.'
+      ),
   })
   .refine(a => (a.ids && a.ids.length > 0) || a.beforeTimestamp !== undefined || a.clearAll, {
     message: 'Provide ids, beforeTimestamp, or clearAll.',
@@ -293,8 +297,9 @@ export class ChatTools {
         name: 'delete-chat-messages',
         description:
           'Delete chat messages: by exact id(s) (a single id is an array of one), or all messages ' +
-          'older than a timestamp (beforeTimestamp — handy for the known Molten big-log perf drag), ' +
-          'or the entire log (clearAll + confirm:true). IRREVERSIBLE. GM-only.',
+          'older than a timestamp (beforeTimestamp + confirm:true — handy for the known Molten big-log ' +
+          'perf drag), or the entire log (clearAll + confirm:true). Both bulk modes need confirm:true. ' +
+          'IRREVERSIBLE. GM-only.',
         inputSchema: toInputSchema(DeleteChatMessagesSchema),
       },
       {
@@ -459,10 +464,16 @@ export class ChatTools {
 
   async handleDeleteChatMessages(args: any): Promise<string> {
     const parsed = DeleteChatMessagesSchema.parse(args ?? {});
-    // Guard the irreversible clear-all BEFORE touching the bridge.
+    // Guard the irreversible bulk deletes BEFORE touching the bridge (clearAll + beforeTimestamp).
     if (parsed.clearAll && !parsed.confirm) {
       return (
         'Refused: clearAll deletes EVERY chat message and is irreversible. ' +
+        'Pass confirm:true to proceed.'
+      );
+    }
+    if (parsed.beforeTimestamp !== undefined && !parsed.confirm) {
+      return (
+        'Refused: beforeTimestamp deletes every message older than the cutoff and is irreversible. ' +
         'Pass confirm:true to proceed.'
       );
     }

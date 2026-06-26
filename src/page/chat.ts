@@ -197,6 +197,17 @@ export async function deleteChatMessages(args: {
   let targets: any[];
   let notFound: string[] | undefined;
   if (args?.beforeTimestamp !== undefined) {
+    // beforeTimestamp is destructive at scale (it deletes EVERY message older than the cutoff —
+    // beforeTimestamp:Date.now() wipes the whole log), so gate it like clearAll, not like a targeted
+    // id delete.
+    if (!args.confirm) {
+      return {
+        success: false,
+        refused: true,
+        reason:
+          'beforeTimestamp requires confirm:true (it deletes every message older than the cutoff)',
+      };
+    }
     const cutoff = args.beforeTimestamp;
     targets = (game.messages?.contents ?? []).filter((m: any) => (m.timestamp ?? 0) < cutoff);
   } else if (Array.isArray(args?.ids) && args.ids.length > 0) {
