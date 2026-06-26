@@ -146,8 +146,10 @@ const CREATE_PC_DESCRIPTION =
   'Caster spell slots auto-derive from the class; pass ' +
   '`spells.cantrips`/`spells.prepared` (names) to add chosen spells. ASI ability-increases ride in the ' +
   'FINAL scores (not applied separately); a feat taken at an ASI tier is added by the skill via ' +
-  'add-feature/import-item, like equipment — this tool adds no gear or ASI-feats. Returns ' +
-  '{success, actor, applied[], needsChoices[], unresolvedScale[], warnings[]}.';
+  'add-feature/import-item, like equipment — this tool adds no gear or ASI-feats. If a required ' +
+  'advancement (a forced grant / supplied pick / subclass embed) FAILS to apply, the PC is NOT ' +
+  'persisted (no junk actor) and success:false is returned with errors[]. Returns ' +
+  '{success, actor, applied[], needsChoices[], unresolvedScale[], errors[], warnings[]}.';
 
 const INSPECT_PC_ADVANCEMENT_DESCRIPTION =
   'Read-only: report the player CHOICE points a premium class exposes up to a level — each ' +
@@ -175,8 +177,10 @@ const LEVEL_UP_PC_DESCRIPTION =
   'call with no/partial choices to get a `needsChoices[]` dry-run (e.g. the subclass options at level 3 — ' +
   'the actor is NOT touched); fill `choices` (level → advancement-id → {chosen|selected|uuid}) and ' +
   're-call. ASI ability bumps are NOT applied here — raise the final scores with update-actor; a feat ' +
-  'taken at an ASI tier is added with add-feature. Required: actorIdentifier, className. Returns ' +
-  '{success, actor (incl. classLevel + classes[]), applied[], needsChoices[], unresolvedScale[], warnings[]}.';
+  'taken at an ASI tier is added with add-feature. If a required advancement FAILS to apply, the PC is ' +
+  'rolled back to its prior level and success:false is returned with errors[]. Required: ' +
+  'actorIdentifier, className. Returns ' +
+  '{success, actor (incl. classLevel + classes[]), applied[], needsChoices[], unresolvedScale[], errors[], warnings[]}.';
 
 // ---------------------------------------------------------------------------
 // Options interface
@@ -326,6 +330,24 @@ export class DnD5ePcTools {
   }
 
   private formatPcResponse(result: any, params: any): any {
+    // Corrupting advancement failure: the engine refused to persist a broken PC (nothing was created).
+    if (result?.success === false && Array.isArray(result?.errors) && result.errors.length > 0) {
+      const summary = `❌ "${params.name}" was NOT created — ${result.errors.length} advancement(s) failed`;
+      return {
+        summary,
+        success: false,
+        errors: result.errors,
+        applied: result.applied ?? [],
+        warnings: result.warnings ?? [],
+        message:
+          `${summary} (nothing was persisted — no junk actor).\n\n${result.errors
+            .map((e: string) => `- ${e}`)
+            .join('\n')}\n\n` +
+          'Fix the inputs (e.g. a bad subclass/choice uuid, or a class/feature the books reject) and ' +
+          're-call create-pc.',
+      };
+    }
+
     // Dry-run / under-specified: required choices missing, nothing persisted.
     if (result?.success === false && Array.isArray(result?.needsChoices)) {
       const lines = result.needsChoices.map((c: any) => this.formatChoiceLine(c));
@@ -439,6 +461,23 @@ export class DnD5ePcTools {
   }
 
   private formatLevelUpResponse(result: any, params: any): any {
+    // Corrupting advancement failure: the engine rolled the PC back to its prior level.
+    if (result?.success === false && Array.isArray(result?.errors) && result.errors.length > 0) {
+      const summary = `❌ "${params.actorIdentifier}" was NOT leveled — ${result.errors.length} advancement(s) failed`;
+      return {
+        summary,
+        success: false,
+        errors: result.errors,
+        applied: result.applied ?? [],
+        warnings: result.warnings ?? [],
+        message:
+          `${summary} (the PC was rolled back to its prior level).\n\n${result.errors
+            .map((e: string) => `- ${e}`)
+            .join('\n')}\n\n` +
+          'Fix the inputs (e.g. a bad subclass/choice uuid) and re-call level-up-pc.',
+      };
+    }
+
     // Under-specified (e.g. a subclass pick missing at level 3): nothing was changed.
     if (result?.success === false && Array.isArray(result?.needsChoices)) {
       const lines = result.needsChoices.map((c: any) => this.formatChoiceLine(c));

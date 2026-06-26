@@ -148,6 +148,12 @@ export interface PcBuildResult {
   from?: string;
   modificationsApplied?: string[];
   warnings: string[];
+  /**
+   * CORRUPTING advancement failures (a forced grant, supplied pick, subclass embed, or HP apply that
+   * threw). Distinct from `warnings` (best-effort): a non-empty `errors` means the PC would be silently
+   * incomplete, so the build does NOT persist (create) / rolls back (level-up) and returns success:false.
+   */
+  errors?: string[];
 }
 
 // =============================================================================
@@ -382,7 +388,9 @@ export async function collectAdvancementChoices(
  * The proven two-step: (1) apply({initial:true}) for forced grants, then (2) for a Trait/ItemChoice
  * with supplied picks, a SECOND apply WITHOUT initial carrying {chosen}/{selected}. Background/species
  * AbilityScoreImprovement is SKIPPED — the skill owns final scores (design.md §2.1). Records each
- * step; never throws (a single advancement failure is captured as a warning, build continues).
+ * step; never throws — a CORRUPTING failure (every apply() here is one: HP, a forced grant, or a
+ * supplied Trait/ItemChoice/Subclass pick) is captured in `errors` (and the per-row trail), and the
+ * CALLER decides whether to persist. (Role/ASI skips are not failures.)
  */
 async function applyItemAdvancements(
   item: any,
@@ -390,7 +398,7 @@ async function applyItemAdvancements(
   levels: number[],
   choices: PcChoiceMap | undefined,
   applied: PcBuildResult['applied'],
-  warnings: string[],
+  errors: string[],
   hpMode: 'avg' | 'max' = 'avg',
   classRole?: 'primary' | 'secondary'
 ): Promise<void> {
@@ -452,7 +460,7 @@ async function applyItemAdvancements(
       }
     } catch (e) {
       rec.result = `error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
-      warnings.push(`Advancement "${raw.title}" (${source}) failed: ${rec.result}`);
+      errors.push(`Advancement "${raw.title}" (${source}) failed: ${rec.result}`);
     }
     applied?.push(rec);
   }
@@ -498,7 +506,7 @@ async function embedClassAndApply(
   role: 'primary' | 'secondary',
   choices: PcChoiceMap | undefined,
   applied: PcBuildResult['applied'],
-  warnings: string[],
+  errors: string[],
   hpMode: 'avg' | 'max'
 ): Promise<string> {
   const classLevels = levelsUpTo(classLevel);
@@ -516,7 +524,7 @@ async function embedClassAndApply(
     classLevels,
     choices,
     applied,
-    warnings,
+    errors,
     hpMode,
     role
   );
@@ -535,7 +543,7 @@ async function embedClassAndApply(
       classLevels,
       choices,
       applied,
-      warnings,
+      errors,
       hpMode
     );
   }
@@ -655,6 +663,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
 
   const level = plan.level ?? 1;
   const warnings: string[] = [];
+  const errors: string[] = [];
 
   // 1. Resolve class / species / background by NAME, premium-gated.
   const classRes = await resolvePremiumDocByType('class', plan.className);
@@ -773,7 +782,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
       'primary',
       plan.choices,
       applied,
-      warnings,
+      errors,
       hpMode
     );
     for (const mc of multiclassRes) {
@@ -784,7 +793,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
         'secondary',
         plan.choices,
         applied,
-        warnings,
+        errors,
         hpMode
       );
     }
@@ -800,7 +809,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
         levels,
         plan.choices,
         applied,
-        warnings
+        errors
       );
     }
 
@@ -815,7 +824,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
         levels,
         plan.choices,
         applied,
-        warnings
+        errors
       );
     }
 
@@ -843,6 +852,14 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
       } catch (e) {
         warnings.push(`Spell import failed: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+
+    // A corrupting advancement failed (a forced grant / supplied pick / subclass embed / HP apply that
+    // threw). The PC would be silently incomplete, so DON'T persist a broken character — fail loudly so
+    // the skill/DM fixes the input and re-calls. No litter: the temp build actor is cleaned in `finally`
+    // (mirrors the needsChoices no-persist discipline above). design.md §2.1 — tools fail loudly.
+    if (errors.length > 0) {
+      return { success: false, errors, applied, warnings };
     }
 
     // 4. PERSIST — snapshot the built _source and create the real actor (one DB write, embedded items
@@ -942,6 +959,7 @@ export async function levelUpPc(plan: LevelUpPlan): Promise<PcBuildResult> {
     throw new Error(`levelUpPc requires D&D 5e. Current system: "${game.system.id}".`);
   }
   const warnings: string[] = [];
+  const errors: string[] = [];
   const hpMode = plan.hpMode ?? 'avg';
 
   // 1. Resolve the actor — must be an existing character.
@@ -1035,7 +1053,7 @@ export async function levelUpPc(plan: LevelUpPlan): Promise<PcBuildResult> {
       [newClassLevel],
       plan.choices,
       applied,
-      warnings,
+      errors,
       hpMode,
       role
     );
@@ -1049,9 +1067,31 @@ export async function levelUpPc(plan: LevelUpPlan): Promise<PcBuildResult> {
         [newClassLevel],
         plan.choices,
         applied,
-        warnings,
+        errors,
         hpMode
       );
+    }
+
+    // A corrupting advancement failed. Roll back the ONE persisted mutation (the class embed/bump) and
+    // skip the final persist, so the in-memory apply() updateSource changes evaporate on the next read —
+    // never leave a half-leveled PC. Symmetric with createPcActor's no-persist-on-error (design.md §2.1).
+    if (errors.length > 0) {
+      try {
+        if (isNewClass) {
+          await actor.deleteEmbeddedDocuments('Item', [classItemId]);
+        } else {
+          await actor.updateEmbeddedDocuments('Item', [
+            { _id: existing.id, 'system.levels': newClassLevel - 1 },
+          ]);
+        }
+        game.actors.get(actor.id)?.reset?.();
+      } catch (e) {
+        warnings.push(
+          `Level-up failed and the rollback was incomplete — inspect "${actor.name}": ` +
+            `${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+      return { success: false, errors, applied, warnings };
     }
 
     // 6. Persist the in-memory apply() mutations (apply uses updateSource — in-memory only).
