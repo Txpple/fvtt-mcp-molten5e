@@ -28,8 +28,10 @@ level (a Barbarian's rage damage, a Rogue's sneak attack, a Dragonborn's breath 
 hand-patch dangling `@scale` dice the way [[stat-block-builder]] does for NPCs. If you want a *monster*
 that happens to use a PC race, that's the NPC builder; this skill is for actual player characters.
 
-Tools used: **`create-pc`** (build + persist the PC, running advancement), **`level-up-pc`** (add ONE
-class level to an existing PC — single-class level-up OR multiclass), **`inspect-pc-advancement`**
+Tools used: **`create-pc`** (build + persist the PC, running advancement), **`create-pc-from-prefab`**
+(copy a premium PHB pregen as a base, then tweak — the fast path when a stock build fits),
+**`level-up-pc`** (add ONE class level to an existing PC — single-class level-up OR multiclass),
+**`inspect-pc-advancement`**
 (read-only: what choices a class needs at a level + the legal options), `search-compendium`
 (name lookup to confirm a class/species/background/spell exists in the premium books),
 `search-compendium-spells` (find spells by facet for casters), **`import-item`** (starting equipment —
@@ -50,7 +52,8 @@ species that isn't in the library, stop and ask — don't substitute or fabricat
 > 1–20 (HP, features, **subclass at level 3**, spell slots all scale), including a **multiclass build in
 > one call** via `multiclass: [{className, levels}]` (primary = `className`/`level`). **`level-up-pc`**
 > adds one class level to an existing PC — the same class (a level-up) or a new class (a **multiclass**).
-> See "Levelling up & multiclassing" below. Everything PC-side is now wired.
+> **`create-pc-from-prefab`** copies a premium PHB pregen as a base instead of building from scratch.
+> See "Levelling up & multiclassing" and "Prefab-as-base" below. Everything PC-side is now wired.
 
 ## The shape of a build
 
@@ -201,6 +204,26 @@ background; spell slots; inventory) and `get-actor-entity` to spot-check a featu
 weapon) should show a real die, not `@scale.…` or 0. Report the full build — class/species/background,
 final abilities, HP, the chosen skills/feats/fighting-style/ancestry, spells, equipment,
 art/ownership/folder — and flag anything you asked about, approximated, or left to `acceptDefaults`.
+
+## Prefab-as-base (`create-pc-from-prefab`)
+
+When a stock build fits — a quick pregen for a new player, an NPC-turned-PC, a "just give me a level-1
+Fighter" — **copy a premium pregen instead of building from scratch.** The premium PHB ships 12 ready
+class pregens (Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer,
+Warlock, Wizard) in `dnd-players-handbook.actors` — each a complete level-1 character with a species,
+the class kit, feats, starting gear, and book art. `@scale` resolves natively (it's a real character),
+so there's nothing to hand-patch.
+
+- **Call:** `create-pc-from-prefab` `{ name, prefab: "Fighter" }` (resolve by name) or
+  `{ name, packId, actorId }` (explicit). Premium books only — copying an SRD character is refused.
+- **Tweak the copy, not the source:** pass `abilities` (final scores, overrides the pregen's array)
+  and/or any update-actor-shaped `modifications` (e.g. `hp`, `biography`, `currency`). They apply to the
+  copy only.
+- **Finish:** assign the *player* as owner with `set-actor-ownership`; the art comes from the book
+  already. To customise the build further (different species, a subclass earlier, swapped gear), either
+  edit the copy with the actor/item tools or build from scratch with `create-pc` instead.
+- **When NOT to use it:** if the player wants real choices (their own species, point-buy spread,
+  specific skills/spells), build with `create-pc` — the pregen's choices are baked in.
 
 ## Levelling up & multiclassing (`level-up-pc`)
 

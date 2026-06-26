@@ -21,17 +21,27 @@ function makeTool(respond: (name: string) => any) {
 }
 
 describe('PC tool definitions', () => {
-  it('advertises create-pc, inspect-pc-advancement, and level-up-pc', () => {
+  it('advertises create-pc, inspect-pc-advancement, level-up-pc, and create-pc-from-prefab', () => {
     const { tool } = makeTool(() => ({}));
     const defs = tool.getToolDefinitions();
     const names = defs.map(d => d.name);
-    expect(names).toEqual(['create-pc', 'inspect-pc-advancement', 'level-up-pc']);
+    expect(names).toEqual([
+      'create-pc',
+      'inspect-pc-advancement',
+      'level-up-pc',
+      'create-pc-from-prefab',
+    ]);
     const createPc = defs.find(d => d.name === 'create-pc') as any;
     expect(createPc.inputSchema.required).toEqual(['name', 'className']);
     // choices is the nested record map (no zod tuple)
     expect(Object.keys(createPc.inputSchema.properties)).toContain('choices');
     const levelUp = defs.find(d => d.name === 'level-up-pc') as any;
     expect(levelUp.inputSchema.required).toEqual(['actorIdentifier', 'className']);
+    const prefab = defs.find(d => d.name === 'create-pc-from-prefab') as any;
+    expect(prefab.inputSchema.required).toEqual(['name']);
+    expect(Object.keys(prefab.inputSchema.properties)).toEqual(
+      expect.arrayContaining(['prefab', 'packId', 'actorId', 'abilities', 'modifications'])
+    );
   });
 });
 
@@ -203,6 +213,74 @@ describe('handleCreatePc', () => {
     const { tool } = makeTool(() => ({}));
     await expect(tool.handleCreatePc({ className: 'Fighter' })).rejects.toThrow();
     await expect(tool.handleCreatePc({ name: 'Aria' })).rejects.toThrow();
+  });
+});
+
+describe('handleCreatePcFromPrefab', () => {
+  it('forwards the prefab plan to createPcFromPrefab and shapes the response', async () => {
+    const { tool, calls } = makeTool(name =>
+      name === 'createPcFromPrefab'
+        ? {
+            success: true,
+            from: 'Fighter',
+            actor: {
+              id: 'p9',
+              name: 'Kethra',
+              className: 'Fighter',
+              species: null,
+              background: null,
+              level: 1,
+              hp: 12,
+              folder: 'f1',
+            },
+            modificationsApplied: ['abilities'],
+            warnings: [],
+          }
+        : {}
+    );
+    const res = await tool.handleCreatePcFromPrefab({
+      name: 'Kethra',
+      prefab: 'Fighter',
+      abilities: { str: 16, dex: 14, con: 14, int: 8, wis: 12, cha: 10 },
+    });
+    const call = calls.find(([n]) => n === 'createPcFromPrefab');
+    expect(call?.[1].name).toBe('Kethra');
+    expect(call?.[1].prefab).toBe('Fighter');
+    expect(res.success).toBe(true);
+    expect(res.from).toBe('Fighter');
+    expect(res.modificationsApplied).toEqual(['abilities']);
+    expect(res.message).toContain('from prefab "Fighter"');
+    expect(res.message).toContain('Modifications applied');
+    expect(res.message).toContain('set-actor-ownership');
+  });
+
+  it('rejects when neither prefab nor packId+actorId is given (need a source)', async () => {
+    const { tool } = makeTool(() => ({}));
+    await expect(tool.handleCreatePcFromPrefab({ name: 'X' })).rejects.toThrow();
+    // packId alone (no actorId) is still under-specified
+    await expect(
+      tool.handleCreatePcFromPrefab({ name: 'X', packId: 'dnd-players-handbook.actors' })
+    ).rejects.toThrow();
+  });
+
+  it('accepts an explicit packId + actorId source', async () => {
+    const { tool, calls } = makeTool(name =>
+      name === 'createPcFromPrefab'
+        ? {
+            success: true,
+            from: 'Wizard',
+            actor: { id: 'p1', name: 'Z', className: 'Wizard', level: 1, hp: 8 },
+            warnings: [],
+          }
+        : {}
+    );
+    await tool.handleCreatePcFromPrefab({
+      name: 'Z',
+      packId: 'dnd-players-handbook.actors',
+      actorId: 'phbprgWizard0000',
+    });
+    const call = calls.find(([n]) => n === 'createPcFromPrefab');
+    expect(call?.[1].actorId).toBe('phbprgWizard0000');
   });
 });
 

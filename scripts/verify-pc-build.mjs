@@ -665,6 +665,93 @@ try {
       !iRead?.saves?.includes('int'),
     `I9: multiclass proficiency SUBSET — Fighter str/con saves kept, Wizard INT save NOT granted (saves: ${iRead?.saves?.join(', ')})`
   );
+
+  // ---- Test J (d2): prefab-as-base PC — copy the premium PHB Fighter pregen + override abilities ----
+  const prefabName = `${TAG} Prefab Fighter`;
+  const jr = await withNodeTimeout(
+    f.call('createPcFromPrefab', {
+      name: prefabName,
+      prefab: 'Fighter',
+      abilities: { str: 18, dex: 12, con: 16, int: 10, wis: 13, cha: 8 },
+    }),
+    180_000,
+    'prefabBuild'
+  );
+  createdNames.push(prefabName);
+  console.log('\n--- Test J: prefab-as-base Fighter ---');
+  console.log(
+    JSON.stringify(
+      {
+        success: jr?.success,
+        from: jr?.from,
+        actor: jr?.actor,
+        modificationsApplied: jr?.modificationsApplied,
+        unresolvedScale: jr?.unresolvedScale,
+        warnings: jr?.warnings,
+      },
+      null,
+      2
+    )
+  );
+  assert(jr?.success === true, 'J1: prefab PC copied + persisted');
+  assert(jr?.from === 'Fighter', `J2: reports the source pregen name (got ${jr?.from})`);
+  assert(
+    jr?.actor?.className === 'Fighter',
+    `J3: copied class is Fighter (got ${jr?.actor?.className})`
+  );
+  assert(jr?.actor?.name === prefabName, 'J4: renamed to the requested name');
+  const jRead = await withNodeTimeout(
+    f.evaluate(id => {
+      const a = globalThis.game.actors.get(id);
+      a.reset?.();
+      return {
+        type: a.type,
+        level: a.system?.details?.level,
+        str: a.system?.abilities?.str?.value,
+        con: a.system?.abilities?.con?.value,
+        feats: a.items.filter(i => i.type === 'feat').map(i => i.name),
+        weapons: a.items.filter(i => i.type === 'weapon').map(i => i.name),
+        folderName: a.folder?.name ?? null,
+      };
+    }, jr.actor.id),
+    60_000,
+    'prefabRead'
+  );
+  console.log(JSON.stringify(jRead, null, 2));
+  assert(jRead?.type === 'character', 'J5: copy is type:character');
+  assert(
+    jRead?.str === 18 && jRead?.con === 16,
+    `J6: ability override applied (str ${jRead?.str}, con ${jRead?.con})`
+  );
+  assert(
+    (jRead?.feats?.length ?? 0) >= 3 && (jRead?.weapons?.length ?? 0) >= 1,
+    `J7: pregen's kit copied (${jRead?.feats?.length} feats, ${jRead?.weapons?.length} weapons)`
+  );
+  assert(
+    jRead?.folderName === 'Foundry MCP Characters',
+    `J8: filed under the PC folder (got ${jRead?.folderName})`
+  );
+  assert(
+    (jr?.unresolvedScale?.length ?? 0) === 0,
+    `J9: no unresolved @scale on the copied PC (${JSON.stringify(jr?.unresolvedScale)})`
+  );
+
+  // ---- Test K (d2): the premium gate — copying an SRD character is REFUSED (design.md §2.3) ----
+  let srdRefused = false;
+  try {
+    await withNodeTimeout(
+      f.call('createPcFromPrefab', {
+        name: `${TAG} SRD Reject`,
+        packId: 'dnd5e.heroes',
+        actorId: 'whatever',
+      }),
+      60_000,
+      'srdReject'
+    );
+  } catch (e) {
+    srdRefused = /non-premium|SRD|premium/i.test(e?.message || '');
+  }
+  assert(srdRefused, 'K1: copying from an SRD pack (dnd5e.heroes) is refused (premium-only guard)');
 } catch (e) {
   fails++;
   console.log(`\n[verify-pc] FATAL: ${e?.message || String(e)}`);

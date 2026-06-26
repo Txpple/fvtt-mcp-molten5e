@@ -45,11 +45,11 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 84 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 85 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(84);
+    expect(names.length).toBe(85);
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
@@ -66,6 +66,7 @@ describe('tool registry', () => {
     expect(names.has('create-pc')).toBe(true);
     expect(names.has('inspect-pc-advancement')).toBe(true);
     expect(names.has('level-up-pc')).toBe(true);
+    expect(names.has('create-pc-from-prefab')).toBe(true);
     // create-pc's `choices` map is a nested z.record (level → adv-id → data), NOT a zod tuple —
     // the 2020-12-validity sweep above guards it, but pin the advertised shape too.
     const createPc = tools.find(t => t.name === 'create-pc') as any;
@@ -238,6 +239,12 @@ describe('tool registry', () => {
             classes: [{ name: 'Wizard', levels: 2 }],
           },
         };
+      if (name === 'createPcFromPrefab')
+        return {
+          success: true,
+          from: 'Fighter',
+          actor: { id: 'p2', name: 'Borin', className: 'Fighter', level: 1, hp: 12 },
+        };
       return {};
     });
     const { dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
@@ -245,10 +252,12 @@ describe('tool registry', () => {
     await dispatch('create-pc', { name: 'Aria', className: 'Wizard' });
     await dispatch('inspect-pc-advancement', { className: 'Wizard' });
     await dispatch('level-up-pc', { actorIdentifier: 'Aria', className: 'Wizard' });
+    await dispatch('create-pc-from-prefab', { name: 'Borin', prefab: 'Fighter' });
 
     const ops = calls.map(([op]) => op);
     expect(ops.filter(op => op === 'createPcActor').length).toBe(1);
     expect(ops.filter(op => op === 'inspectAdvancementChoices').length).toBe(1);
     expect(ops.filter(op => op === 'levelUpPc').length).toBe(1);
+    expect(ops.filter(op => op === 'createPcFromPrefab').length).toBe(1);
   });
 });

@@ -21,6 +21,16 @@ import { assertDnd5e } from '../../utils/system-detection.js';
 
 const FINAL_ABILITY = z.number().int().min(1).max(30);
 
+/** FINAL ability scores (point-buy/array/ASI already applied — the skill owns that math, §2.1). */
+const AbilitiesSchema = z.object({
+  str: FINAL_ABILITY,
+  dex: FINAL_ABILITY,
+  con: FINAL_ABILITY,
+  int: FINAL_ABILITY,
+  wis: FINAL_ABILITY,
+  cha: FINAL_ABILITY,
+});
+
 /** One advancement's supplied pick — Trait → chosen[], ItemChoice → selected[], Subclass → uuid. */
 const ChoiceDataSchema = z.object({
   chosen: z.array(z.string()).optional(),
@@ -35,16 +45,7 @@ const CreatePcSchema = z.object({
   background: z.string().optional(),
   // FINAL ability scores — the skill owns point-buy / array / ASI math (design.md §2.1). Omit to
   // leave the dnd5e defaults (10s).
-  abilities: z
-    .object({
-      str: FINAL_ABILITY,
-      dex: FINAL_ABILITY,
-      con: FINAL_ABILITY,
-      int: FINAL_ABILITY,
-      wis: FINAL_ABILITY,
-      cha: FINAL_ABILITY,
-    })
-    .optional(),
+  abilities: AbilitiesSchema.optional(),
   // level → advancement-id → choice data.
   choices: z.record(z.string(), z.record(z.string(), ChoiceDataSchema)).optional(),
   // Caster spell picks by NAME (slots auto-derive from the class; this imports chosen spells).
@@ -105,6 +106,31 @@ const LevelUpPcSchema = z.object({
   acceptDefaults: z.boolean().default(false),
 });
 
+const CreatePcFromPrefabSchema = z
+  .object({
+    name: z.string().min(1, 'name cannot be empty'),
+    // Resolve the source pregen EITHER by friendly name (`prefab`) OR explicit packId + actorId.
+    prefab: z.string().optional(),
+    packId: z.string().optional(),
+    actorId: z.string().optional(),
+    // Override the pregen's ability array with FINAL scores (the skill owns the math).
+    abilities: AbilitiesSchema.optional(),
+    // update-actor-shaped stat edits layered onto the COPY only (mirrors create-actor-from-compendium).
+    modifications: z.record(z.string(), z.any()).optional(),
+    folder: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasName = !!data.prefab;
+    const hasExplicit = !!data.packId && !!data.actorId;
+    if (!hasName && !hasExplicit) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['prefab'],
+        message: 'Provide either `prefab` (a pregen name) or both `packId` and `actorId`.',
+      });
+    }
+  });
+
 const CREATE_PC_DESCRIPTION =
   'Build a player character (type:character) headlessly from premium class + species + background by ' +
   'NAME, running real dnd5e advancement so @scale.* (rage damage, sneak attack, breath weapon, …) ' +
@@ -128,6 +154,18 @@ const INSPECT_PC_ADVANCEMENT_DESCRIPTION =
   "advancement's id, type (Trait/ItemChoice/Subclass), how many to pick, and the legal options — so " +
   "the skill can ask the DM and fill create-pc's `choices` map without inventing anything. Resolve by " +
   'className OR classUuid (exactly one); premium books only, never the SRD. Touches no actor.';
+
+const CREATE_PC_FROM_PREFAB_DESCRIPTION =
+  'Create a player character by COPYING a premium-book PREGEN (a complete type:character template — ' +
+  'e.g. the PHB class pregens Barbarian…Wizard in dnd-players-handbook.actors, each a ready level-1 ' +
+  'build with gear/feats/art) and layering your changes, INSTEAD of building via advancement. The PC ' +
+  "family's prefab-as-base path — the §6/§7 analog of create-actor-from-compendium for NPCs, but " +
+  'PC-correct (files under the PC folder, never the NPC one). Resolve the source by `prefab` NAME ' +
+  '(e.g. "Fighter") OR explicit packId+actorId; premium books only, never the SRD (design.md §2.3). ' +
+  "Override the pregen's ability array via `abilities` (final scores) and/or any update-actor-shaped " +
+  '`modifications` — applied to the COPY only, the source is never touched. @scale resolves natively ' +
+  '(it is a real character, no advancement run). Assign the player as owner afterward with ' +
+  'set-actor-ownership. Returns {success, from, actor, modificationsApplied, unresolvedScale, warnings}.';
 
 const LEVEL_UP_PC_DESCRIPTION =
   "Add ONE level to an existing PC (type:character) and apply that level's advancement IN PLACE. " +
@@ -180,6 +218,11 @@ export class DnD5ePcTools {
         name: 'level-up-pc',
         description: LEVEL_UP_PC_DESCRIPTION,
         inputSchema: toInputSchema(LevelUpPcSchema),
+      },
+      {
+        name: 'create-pc-from-prefab',
+        description: CREATE_PC_FROM_PREFAB_DESCRIPTION,
+        inputSchema: toInputSchema(CreatePcFromPrefabSchema),
       },
     ];
   }
@@ -241,6 +284,30 @@ export class DnD5ePcTools {
       return this.formatLevelUpResponse(result, parsed);
     } catch (error) {
       this.errorHandler.handleToolError(error, 'level-up-pc', 'PC level-up');
+    }
+  }
+
+  async handleCreatePcFromPrefab(args: any): Promise<any> {
+    const parsed = CreatePcFromPrefabSchema.parse(args);
+
+    this.logger.info('Creating D&D 5e PC from prefab', {
+      name: parsed.name,
+      prefab: parsed.prefab,
+      packId: parsed.packId,
+      actorId: parsed.actorId,
+    });
+
+    try {
+      await assertDnd5e(this.foundry, this.logger, 'create-pc-from-prefab');
+      const result = await this.foundry.call('createPcFromPrefab', parsed);
+      this.logger.info('PC prefab build returned', {
+        success: result?.success,
+        actorId: result?.actor?.id,
+        from: result?.from,
+      });
+      return this.formatPrefabResponse(result);
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-pc-from-prefab', 'PC prefab creation');
     }
   }
 
@@ -320,6 +387,54 @@ export class DnD5ePcTools {
       unresolvedScale: unresolved,
       warnings,
       message: `${summary}\n\n${lines.join('\n')}${unresolvedSection}${warningSection}`,
+    };
+  }
+
+  private formatPrefabResponse(result: any): any {
+    const actor = result?.actor ?? {};
+    const from = result?.from ?? '—';
+    const summary = `✅ PC "${actor.name}" created from prefab "${from}" (${actor.className}${actor.level ? ` ${actor.level}` : ''})`;
+    const lines = [
+      `**Actor:** ${actor.name} (id: \`${actor.id}\`) — type:character`,
+      `**Copied from:** ${from}`,
+      `**Build:** ${actor.className}${actor.species ? ` · ${actor.species}` : ''}${actor.background ? ` · ${actor.background}` : ''}${actor.level ? ` (level ${actor.level})` : ''}`,
+      `**HP:** ${actor.hp ?? '—'}`,
+    ];
+    if (Array.isArray(actor.classes) && actor.classes.length > 1) {
+      lines.splice(
+        3,
+        0,
+        `**Classes:** ${actor.classes.map((c: any) => `${c.name} ${c.levels}`).join(' / ')}`
+      );
+    }
+    if (actor.folder) lines.push(`**Folder:** ${actor.folder}`);
+    const mods = result?.modificationsApplied ?? [];
+    if (mods.length) lines.push(`**Modifications applied:** ${mods.join(', ')}`);
+
+    const unresolved = result?.unresolvedScale ?? [];
+    const unresolvedSection =
+      unresolved.length > 0
+        ? `\n\n⚠️ **Unresolved @scale (${unresolved.length})** (unexpected on a real PC):\n${unresolved
+            .map((u: any) => `- ${u.itemName}: \`${u.formula}\` at ${u.path}`)
+            .join('\n')}`
+        : '';
+    const warnings = result?.warnings ?? [];
+    const warningSection =
+      warnings.length > 0
+        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map((w: string) => `- ${w}`).join('\n')}`
+        : '';
+
+    return {
+      summary,
+      success: true,
+      from: result?.from,
+      actor: result?.actor,
+      modificationsApplied: mods,
+      unresolvedScale: unresolved,
+      warnings,
+      message:
+        `${summary}\n\n${lines.join('\n')}${unresolvedSection}${warningSection}\n\n` +
+        '_Assign the player as owner with set-actor-ownership (the prefab carries the book art already)._',
     };
   }
 

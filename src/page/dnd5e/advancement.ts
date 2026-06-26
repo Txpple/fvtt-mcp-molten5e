@@ -21,9 +21,11 @@
 //   • The AdvancementManager is NEVER touched (its .close() prompts a discard Dialog → headless hang).
 
 import { isPremiumBookPack } from '../../utils/compendium-sources.js';
+import { updateActor } from '../actors.js';
 import {
   findUnresolvedScaleTokens,
   getOrCreateFolder,
+  importFromCompendium,
   resolveActorFuzzy,
   toSource,
 } from '../_shared.js';
@@ -142,6 +144,9 @@ export interface PcBuildResult {
   applied?: Array<{ source: string; level: number; type: string; title: string; result: string }>;
   needsChoices?: AdvancementChoice[];
   unresolvedScale?: Array<{ itemId: string; itemName: string; path: string; formula: string }>;
+  /** prefab path only: the source pregen's name, and the update-actor keys layered onto the copy. */
+  from?: string;
+  modificationsApplied?: string[];
   warnings: string[];
 }
 
@@ -1033,4 +1038,155 @@ export async function levelUpPc(plan: LevelUpPlan): Promise<PcBuildResult> {
       }
     }
   }
+}
+
+// =============================================================================
+// createPcFromPrefab — copy a premium pregenerated character as a base, then modify (the PC family's
+// prefab-as-base path; the §6/§7 analog of createActorFromCompendium's modifications, but PC-correct:
+// files under the PC folder, never the NPC one, and never bolted onto createNpcActor). The source is a
+// complete type:character template (e.g. the PHB class pregens in dnd-players-handbook.actors), so
+// @scale resolves natively and no advancement is run — this is COPY + tweak, not build.
+// =============================================================================
+
+export interface PcPrefabPlan {
+  name: string;
+  /** Friendly pregen name (e.g. "Fighter") — resolved across premium Actor packs. */
+  prefab?: string;
+  /** Explicit source (alternative to `prefab`): the premium pack + actor id. */
+  packId?: string;
+  actorId?: string;
+  /** FINAL ability scores overriding the pregen's array (skill owns the math). */
+  abilities?: PcAbilities;
+  /** update-actor-shaped stat edits layered onto the COPY only (mirrors create-actor-from-compendium). */
+  modifications?: Record<string, any>;
+  folder?: string;
+}
+
+/**
+ * Resolve a premium-book pregenerated CHARACTER to copy — by friendly name across premium Actor packs,
+ * or by explicit packId+actorId. Premium-gated (design.md §2.3 — never the SRD) and type:character only.
+ */
+async function resolvePremiumCharacter(plan: PcPrefabPlan): Promise<{
+  packId: string;
+  actorId: string;
+  name: string;
+}> {
+  if (plan.packId && plan.actorId) {
+    if (!isPremiumBookPack(plan.packId)) {
+      throw new Error(
+        `Refusing to copy from non-premium pack "${plan.packId}" (design.md §2.3 — never the SRD). ` +
+          'Use a premium-book pregen, e.g. dnd-players-handbook.actors.'
+      );
+    }
+    const pack = game.packs.get(plan.packId);
+    if (!pack) throw new Error(`Compendium pack not found: "${plan.packId}".`);
+    const idx = await pack.getIndex({ fields: ['type'] });
+    const entry = idx.get(plan.actorId);
+    if (!entry) throw new Error(`Actor "${plan.actorId}" not found in pack "${plan.packId}".`);
+    if (entry.type !== 'character') {
+      throw new Error(
+        `"${entry.name}" is a ${entry.type}, not a character — prefab PCs must be type:character ` +
+          'pregens. (For an NPC prefab use create-actor-from-compendium.)'
+      );
+    }
+    return { packId: plan.packId, actorId: plan.actorId, name: entry.name };
+  }
+
+  if (plan.prefab) {
+    const wanted = plan.prefab.toLowerCase();
+    const matches: Array<{ packId: string; actorId: string; name: string }> = [];
+    for (const pack of game.packs) {
+      if (pack.documentName !== 'Actor' || !isPremiumBookPack(pack.metadata.id)) continue;
+      const idx = await pack.getIndex({ fields: ['type'] });
+      for (const e of idx as any) {
+        if (e.type === 'character' && e.name?.toLowerCase() === wanted) {
+          matches.push({ packId: pack.metadata.id, actorId: e._id, name: e.name });
+        }
+      }
+    }
+    if (matches.length === 0) {
+      throw new Error(
+        `No premium character pregen named "${plan.prefab}" found. The PHB class pregens ` +
+          '(Barbarian, Bard, … Wizard) live in dnd-players-handbook.actors; pass packId+actorId for ' +
+          'a specific one.'
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple premium pregens named "${plan.prefab}" (${matches
+          .map(m => m.packId)
+          .join(', ')}) — pass packId+actorId to disambiguate.`
+      );
+    }
+    return matches[0];
+  }
+
+  throw new Error('Provide either `prefab` (a pregen name) or both `packId` and `actorId`.');
+}
+
+export async function createPcFromPrefab(plan: PcPrefabPlan): Promise<PcBuildResult> {
+  const ActorClass = (globalThis as any).Actor;
+  if (game.system.id !== 'dnd5e') {
+    throw new Error(`createPcFromPrefab requires D&D 5e. Current system: "${game.system.id}".`);
+  }
+  const warnings: string[] = [];
+
+  // 1. Resolve + copy the premium pregen (whole-document copy primitive: toObject + strip _id).
+  const src = await resolvePremiumCharacter(plan);
+  const { data } = await importFromCompendium(src.packId, src.actorId);
+
+  // 2. Rename + file under the PC folder; normalize a remote prototype-token texture to a local fallback.
+  const folderId = plan.folder ?? (await getOrCreateFolder('Foundry MCP Characters', 'Actor'));
+  data.name = plan.name;
+  if (folderId) data.folder = folderId;
+  if (data.prototypeToken?.texture?.src?.startsWith('http')) {
+    data.prototypeToken.texture.src = null;
+  }
+
+  const real = await ActorClass.create(data);
+  if (!real) throw new Error(`Failed to create PC "${plan.name}" from prefab "${src.name}"`);
+
+  // 3. Layer ability overrides + any modifications onto THIS copy via the same updateActor correctness
+  //    (resolves game.actors by id, so the compendium source is never touched). Best-effort.
+  let modificationsApplied: string[] | undefined;
+  const mods: Record<string, any> = { ...(plan.modifications ?? {}) };
+  if (plan.abilities) mods.abilities = plan.abilities;
+  if (Object.keys(mods).length > 0) {
+    try {
+      const res: any = await updateActor({ ...mods, actorIdentifier: real.id });
+      modificationsApplied = res?.applied;
+      for (const w of res?.warnings ?? []) warnings.push(w);
+    } catch (e) {
+      warnings.push(`Modifications failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // 4. Re-fetch fresh so derived data re-preps; report any unresolved @scale (empty on a real PC).
+  const fresh = game.actors.get(real.id);
+  fresh.reset?.();
+  const unresolvedScale = findGenuinelyUnresolvedScale(fresh);
+  const classItems = fresh.items.filter((i: any) => i.type === 'class');
+  const primaryClass =
+    classItems.find((i: any) => i.id === fresh.system?.details?.originalClass) ?? classItems[0];
+
+  return {
+    success: true,
+    from: src.name,
+    actor: {
+      id: fresh.id,
+      name: fresh.name,
+      className: primaryClass?.name ?? src.name,
+      species: fresh.items.find((i: any) => i.type === 'race')?.name ?? null,
+      background: fresh.items.find((i: any) => i.type === 'background')?.name ?? null,
+      level: fresh.system?.details?.level ?? null,
+      hp: fresh.system?.attributes?.hp?.max ?? null,
+      folder: folderId ?? null,
+      ...(classItems.length > 1
+        ? { classes: classItems.map((i: any) => ({ name: i.name, levels: i.system?.levels ?? 0 })) }
+        : {}),
+    },
+    ...(modificationsApplied ? { modificationsApplied } : {}),
+    ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
+    warnings,
+  };
 }
