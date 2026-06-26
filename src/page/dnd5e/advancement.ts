@@ -596,6 +596,54 @@ export async function inspectAdvancementChoices(args: {
 }
 
 // =============================================================================
+// restPcToFull — finish a freshly-CREATED PC fully rested (the deterministic equivalent of a long
+// rest), so it reads ready-to-play the instant the build returns — full HP, every spell/pact slot, and
+// no spent limited-use features — instead of relying on a later derived-data recompute (right after
+// Actor.create a PC can momentarily read partial HP / 0 slots until the dnd5e system re-prepares).
+// Manual top-off, NOT the system's Actor#longRest, ON PURPOSE: longRest can render a Rest dialog / post
+// a chat card, either of which HANGS headless (same class of hazard as the AdvancementManager render).
+// Reads the prepared max values off the reset actor, so it is edition-agnostic about slot tables.
+// Best-effort: any failure is a warning, never a build break. CREATE paths only — NOT levelUpPc, where
+// the PC keeps its current HP (max just grows) and an auto-heal on "ding" would be wrong.
+// =============================================================================
+
+async function restPcToFull(actor: any, warnings: string[]): Promise<void> {
+  try {
+    actor.reset?.();
+    const sys = actor.system ?? {};
+    const update: Record<string, unknown> = {};
+
+    // HP → max.
+    const hpMax = sys.attributes?.hp?.max;
+    if (typeof hpMax === 'number' && hpMax > 0) {
+      update['system.attributes.hp.value'] = hpMax;
+      update['system.attributes.hp.temp'] = 0;
+    }
+
+    // Every spell-level + pact slot → max.
+    const spells = sys.spells ?? {};
+    for (const key of Object.keys(spells)) {
+      const slot = (spells as any)[key];
+      if (slot && typeof slot.max === 'number' && slot.max > 0 && slot.value !== slot.max) {
+        update[`system.spells.${key}.value`] = slot.max;
+      }
+    }
+
+    if (Object.keys(update).length > 0) await actor.update(update);
+
+    // Recharge any limited-use feature/item that came out of the build with charges spent.
+    const itemUpdates = actor.items
+      .filter((i: any) => typeof i.system?.uses?.spent === 'number' && i.system.uses.spent > 0)
+      .map((i: any) => ({ _id: i.id, 'system.uses.spent': 0 }));
+    if (itemUpdates.length > 0) await actor.updateEmbeddedDocuments('Item', itemUpdates);
+
+    actor.reset?.();
+  } catch (e) {
+    warnings.push(`Long-rest finalize failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// =============================================================================
 // createPcActor — the orchestrator (the page op behind the create-pc tool; parallels createNpcActor).
 // =============================================================================
 
@@ -821,6 +869,9 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
       fresh = game.actors.get(real.id);
       fresh.reset?.();
     }
+
+    // Finish fully rested — full HP, all spell slots, no spent uses (see restPcToFull).
+    await restPcToFull(fresh, warnings);
 
     const unresolvedScale = findGenuinelyUnresolvedScale(fresh);
 
@@ -1164,6 +1215,8 @@ export async function createPcFromPrefab(plan: PcPrefabPlan): Promise<PcBuildRes
   // 4. Re-fetch fresh so derived data re-preps; report any unresolved @scale (empty on a real PC).
   const fresh = game.actors.get(real.id);
   fresh.reset?.();
+  // Finish fully rested — full HP, all spell slots, no spent uses (see restPcToFull).
+  await restPcToFull(fresh, warnings);
   const unresolvedScale = findGenuinelyUnresolvedScale(fresh);
   const classItems = fresh.items.filter((i: any) => i.type === 'class');
   const primaryClass =

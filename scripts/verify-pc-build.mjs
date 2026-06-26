@@ -281,6 +281,9 @@ try {
       a.reset?.();
       return {
         spell1max: a.system?.spells?.spell1?.max,
+        spell1value: a.system?.spells?.spell1?.value,
+        hpValue: a.system?.attributes?.hp?.value,
+        hpMax: a.system?.attributes?.hp?.max,
         ability: a.system?.attributes?.spellcasting,
         cantrips: a.items.filter(i => i.type === 'spell').map(i => i.name),
       };
@@ -296,6 +299,15 @@ try {
   assert(
     (wizRead?.cantrips?.length ?? 0) >= 2,
     `D3: chosen cantrips imported (${wizRead?.cantrips?.join(', ')})`
+  );
+  // restPcToFull: a freshly-CREATED PC comes out fully rested (full HP + full slots).
+  assert(
+    wizRead?.hpValue === wizRead?.hpMax && wizRead?.hpValue > 0,
+    `D4: PC created fully rested — HP value=max (${wizRead?.hpValue}/${wizRead?.hpMax})`
+  );
+  assert(
+    wizRead?.spell1value === wizRead?.spell1max && wizRead?.spell1value > 0,
+    `D5: PC created with full spell slots (spell1 ${wizRead?.spell1value}/${wizRead?.spell1max})`
   );
 
   // ---- Test E (v2): a LEVEL-5 Fighter — multi-level HP, subclass@3 + its features, @scale scales ----

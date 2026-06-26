@@ -191,6 +191,21 @@ in `warnings` — fix or ask, don't invent a spell.
 ## Step 7 — Finishing pass
 
 - **Art** → `set-actor-art` (portrait + token from a Data-relative path; upload first if needed).
+  - **Default portrait — DETERMINISTIC: the PC's class → that class's PHB pregen art.** A `create-pc`
+    build starts with no portrait (unlike a prefab copy, which carries book art). Unless the player gives
+    their own image, default the portrait to the **PHB pregen for the PC's class** — a fixed 1:1 mapping,
+    not a judgment call (this is the PC analog of the NPC builder's best-match portrait hunt, but for PCs
+    it must be *predictable*: same class always → same art). The premium book ships exactly one ready
+    pregen per class (Barbarian … Wizard) in `dnd-players-handbook.actors`, each with official class art
+    at the deterministic path **`modules/dnd-players-handbook/assets/journal-art/<class>.webp`** (class
+    lowercased — `ranger.webp`, `wizard.webp`, …). To be safe, confirm the path by resolving the pregen:
+    `search-compendium` `{ query: "<Class>", packType: "Actor" }` → the hit in `dnd-players-handbook.actors`
+    (id `phbprg<Class>0000`) → `get-compendium-entry` and read its `imageUrl`. Pass that path to
+    `set-actor-art` (sets portrait **and** token).
+  - **Multiclass:** use the art of the class whose **first level was selected** — i.e. the **primary
+    class** (`create-pc`'s `className` / the originalClass, the one that maxes its first-level HP), NOT
+    any later `multiclass[]` entry. Same deterministic rule, keyed on the starting class.
+  - Skip the default only when the player supplied their own art.
 - **Ownership** → `set-actor-ownership` — assign the **player** as owner (a PC should be controlled by
   its player, not GM-only like an NPC).
 - **Folder** → `move-documents` to file the PC (the engine already files new PCs under
@@ -262,6 +277,14 @@ place. It's the "ding, you levelled" workflow AND the way to multiclass.
 
 ## Notes
 
+- **A freshly-CREATED PC comes out fully rested — the tool does it, you don't.** `create-pc` and
+  `create-pc-from-prefab` finish the build with a long-rest top-off (full HP, every spell/pact slot,
+  no spent limited-use features) so the PC reads ready-to-play immediately (`restPcToFull` in
+  `advancement.ts`). This is why a brand-new PC shows current HP = max and full slots rather than the
+  transient "partial HP / 0 slots" a raw `Actor.create` can momentarily read before derived data
+  re-preps. No manual HP/slot fix-up needed. **`level-up-pc` does NOT rest** — on a level-up the PC
+  keeps its current HP (max just grows); auto-healing on "ding" would be wrong, so top-off is
+  CREATE-only.
 - **A new tool/param needs a Claude Code restart** to load into the running MCP server; the live verify
   script (`scripts/verify-pc-build.mjs`) bypasses this via `dist/`.
 - **`@scale` is native on a PC** — do NOT hand-patch it the way the NPC builder does. If `create-pc`
