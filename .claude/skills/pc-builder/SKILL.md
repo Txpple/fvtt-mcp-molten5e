@@ -45,16 +45,19 @@ match → **STOP and ASK** · authoring, not play. `create-pc` enforces premium-
 class/species/background not in the books is an **error, not invented**. If the user wants a class or
 species that isn't in the library, stop and ask — don't substitute or fabricate.
 
-> **v1 scope = level 1.** This builds a complete **level-1** PC (subclass comes at level 3; leveling
-> 1→N, milestone ASIs/feats, and multiclassing are future versions). If the user asks for a higher
-> level, build the level-1 PC and tell them leveling-up isn't wired yet.
+> **Scope = a single class, levels 1–20.** `create-pc` builds a complete PC at any `level` 1–20:
+> HP, features, **subclass (granted at level 3)**, and spell slots all scale with the level. Still
+> deferred: **multiclassing** (a second class) and **levelling an existing PC up** — both are future
+> versions. If the user asks for a multiclass build, build the primary class at the level and tell
+> them multiclassing isn't wired yet.
 
 ## The shape of a build
 
 `create-pc` takes the PC by **name**: `className` (required), optional `species` + `background`, the
-**final** `abilities`, a `choices` map (the player picks), optional caster `spells`, and `level` (1).
-It runs real advancement, so class/species/background **features, proficiencies, HP, and @scale all
-come from the engine** — you don't add them by hand. It returns
+**final** `abilities`, a `choices` map (the player picks), optional caster `spells`, `level` (1–20),
+and `hpMode` (`avg` default | `max`). It runs real advancement **across every level up to `level`**, so
+class/species/subclass/background **features, proficiencies, HP, and @scale all come from the engine** —
+you don't add them by hand. It returns
 `{success, actor, applied[], needsChoices[], unresolvedScale[], warnings[]}`.
 
 Two things are **yours**, not the tool's:
@@ -88,8 +91,13 @@ you're unsure — a typo or a non-premium pick should surface here, not as a too
    base array. (Species do **not** grant ability increases in 2024.) `create-pc` deliberately does NOT
    apply the background's ability advancement — you bake the increase into the final numbers here, so
    it isn't double-counted.
-3. Hand the result to `create-pc` as `abilities`. HP and every derived modifier re-derive from these
-   (e.g. a Fighter with final CON 14 → 10 + 2 = **12 HP** at level 1).
+3. **Ability Score Improvements (level 4/8/12/16/19)** — for a PC built **above level 3**, fold any
+   ASI ability increases the player took into the final numbers too (the engine SKIPS the ASI
+   advancement — the final scores are the source of truth). If the player instead took a **feat** at an
+   ASI tier, leave scores as-is and ADD the feat as a separate item after the build (Step 6, like gear)
+   — `create-pc` does not grant ASI-feats.
+4. Hand the result to `create-pc` as `abilities`. HP and every derived modifier re-derive from these
+   (e.g. a Fighter with final CON 14 → 10 + 2 = **12 HP** at level 1; at level 5, 10 + 4×6 + 5×2 = **44**).
 
 If the user doesn't care about the spread, pick a sensible class-appropriate array and tell them what
 you chose.
@@ -98,12 +106,13 @@ you chose.
 
 Level-1 PCs have **player choices** the engine won't invent (per design.md §2.1):
 
-- **`inspect-pc-advancement`** (`className`, `level: 1`) lists the class's choice points — each with an
-  **id**, type (`Trait` / `ItemChoice`), how many to pick (`count`), and the legal **options**. Use it
+- **`inspect-pc-advancement`** (`className`, `level`) lists the class's choice points **up to that
+  level** — each with an **id**, type (`Trait` / `ItemChoice` / `Subclass`), how many to pick (`count`),
+  and the legal **options** (the Subclass choice is enriched with the class's actual subclasses). Use it
   to plan, and to show the player their options.
 - Or just call `create-pc` with what you have; if picks are missing it returns **`success:false` +
-  `needsChoices[]`** (the same descriptors, covering class **and** species **and** background) and
-  **creates nothing** — no litter. Fill the map and re-call.
+  `needsChoices[]`** (the same descriptors, covering class **and** species **and** background **and** the
+  L3 subclass) and **creates nothing** — no litter. Fill the map and re-call.
 
 Build the `choices` map keyed **level → advancement-id → data**:
 - **Trait pick** (skills, expertise, languages, tools, weapon masteries) → `{ chosen: [keys] }`.
@@ -113,17 +122,26 @@ Build the `choices` map keyed **level → advancement-id → data**:
   you're unsure of the exact key for a language/tool/weapon, see "defaults" below.
 - **ItemChoice pick** (fighting style, draconic ancestry, etc.) → `{ selected: [uuid] }` using a uuid
   from the option list (the options carry readable labels — e.g. "Archery", "Acid Breath Weapon").
+- **Subclass pick** (level 3+) → `{ uuid: "<subclass-uuid>" }`. The needsChoices/inspect Subclass entry
+  already lists the class's subclasses (`options: [{value:uuid, label:name}, …]`) — pick the one the
+  player wants. Its subclass features are granted automatically; subclass spells (for a subclass caster)
+  are added in Step 5/6.
 
-Example (Fighter):
+Example (a level-5 Fighter):
 ```
 choices: {
+  "0": { "<draconic-ancestry-id>": { selected: ["<an-ancestry-uuid>"] } },  // species choices at level 0
   "1": {
     "<skill-prof-id>":     { chosen: ["skills:ath", "skills:prc"] },
     "<fighting-style-id>": { selected: ["Compendium.dnd-players-handbook.feats.Item.phbfstArchery000"] }
   },
-  "0": { "<draconic-ancestry-id>": { selected: ["<an-ancestry-uuid>"] } }   // species choices sit at level 0
+  "3": { "<subclass-id>": { uuid: "Compendium.dnd-players-handbook.classes.Item.phbftrChampion00" } },
+  "4": { "<weapon-mastery-id>": { chosen: ["weapon:martial:greatsword"] } }
 }
 ```
+Each choice is keyed at the level it's offered — L1 picks at `"1"`, subclass at `"3"`, the L4 weapon
+mastery at `"4"`, species/background at `"0"`. ASI tiers (4/8/…) are NOT choices here — ability bumps
+ride in the final scores (Step 2) and feats are added separately (Step 6).
 
 **Ask the player for the meaningful picks** (which skills, which fighting style, which dragon ancestry)
 — these define the character; don't silently choose them. For purely flavor picks the player doesn't
@@ -144,25 +162,27 @@ features, the chosen skills/feats, correct HP, and **resolved @scale** (empty `u
 
 ## Step 5 — Spells (casters)
 
-Slots are automatic — a caster class sets up its own level-1 spell slots through advancement (a Wizard
-gets its 2 first-level slots and INT casting with no extra step). You only choose **which spells**:
-pass `spells: { cantrips: [names], prepared: [names] }` to `create-pc` (names from the premium PHB).
-Use `search-compendium-spells` (facets: `spellLevel`, `spellSchool`, `damageType`) to find or confirm
-spells. Pick the class's level-1 loadout (e.g. a Wizard's 3 cantrips + 6 spellbook spells); ask the
-player for signature picks. A name not in the books is reported in `warnings` — fix or ask, don't
-invent a spell.
+Slots are automatic — a caster class sets up its own spell slots through advancement (a Wizard gets its
+slots and INT casting with no extra step; the count scales with `level`). You only choose **which
+spells**: pass `spells: { cantrips: [names], prepared: [names] }` to `create-pc` (names from the premium
+PHB). Use `search-compendium-spells` (facets: `spellLevel`, `spellSchool`, `damageType`) to find or
+confirm spells. Pick the class's loadout for the level (e.g. a level-1 Wizard's 3 cantrips + 6 spellbook
+spells; more at higher levels); ask the player for signature picks. A name not in the books is reported
+in `warnings` — fix or ask, don't invent a spell.
 
-## Step 6 — Starting equipment (your call, via `import-item`)
+## Step 6 — Starting equipment + ASI-feats (your call, via `import-item` / `add-feature`)
 
-`create-pc` adds **no gear**. After the PC exists, compose its starting kit by **copying real items**
-from the PHB/DMG with `import-item` (`actorIdentifier` = the new PC), `equipped: true` for what it
-wears/wields:
-- The 2024 class+background starting-equipment package, **or** the gold option if the player would
-  rather buy — that's the player's choice; ask.
-- Worn armor / shield, the primary weapon(s), a pack's worth of adventuring gear, and any starting
-  spellbook/focus. Defer item judgment (which base, magic vs mundane) to [[physical-item-builder]].
-- Copied armor doesn't auto-drive AC — if the AC looks off after equipping, set it with `update-actor`
-  (a shield bonus applies under any calc).
+`create-pc` adds **no gear and no ASI-feats**. After the PC exists:
+- **Equipment** — compose the starting kit by **copying real items** from the PHB/DMG with `import-item`
+  (`actorIdentifier` = the new PC), `equipped: true` for what it wears/wields. The 2024 class+background
+  starting-equipment package, **or** the gold option if the player would rather buy — ask. Worn armor /
+  shield, the primary weapon(s), adventuring gear, any spellbook/focus. Defer item judgment to
+  [[physical-item-builder]]. Copied armor doesn't auto-drive AC — if AC looks off, set it with
+  `update-actor` (a shield bonus applies under any calc).
+- **Feats** — for a PC **above level 3** whose player took a **feat** at an ASI tier (4/8/12/16/19),
+  add it now: `add-feature` mode `compendium-features` with the feat name (it copies the real PHB feat),
+  or `import-item` for a feat-as-item. (Ability-increase ASIs are already in the final scores — don't
+  re-apply them. The Origin feat from the background is granted automatically.)
 
 ## Step 7 — Finishing pass
 
@@ -190,7 +210,12 @@ art/ownership/folder — and flag anything you asked about, approximated, or lef
   surface it rather than papering over it.
 - Keep `sourceRules` consistent (**2024 by default**; pass `2014` only if the user explicitly wants
   legacy). The choices map is keyed by **level then advancement-id** — species/background creation
-  choices sit at level `"0"`, class choices at `"1"`.
-- The skill owns judgment (which class/species/background, the ability math, the picks, the gear); the
-  tools own correctness (name→uuid, advancement sequencing, persist, @scale). Don't reach past that
-  line — e.g. don't try to set proficiencies or HP directly; let advancement do it.
+  choices sit at level `"0"`, class L1 choices at `"1"`, the subclass at `"3"`, and any higher-level
+  Trait/ItemChoice pick at its own level. Re-run `inspect-pc-advancement` at the target `level` to see
+  every choice the build will ask for.
+- **Levelling:** `create-pc` builds at any `level` 1–20 in one shot (HP per level via `hpMode`
+  avg|max; subclass at 3; slots/features/@scale scale). **Multiclassing** (a second class) and
+  **levelling an existing PC up** are not wired yet — say so if asked, and build the single-class PC.
+- The skill owns judgment (which class/species/background/subclass, the ability math, the picks, the
+  gear); the tools own correctness (name→uuid, advancement sequencing, persist, @scale). Don't reach
+  past that line — e.g. don't try to set proficiencies or HP directly; let advancement do it.
