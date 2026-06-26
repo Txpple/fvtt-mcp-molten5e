@@ -12,8 +12,8 @@ import { Foundry } from '../dist/foundry.js';
 import { SceneTools } from '../dist/tools/scene.js';
 import { ActorTools } from '../dist/tools/actor.js';
 import { CompendiumTools } from '../dist/tools/compendium.js';
-import { QuestCreationTools } from '../dist/tools/quest-creation.js';
-import { AssetBridgeTools } from '../dist/tools/asset-bridge.js';
+import { JournalTools } from '../dist/tools/journal.js';
+import { PlaylistTools } from '../dist/tools/playlist.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -49,8 +49,8 @@ const foundry = new Foundry({
 const scene = new SceneTools({ foundry, logger });
 const character = new ActorTools({ foundry, logger });
 const compendium = new CompendiumTools({ foundry, logger });
-const quest = new QuestCreationTools({ foundry, logger });
-const asset = new AssetBridgeTools({ foundry, logger });
+const journal = new JournalTools({ foundry, logger });
+const playlist = new PlaylistTools({ foundry, logger });
 
 const results = [];
 async function check(name, fn, ok) {
@@ -109,17 +109,17 @@ try {
   );
   await check(
     'list-scenes',
-    () => asset.handleListScenes({}),
+    () => scene.handleListScenes({}),
     o => typeof o === 'string' || o != null
   );
   await check(
     'list-journals',
-    () => quest.handleListJournals({}),
+    () => journal.handleListJournals({}),
     o => o != null
   );
   await check(
     'list-playlists',
-    () => asset.handleListPlaylists({}),
+    () => playlist.handleListPlaylists({}),
     o => typeof o === 'string' || o != null
   );
 } catch (e) {

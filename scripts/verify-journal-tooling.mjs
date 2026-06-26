@@ -2,7 +2,7 @@
 // the pure block renderer round-trip + the @UUID-link / append primitives.
 //
 // Drives a real headless Foundry session through the foundry.call seam (fresh dist/, no CC restart).
-// The TOOL handlers (QuestCreationTools) are unit-tested; this exercises the PAGE primitives they
+// The TOOL handlers (JournalTools) are unit-tested; this exercises the PAGE primitives they
 // compose, against the live `sandbox` world. It asserts:
 //   1. DE-RISK per-page ownership — a journal with a playerVisible handout page + a GM-only page;
 //      read back the visibility (proves Foundry v14 persists per-page JournalEntryPage ownership);

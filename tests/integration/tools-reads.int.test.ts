@@ -7,8 +7,8 @@ import { Foundry } from '../../dist/foundry.js';
 import { SceneTools } from '../../dist/tools/scene.js';
 import { ActorTools } from '../../dist/tools/actor.js';
 import { CompendiumTools } from '../../dist/tools/compendium.js';
-import { QuestCreationTools } from '../../dist/tools/quest-creation.js';
-import { AssetBridgeTools } from '../../dist/tools/asset-bridge.js';
+import { JournalTools } from '../../dist/tools/journal.js';
+import { PlaylistTools } from '../../dist/tools/playlist.js';
 import { LIVE, foundryConfig, noopLogger, CONNECT_TIMEOUT_MS } from './setup.js';
 
 describe.skipIf(!LIVE)('read-tool spine (live)', () => {
@@ -16,8 +16,8 @@ describe.skipIf(!LIVE)('read-tool spine (live)', () => {
   let scene: SceneTools;
   let character: ActorTools;
   let compendium: CompendiumTools;
-  let quest: QuestCreationTools;
-  let asset: AssetBridgeTools;
+  let journal: JournalTools;
+  let playlist: PlaylistTools;
   let firstActorName: string | undefined;
 
   beforeAll(async () => {
@@ -27,8 +27,8 @@ describe.skipIf(!LIVE)('read-tool spine (live)', () => {
     scene = new SceneTools({ foundry, logger: noopLogger });
     character = new ActorTools({ foundry, logger: noopLogger });
     compendium = new CompendiumTools({ foundry, logger: noopLogger });
-    quest = new QuestCreationTools({ foundry, logger: noopLogger });
-    asset = new AssetBridgeTools({ foundry, logger: noopLogger });
+    journal = new JournalTools({ foundry, logger: noopLogger });
+    playlist = new PlaylistTools({ foundry, logger: noopLogger });
 
     const list = await character.handleListCharacters({});
     firstActorName = list?.characters?.[0]?.name;
@@ -60,14 +60,14 @@ describe.skipIf(!LIVE)('read-tool spine (live)', () => {
   });
 
   it('list-scenes', async () => {
-    await expect(asset.handleListScenes({})).resolves.toBeDefined();
+    await expect(scene.handleListScenes({})).resolves.toBeDefined();
   });
 
   it('list-journals', async () => {
-    await expect(quest.handleListJournals({})).resolves.not.toBeNull();
+    await expect(journal.handleListJournals({})).resolves.not.toBeNull();
   });
 
   it('list-playlists', async () => {
-    await expect(asset.handleListPlaylists({})).resolves.toBeDefined();
+    await expect(playlist.handleListPlaylists({})).resolves.toBeDefined();
   });
 });
