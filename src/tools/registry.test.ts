@@ -45,11 +45,11 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 81 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 83 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(81);
+    expect(names.length).toBe(83);
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
@@ -58,6 +58,19 @@ describe('tool registry', () => {
     expect(names.has('create-actor-from-compendium')).toBe(true);
     expect(names.has('author-npc')).toBe(true);
     expect(names.has('create-actor')).toBe(false); // deprecated alias removed
+  });
+
+  it('advertises the PC-authoring tools (siblings to author-npc, design.md §7)', () => {
+    const { tools } = build();
+    const names = new Set(tools.map(t => t.name));
+    expect(names.has('create-pc')).toBe(true);
+    expect(names.has('inspect-pc-advancement')).toBe(true);
+    // create-pc's `choices` map is a nested z.record (level → adv-id → data), NOT a zod tuple —
+    // the 2020-12-validity sweep above guards it, but pin the advertised shape too.
+    const createPc = tools.find(t => t.name === 'create-pc') as any;
+    expect(createPc.inputSchema.type).toBe('object');
+    expect(createPc.inputSchema.required).toEqual(['name', 'className']);
+    expect(Object.keys(createPc.inputSchema.properties)).toContain('choices');
   });
 
   it('advertises the actor-editing tools by name', () => {
@@ -198,5 +211,28 @@ describe('tool registry', () => {
     const ops = calls.map(([op]) => op);
     expect(ops.filter(op => op === 'createActorFromCompendium').length).toBe(1);
     expect(ops.filter(op => op === 'createNpcActor').length).toBe(1);
+  });
+
+  it('dispatches the PC tools to their page ops (createPcActor / inspectAdvancementChoices)', async () => {
+    clearSystemCache(); // assertDnd5e probes getWorldInfo (cached module-globally)
+    const { foundry, calls } = makeFoundry((name: string) => {
+      if (name === 'getWorldInfo') return { system: 'dnd5e' };
+      if (name === 'createPcActor')
+        return {
+          success: true,
+          actor: { id: 'p1', name: 'Aria', className: 'Wizard', level: 1, hp: 8 },
+        };
+      if (name === 'inspectAdvancementChoices')
+        return { class: { name: 'Wizard' }, level: 1, choices: [], spellcasting: 'full' };
+      return {};
+    });
+    const { dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
+
+    await dispatch('create-pc', { name: 'Aria', className: 'Wizard' });
+    await dispatch('inspect-pc-advancement', { className: 'Wizard' });
+
+    const ops = calls.map(([op]) => op);
+    expect(ops.filter(op => op === 'createPcActor').length).toBe(1);
+    expect(ops.filter(op => op === 'inspectAdvancementChoices').length).toBe(1);
   });
 });

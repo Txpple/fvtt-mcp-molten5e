@@ -19,6 +19,7 @@ import { OwnershipTools } from './tools/ownership.js';
 
 import { DnD5eAddFeatureTool } from './tools/dnd5e/add-feature.js';
 import { DnD5eNpcTools } from './tools/dnd5e/npc.js';
+import { DnD5ePcTools } from './tools/dnd5e/pc.js';
 import { DnD5eFeaturesFromCompendiumTools } from './tools/dnd5e/features.js';
 import { DnD5eUpdateActorTool } from './tools/dnd5e/update-actor.js';
 import { DnD5eUpdateActorItemTool } from './tools/dnd5e/update-actor-item.js';
@@ -67,6 +68,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
   const dnd5eAddFeatureTool = new DnD5eAddFeatureTool({ foundry, logger });
   const dnd5eNpcTools = new DnD5eNpcTools({ foundry, logger });
+  const dnd5ePcTools = new DnD5ePcTools({ foundry, logger });
   const dnd5eFeaturesFromCompendiumTools = new DnD5eFeaturesFromCompendiumTools({
     foundry,
     logger,
@@ -105,6 +107,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...sceneTools.getToolDefinitions(),
     ...actorCreationTools.getToolDefinitions(),
     ...dnd5eNpcTools.getToolDefinitions(),
+    ...dnd5ePcTools.getToolDefinitions(),
     ...dnd5eUpdateActorTool.getToolDefinitions(),
     ...dnd5eUpdateActorItemTool.getToolDefinitions(),
     ...dnd5eManageActivityTool.getToolDefinitions(),
@@ -161,6 +164,10 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'create-actor-from-compendium': args =>
       actorCreationTools.handleCreateActorFromCompendium(args),
     'author-npc': args => dnd5eNpcTools.handleCreateNpc(args),
+    // PC authoring (design.md §7 — siblings to author-npc, NEVER fused into createNpc):
+    // create-pc (type:character + advancement → @scale resolves) + inspect-pc-advancement (read-only).
+    'create-pc': args => dnd5ePcTools.handleCreatePc(args),
+    'inspect-pc-advancement': args => dnd5ePcTools.handleInspectPcAdvancement(args),
     'delete-actor': args => actorCreationTools.handleDeleteActor(args),
     'delete-folder': args => actorCreationTools.handleDeleteFolder(args),
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),

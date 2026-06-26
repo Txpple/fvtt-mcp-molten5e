@@ -453,13 +453,13 @@ export async function inspectAdvancementChoices(args: {
 }
 
 // =============================================================================
-// buildPcActor — the orchestrator (backs create-pc).
+// createPcActor — the orchestrator (the page op behind the create-pc tool; parallels createNpcActor).
 // =============================================================================
 
-export async function buildPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
+export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
   const ActorClass = (globalThis as any).Actor;
   if (game.system.id !== 'dnd5e') {
-    throw new Error(`buildPcActor requires D&D 5e. Current system: "${game.system.id}".`);
+    throw new Error(`createPcActor requires D&D 5e. Current system: "${game.system.id}".`);
   }
 
   const level = plan.level ?? 1;
