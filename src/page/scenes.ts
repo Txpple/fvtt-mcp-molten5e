@@ -152,6 +152,33 @@ export function sidecarWallToV14(w: SidecarWall): Record<string, unknown> | null
   return doc;
 }
 
+/**
+ * Count walls that will SILENTLY DEFAULT their sight channel — the signature of a
+ * dropped field on import. A wall that declares other restriction channels
+ * (`light`/`move`/`sound`) but omits BOTH the v14 `sight` and the legacy `sense`
+ * almost certainly lost its sight value in transit: Foundry defaults a wall with
+ * no `sight` to NORMAL (vision-blocking), so EVERY such wall blocks line of sight —
+ * turning limited/none walls (statues, railings, low tombs, see-through props) into
+ * solid silhouettes the players can't see past. We cannot recover the intended
+ * value here (the caller never sent it), but we surface the count as a warning so
+ * a lossy import is caught instead of shipping a scene where nothing is see-through.
+ * (v10/v11 scene + compendium-pack data uses split `sight`/`light`/`move`/`sound`
+ * fields, NOT the pre-v10 single `sense` — remap helpers that copy `sense` silently
+ * drop sight on this data; that is exactly the case this catches.) Pure/exported for
+ * unit testing.
+ */
+export function countWallsMissingSight(walls: SidecarWall[] | undefined): number {
+  if (!Array.isArray(walls)) return 0;
+  return walls.filter(w => {
+    const c = Array.isArray(w?.c) ? w.c.map(Number) : [];
+    const usableSegment = c.length >= 4 && c.slice(0, 4).every(n => Number.isFinite(n));
+    const declaresOtherChannel =
+      w.light !== undefined || w.move !== undefined || w.sound !== undefined;
+    const sightOmitted = w.sight === undefined && w.sense === undefined;
+    return usableSegment && declaresOtherChannel && sightOmitted;
+  }).length;
+}
+
 interface SidecarLight {
   x?: number;
   y?: number;
@@ -625,6 +652,14 @@ async function importScenePlaceables(
         .filter((w): w is Record<string, unknown> => w !== null);
       const skipped = (walls as SidecarWall[]).length - data.length;
       if (skipped > 0) errors.push(`${skipped} wall(s) skipped (missing/invalid coordinates)`);
+      const defaultedSight = countWallsMissingSight(walls as SidecarWall[]);
+      if (defaultedSight > 0)
+        errors.push(
+          `${defaultedSight} wall(s) declared light/move/sound but no sight — sight DEFAULTED to ` +
+            `NORMAL (vision-blocking). Importing v10+ scene/.db data? pass each wall's \`sight\` ` +
+            `(0=none, 10=limited, 20=normal); dropping it makes every wall block line-of-sight, so ` +
+            `statues/railings/props stop being see-through.`
+        );
       if (data.length > 0) {
         const created = await scene.createEmbeddedDocuments('Wall', data);
         out.wallsCreated = created?.length ?? 0;

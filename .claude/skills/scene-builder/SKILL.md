@@ -58,6 +58,41 @@ creating the scene:
 - Pass the sidecar's `walls` and `lights` arrays straight into `create-scene` (`walls:` / `lights:`).
   **Don't transform the coordinates** — they're absolute canvas pixels and the tool writes them
   verbatim. The tool reports how many walls/lights it placed.
+- **Pass each wall object WHOLE — never cherry-pick or rename its fields.** Forward every restriction
+  channel a wall carries: `c`, `sight`, `light`, `move`, `sound`, `door`, `ds`, `dir`. The trap:
+  **v10+ data (Foundry scene exports AND module compendium `packs/*.db` Scene records) uses the split
+  `sight`/`light`/`move`/`sound` fields; the pre-v10 single `sense` key is ABSENT.** A remap that copies
+  `sense` (e.g. `walls.map(w => ({ c, move, sense, sound }))`) silently DROPS `sight` on this data — and
+  a wall with no `sight` defaults to NORMAL (vision-blocking), so every limited/none wall (statues,
+  railings, low tombs, see-through props) turns into a solid silhouette the players can't see past
+  (`light`/`move` look fine, so shadows and collision mislead you into thinking it worked). If you must
+  build the array programmatically, copy `sight` explicitly (or just spread the whole wall). `create-scene`
+  now emits a ⚠ warning — "*N wall(s) declared light/move/sound but no sight*" — when it detects this
+  dropped-sight signature; **if you see that warning, you lost `sight` upstream — fix the mapping and
+  re-import, don't ship it.** (Learned the hard way importing the Tom Cartos Gothic Cemetery pack,
+  2026-06-28.)
+- **Pass each light's ENTIRE `config` WHOLE too — never flatten it to a few emission fields.** A v10+
+  light nests its emission under `config{}`: not just `dim`/`bright`/`color`/`alpha`, but
+  **`luminosity`, `attenuation`, `coloration`, `saturation`, `contrast`, `shadows`, `animation`
+  (`{type,speed,intensity}`), and `darkness` (`{min,max}`)**. Forward the whole object —
+  `lights.map(l => ({ x: l.x, y: l.y, rotation: l.rotation, config: l.config }))` — the tool's
+  `SidecarLightSchema` is `.passthrough()` and the page side `Object.assign`s `config` in, so everything
+  carries. **The trap:** a remap that keeps only `{x,y,dim,bright,color,alpha}` drops the rest, and
+  Foundry fills the gaps with its OWN defaults — which are *brighter and harsher* than most authored
+  torchlight: **`luminosity` 0.25 → 0.5 (≈2× brightness), `attenuation` 0.75 → 0.5 (harder falloff),
+  `animation` torch → none (no flicker)**. Across dozens of warm-tinted lights overlapping additively in
+  a dark scene, that reads as a **blown-out, over-saturated (often yellow) wash** vs. the original
+  bitmap's soft pools — the tint color itself is usually fine; it's the doubled luminosity + lost
+  attenuation that blow it out. No runtime warning catches this (a genuinely-flat legacy light is
+  indistinguishable), so it's on you: **spread the whole light, don't cherry-pick.** (Same Tom Cartos
+  import, 2026-06-28 — the walls lost `sight`, the lights lost `config`.)
+- **Source is a module compendium pack, not a sidecar?** A map module ships its scenes in
+  `packs/<name>.db` (a `type: "Scene"` pack — newline-delimited JSON in v10/v11, a LevelDB dir in v12+).
+  Each record is a full Scene with `background.src`, `width`/`height`, `grid`, and its own `walls`/`lights`
+  arrays — same shape `create-scene` consumes. Upload the map image (Plane B), then pass that record's
+  `walls`/`lights` through **whole** (per the rules above — full wall channels, full light `config`). The
+  map's `background.src` points at the module's path (`modules/<id>/maps/…`); repoint it at wherever you
+  uploaded the image.
 - **Not a Foundry sidecar?** A **Universal VTT** file (`.uvtt` / `.dd2vtt` / `.df2vtt`, or a JSON with
   `resolution`/`pixels_per_grid`/`line_of_sight`/`portals` and a base64 `image`) uses grid-unit
   coordinates and a different schema — `create-scene` does **not** convert that yet. Don't feed it in

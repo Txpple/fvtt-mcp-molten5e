@@ -13,6 +13,7 @@ import {
   normalizeWeatherKey,
   toV14WallRestriction,
   sidecarWallToV14,
+  countWallsMissingSight,
   sidecarLightToV14,
 } from './scenes.js';
 
@@ -120,6 +121,51 @@ describe('sidecarWallToV14', () => {
     expect(sidecarWallToV14({})).toBeNull();
     expect(sidecarWallToV14({ c: [1, 2, 3] })).toBeNull();
     expect(sidecarWallToV14({ c: [1, 2, 3, Number.NaN] })).toBeNull();
+  });
+
+  it('omits sight when neither sight nor sense is given (Foundry then defaults it to NORMAL)', () => {
+    // Regression: a wall carrying only the OTHER channels (the shape produced by a
+    // remap that copied light/move/sound but dropped sight) must not invent a sight
+    // value — it is omitted here and Foundry defaults it to NORMAL. countWallsMissingSight
+    // is what surfaces that as a warning.
+    const w = sidecarWallToV14({ c: [0, 0, 5, 5], light: 10, move: 20, sound: 10 });
+    expect(w).not.toHaveProperty('sight');
+    expect(w?.light).toBe(10);
+    expect(w?.move).toBe(20);
+  });
+});
+
+describe('countWallsMissingSight', () => {
+  it('flags walls that declare light/move/sound but omit both sight and sense', () => {
+    // The exact dropped-sight signature: real coords + other channels, no sight/sense.
+    const walls = [
+      { c: [0, 0, 5, 5], light: 20, move: 20, sound: 20 },
+      { c: [5, 5, 9, 9], move: 20 },
+    ];
+    expect(countWallsMissingSight(walls)).toBe(2);
+  });
+
+  it('does not flag walls that carry sight (v14) or sense (legacy)', () => {
+    const walls = [
+      { c: [0, 0, 5, 5], sight: 10, light: 10, move: 20 }, // v14 sight present
+      { c: [5, 5, 9, 9], sense: 1, move: 20 }, // legacy sense present
+      { c: [9, 9, 1, 1], sight: 0 }, // sight 0 (none) is explicit, not missing
+    ];
+    expect(countWallsMissingSight(walls)).toBe(0);
+  });
+
+  it('ignores bare {c}-only walls (no restriction channels = intentional default) and invalid coords', () => {
+    const walls = [
+      { c: [0, 0, 5, 5] }, // no channels at all → not the dropped-sight signature
+      { c: [1, 2, 3] }, // invalid segment
+      {}, // no coords
+    ];
+    expect(countWallsMissingSight(walls)).toBe(0);
+  });
+
+  it('returns 0 for a missing/empty wall list', () => {
+    expect(countWallsMissingSight(undefined)).toBe(0);
+    expect(countWallsMissingSight([])).toBe(0);
   });
 });
 

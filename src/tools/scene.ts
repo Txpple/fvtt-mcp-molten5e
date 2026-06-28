@@ -111,6 +111,17 @@ const SidecarLightSchema = z
     alpha: z.number().optional().describe('v14 tint opacity 0–1.'),
     rotation: z.number().optional().describe('Light rotation in degrees.'),
     angle: z.number().optional().describe('Emission cone angle in degrees (360 = full).'),
+    config: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "A v10+ light's full `config` object, carried VERBATIM (merged over the flat fields): " +
+          'luminosity, attenuation, coloration, saturation, contrast, shadows, ' +
+          'animation {type,speed,intensity}, darkness {min,max}, plus dim/bright/color/alpha/angle. ' +
+          'PREFER passing this whole — flattening to just dim/bright/color/alpha lets Foundry default ' +
+          'the rest BRIGHTER/harsher (luminosity 0.5, attenuation 0.5, no flicker), which blows out and ' +
+          'over-saturates a torch-lit scene.'
+      ),
   })
   .passthrough();
 
