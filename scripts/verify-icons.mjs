@@ -111,9 +111,14 @@ try {
   }
   if (probed === 0) {
     skips++;
-    console.log('  SKIP  static assets not reachable from Node (provenance: harvested live) — see part B');
+    console.log(
+      '  SKIP  static assets not reachable from Node (provenance: harvested live) — see part B'
+    );
   } else {
-    assert(missing.length === 0, `all ${probed} probed icon paths exist (404s: ${missing.join(', ') || 'none'})`);
+    assert(
+      missing.length === 0,
+      `all ${probed} probed icon paths exist (404s: ${missing.join(', ') || 'none'})`
+    );
   }
 
   // --- Host NPC: copy the first MM creature (a realistic prefab base) -------------------------
@@ -230,5 +235,7 @@ try {
   await f.dispose?.();
 }
 
-console.log(`\n==== icon auto-fill verification: ${passes} passed, ${fails} failed, ${skips} skipped ====`);
+console.log(
+  `\n==== icon auto-fill verification: ${passes} passed, ${fails} failed, ${skips} skipped ====`
+);
 process.exit(fails > 0 ? 1 : 0);

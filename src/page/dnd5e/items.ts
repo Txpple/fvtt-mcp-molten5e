@@ -274,9 +274,51 @@ function findContainer(items: any, identifier: string): any {
   return matches[0];
 }
 
+// Default folder for the world-Item "loot twin" a magic item gets when placed on an actor (rule 9).
+const DEFAULT_LOOT_FOLDER = 'Loot';
+
+/** True when a built/copied item's system data marks it magic — rarity set, the 'mgc' property, or a
+ * numeric +N (weapon system.magicalBonus or armor system.armor.magicalBonus). PURE — unit-tested. */
+export function isMagicItemDoc(system: any): boolean {
+  if (!system || typeof system !== 'object') return false;
+  if (typeof system.rarity === 'string' && system.rarity !== '') return true;
+  if (Array.isArray(system.properties) && system.properties.includes('mgc')) return true;
+  const bonus = system.magicalBonus ?? system.armor?.magicalBonus;
+  if (bonus != null && bonus !== '' && bonus !== '0' && bonus !== 0) return true;
+  return false;
+}
+
+/** Rule 9 — whether to also mint a world-Item loot twin for an item placed on an actor. Explicit
+ * lootCopy true forces it, false suppresses it; otherwise it is automatic for magic items (so the rule
+ * holds without anyone remembering). A world-item target is already lootable, so this only fires on the
+ * actor branch. PURE — unit-tested. */
+export function wantsLootCopy(lootCopy: unknown, isMagic: boolean): boolean {
+  if (lootCopy === false) return false;
+  if (lootCopy === true) return true;
+  return isMagic;
+}
+
+/** Create the world-Item loot twin from a prepared item doc; returns a compact descriptor (or null). */
+async function mintLootCopy(
+  lootDoc: { name: string; type: string; [k: string]: any },
+  folder: string
+): Promise<any> {
+  const res: any = await createWorldItems({ items: [lootDoc], folder });
+  const created = res?.created?.[0];
+  return created
+    ? {
+        id: created.id,
+        name: created.name,
+        type: created.type,
+        folderId: res.folderId,
+        folderName: res.folderName,
+      }
+    : null;
+}
+
 /**
  * Create a structured physical item on an actor (embedded inventory) or in the world Items sidebar.
- * data is the normalized object the add-item tool sends. Returns { success, target, item }.
+ * data is the normalized object the add-item tool sends. Returns { success, target, item, lootCopy? }.
  */
 export async function addItem(data: any): Promise<unknown> {
   if (game.system.id !== 'dnd5e') {
@@ -385,11 +427,26 @@ export async function addItem(data: any): Promise<unknown> {
       await actor.update({ 'system.attributes.ac.calc': 'default' });
     }
 
-    return {
+    const result: any = {
       success: true,
       target: { type: 'actor', id: actor.id, name: actor.name },
       item: { id: created.id, name: created.name, type: created.type },
     };
+
+    // Rule 9 — a magic item on an NPC is ALSO loot. Mint a matching world Item (same stats + icon, but
+    // loose: not equipped/attuned, not in the actor's container) unless the caller opted out.
+    if (wantsLootCopy(data.lootCopy, isMagicItemDoc(doc.system))) {
+      const lootDoc = buildPhysicalItemData({
+        ...baseOpts,
+        containerId: null,
+        equipped: false,
+        attuned: false,
+      });
+      const loot = await mintLootCopy(lootDoc, data.lootCopyFolder ?? DEFAULT_LOOT_FOLDER);
+      if (loot) result.lootCopy = loot;
+    }
+
+    return result;
   }
 
   // World Items sidebar.
@@ -463,13 +520,30 @@ export async function importItemFromCompendium(data: any): Promise<unknown> {
       throw new Error(`Failed to copy item "${doc.name}" onto actor "${actor.name}"`);
     }
     const unresolvedScale = findUnresolvedScaleTokens(toSource(created));
-    return {
+    const result: any = {
       success: true,
       source: { packId: data.packId, itemId: data.itemId, name: sourceName },
       target: { type: 'actor', id: actor.id, name: actor.name },
       item: { id: created.id, name: created.name, type: created.type },
       ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
     };
+
+    // Rule 9 — a magic item copied onto an NPC is ALSO loot. Mint a loose world-Item twin (same art +
+    // stats, not equipped/attuned, not nested) unless the caller opted out.
+    if (wantsLootCopy(data.lootCopy, isMagicItemDoc(doc.system))) {
+      const lootDoc: any = foundry.utils.deepClone(doc);
+      delete lootDoc._id;
+      lootDoc.system = lootDoc.system ?? {};
+      delete lootDoc.system.container;
+      if (EQUIPPABLE_DOC.has(lootDoc.type)) {
+        lootDoc.system.equipped = false;
+        lootDoc.system.attuned = false;
+      }
+      const loot = await mintLootCopy(lootDoc, data.lootCopyFolder ?? DEFAULT_LOOT_FOLDER);
+      if (loot) result.lootCopy = loot;
+    }
+
+    return result;
   }
 
   if (data.container) {

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildPhysicalItemData } from './items.js';
+import { buildPhysicalItemData, isMagicItemDoc, wantsLootCopy } from './items.js';
 import { isPlaceholderIcon, resolveAuthoredIcon } from './icons.js';
 
 describe('buildPhysicalItemData — cross-cutting fields', () => {
@@ -281,5 +281,45 @@ describe('buildPhysicalItemData — errors', () => {
     expect(() => buildPhysicalItemData({ itemType: 'spaceship', name: 'X' })).toThrow(
       /Unknown itemType/
     );
+  });
+});
+
+// Rule 9 — a magic item on an NPC must also exist as a lootable world Item. These pin the pure
+// decision logic; the actual minting (createWorldItems) is covered by scripts/verify-loot-copy.mjs.
+describe('isMagicItemDoc', () => {
+  it('flags a set rarity, the mgc property, or a numeric +N as magic', () => {
+    expect(isMagicItemDoc({ rarity: 'rare' })).toBe(true);
+    expect(isMagicItemDoc({ rarity: '', properties: ['mgc'] })).toBe(true);
+    expect(isMagicItemDoc({ magicalBonus: '1' })).toBe(true);
+    expect(isMagicItemDoc({ armor: { magicalBonus: '2' } })).toBe(true);
+  });
+
+  it('does not flag mundane gear', () => {
+    expect(isMagicItemDoc({ rarity: '', properties: ['fin'] })).toBe(false);
+    expect(isMagicItemDoc({ magicalBonus: null })).toBe(false);
+    expect(isMagicItemDoc({ magicalBonus: '0' })).toBe(false);
+    expect(isMagicItemDoc(undefined)).toBe(false);
+  });
+
+  it('agrees with what buildPhysicalItemData produces for a +1 weapon', () => {
+    const doc = buildPhysicalItemData({
+      itemType: 'weapon',
+      name: '+1 Mace',
+      damage: { number: 1, denomination: 6, types: ['bludgeoning'] },
+      magicalBonus: 1,
+    });
+    expect(isMagicItemDoc(doc.system)).toBe(true);
+  });
+});
+
+describe('wantsLootCopy', () => {
+  it('explicit true forces a copy, explicit false suppresses it', () => {
+    expect(wantsLootCopy(true, false)).toBe(true);
+    expect(wantsLootCopy(false, true)).toBe(false);
+  });
+
+  it('auto (undefined) follows the magic flag', () => {
+    expect(wantsLootCopy(undefined, true)).toBe(true);
+    expect(wantsLootCopy(undefined, false)).toBe(false);
   });
 });

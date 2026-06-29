@@ -60,6 +60,20 @@ const AddItemSchema = z.object({
       'When creating a world Item (no actorIdentifier), place it in this folder (created if absent).'
     ),
 
+  // ── Loot twin (rule 9 — NPC magic gear is lootable) ───────────────
+  lootCopy: z
+    .boolean()
+    .optional()
+    .describe(
+      '[actor target] Also mint a matching WORLD Item (same stats + icon) so the party can loot this ' +
+        'gear after the fight. DEFAULT ON for magic items (rarity set, "mgc", or a +N); pass false to ' +
+        'suppress, or true to force a loot copy of a mundane item too. Ignored for a world-item target.'
+    ),
+  lootCopyFolder: z
+    .string()
+    .optional()
+    .describe('Folder for the loot copy (created if absent). Default "Loot".'),
+
   // ── Identity ──────────────────────────────────────────────────────
   name: z.string().min(1, 'name cannot be empty').describe('Item name.'),
   img: z.string().optional().describe('Icon path (e.g. "icons/weapons/swords/sword-runed.webp").'),
@@ -425,6 +439,11 @@ export class DnD5eAddItemTool {
       if (parsed.wireAc && !parsed.actorIdentifier) {
         warnings.push('wireAc only applies when attaching to an actor; ignored for a world item.');
       }
+      if ((parsed.lootCopy || parsed.lootCopyFolder) && !parsed.actorIdentifier) {
+        warnings.push(
+          'lootCopy applies when attaching to an actor; a world item is already lootable — ignored.'
+        );
+      }
 
       // withAttack defaults to true for a weapon that has damage.
       const withAttack =
@@ -461,11 +480,15 @@ export class DnD5eAddItemTool {
         : null,
       params.quantity && params.quantity !== 1 ? `×${params.quantity}` : null,
     ].filter(Boolean);
+    const loot = result?.lootCopy;
     const summary = `✅ Created ${params.itemType} "${item.name ?? params.name}" on ${target}`;
     const details = [
       `**Item:** ${item.name ?? params.name} (id: \`${item.id ?? '?'}\`, type: ${item.type ?? '?'})`,
       `**Target:** ${target}`,
       bits.length ? `**Properties:** ${bits.join(', ')}` : null,
+      loot
+        ? `**Loot copy:** "${loot.name}" (id: \`${loot.id}\`) in folder "${loot.folderName ?? 'Loot'}" — a lootable world Item (rule 9)`
+        : null,
     ]
       .filter(Boolean)
       .join('\n');
@@ -478,6 +501,7 @@ export class DnD5eAddItemTool {
       success: true,
       item,
       target: result?.target,
+      ...(loot ? { lootCopy: loot } : {}),
       warnings,
       message: `${summary}\n\n${details}${warningSection}`,
     };

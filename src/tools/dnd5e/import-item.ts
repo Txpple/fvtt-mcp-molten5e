@@ -56,6 +56,18 @@ const ImportItemSchema = z.object({
     .string()
     .optional()
     .describe('When copying to the world (no actorIdentifier), place the item in this folder.'),
+  lootCopy: z
+    .boolean()
+    .optional()
+    .describe(
+      '[actor target] Also mint a matching WORLD Item (same art + stats) so the party can loot this ' +
+        'gear afterward (rule 9). DEFAULT ON for magic items (rarity set or "mgc"); pass false to ' +
+        'suppress, or true to force a loot copy of a mundane item too. Ignored for a world-item target.'
+    ),
+  lootCopyFolder: z
+    .string()
+    .optional()
+    .describe('Folder for the loot copy (created if absent). Default "Loot".'),
 });
 
 export interface DnD5eImportItemToolOptions {
@@ -125,12 +137,18 @@ export class DnD5eImportItemTool {
         ? `actor "${result.target.name}"`
         : `world Items${result?.target?.folderName ? ` (folder "${result.target.folderName}")` : ''}`;
     const renamed = src.name && item.name && src.name !== item.name ? ` (from "${src.name}")` : '';
+    const loot = result?.lootCopy;
     const summary = `✅ Copied "${item.name ?? '?'}"${renamed} onto ${target}`;
     const details = [
       `**Item:** ${item.name ?? '?'} (id: \`${item.id ?? '?'}\`, type: ${item.type ?? '?'})`,
       `**Source:** \`${src.packId ?? '?'}\` / \`${src.itemId ?? '?'}\``,
       `**Target:** ${target}`,
-    ].join('\n');
+      loot
+        ? `**Loot copy:** "${loot.name}" (id: \`${loot.id}\`) in folder "${loot.folderName ?? 'Loot'}" — a lootable world Item (rule 9)`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
     // The page reports any unresolved @scale tokens the copy carries (rare for gear, but a magic-item
     // feature rider can); surface them so the skill sets the die.
     const unresolvedScale = (result?.unresolvedScale ?? []).map((t: any) => ({
@@ -144,6 +162,7 @@ export class DnD5eImportItemTool {
       item,
       source: result?.source,
       target: result?.target,
+      ...(loot ? { lootCopy: loot } : {}),
       ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       message: `${summary}\n\n${details}${formatUnresolvedScale(unresolvedScale)}`,
     };
