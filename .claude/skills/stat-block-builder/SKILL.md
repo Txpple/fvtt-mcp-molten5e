@@ -81,6 +81,14 @@ preference:
    copy; then add the distinguishing features/gear in the steps below. The edits land on the copy — the
    compendium entry is never touched. **This is the normal way to build a custom NPC:** start from real
    stats + art, then diverge. Parse the block (Step 1) to know what to change.
+   > **⚠ Finish the divergence — don't leave the base's off-theme abilities behind.** `modifications`
+   > only changes STATS (cr/hp/ac/abilities). If your creature's THEME differs from the base — you copied
+   > a *radiant* Priest to make a *necrotic* Shar priestess — its inherited attacks and cantrips are now
+   > off-theme. You MUST `remove-from-actor` the mismatched ones and `add-feature` **real** replacements
+   > from the compendium (a necrotic attack from `dnd-monster-manual.features` like *Withering Touch*, a
+   > necrotic cantrip like *Toll the Dead* from the PHB). Reflavoring them with a *"treat its radiant as
+   > necrotic"* GM note is a **forbidden cop-out** (shared-policy rule 7) — the NPC must really be what it
+   > claims. If the books have nothing thematically fitting, STOP and ASK.
 3. **Authored — last resort.** Only when nothing in the premium MM/PHB/DMG books is a workable base do
    you author from scratch (Step 2, `author-npc`). Per the [shared authoring policy](../_shared/authoring-policy.md),
    if there's no 2024 match, **STOP and ASK** before inventing content.
@@ -144,6 +152,11 @@ all**, just the feature names:
 
 Only author from scratch with `add-feature` mode `feature` / `featureType: "passive"` (`featType:
 "monster"`, prerequisite in `requirements`) for genuinely homebrew traits with no compendium source.
+> **⚠ An authored feature ships with a BLANK star icon — set its art.** `add-feature` takes no `img`, so
+> after authoring ANY `passive` / `attack` / `save` / Multiattack feature, set its icon with
+> `update-actor-item img`, grabbing it from the compendium feature you're emulating (a real MM feature's
+> `img`, e.g. `icons/skills/melee/strike-weapons-orange.webp` for a Multiattack). Every row on the sheet
+> must carry real art — a blank star is unfinished (shared-policy rule 8).
 
 ## Step 5 — Actions, attacks, and abilities
 
@@ -199,6 +212,11 @@ defer item judgment to [[physical-item-builder]]:
   `manage-effect`) and rename. Author with `add-item` only as a last resort (and ASK first).
 - **Containers** → copy/create a `container` first, then place items with `container: "<name>"`.
 - **Coins** → already on the actor via `update-actor` `currency` (Step 3).
+> **⚠ A magic item on the NPC must ALSO be a world Item, for loot.** The on-actor copy is what the NPC
+> wields; the party loots it later. For each magic weapon / wondrous item / special consumable you put on
+> the NPC, also create a matching **world Item** in a loot folder — `import-item` the same compendium
+> source with `folder` (no `actorIdentifier`), or `add-item` the custom item with `folder` — same stats,
+> same real icon (shared-policy rule 9).
 
 ## Step 9 — Biography
 
