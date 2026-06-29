@@ -36,7 +36,8 @@ teleporter fixer), `create-journal` / `add-journal-image`, `create-folder` / `mo
 > (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
 > modern pack's split walls / `config{}` lights / `environment{}` mood and cross-scene **teleporters**
 > (the stairs/portals), or a legacy pack's `sense` walls, flat torch lights, flat grid/mood, and `img`
-> background. The only piece that's still opt-in is the legend→map-pins feature (below). **Never
+> background. The legend→map-pins feature (below) now runs BY DEFAULT whenever a per-map legend key is
+> present (place the pins, then tell the user). **Never
 > reconstruct a wall, light, or region field-by-field** — `read-pack` hands them back whole; pass them
 > through whole (the dropped-`sight`/blown-out-lights trap).
 
@@ -243,20 +244,23 @@ Summarize: scenes created (with wall/light/**region** counts), **teleporters lin
 unresolved ones from Step 8), the journal, the asset count + destination, the **tiles** made available
 (count + folder, when the pack had any — Step 4b), and — **explicitly, never silently** — anything
 skipped: any `sounds`/scene `foreground` (overhead) the pack carried that v1 doesn't import, and the
-legend→pins follow-up (still opt-in/deferred). A faithful-import skill reports its gaps.
+legend→pins (placed by DEFAULT when a per-map legend key is present — report the pin count and any that landed off). A faithful-import skill reports its gaps.
 
-## Optional follow-up — legend keys → GM map-pins (opt-in; DRAFT pins for review)
+## Legend keys → GM map-pins (AUTOMATIC by default when a legend key is present; DRAFT pins for review)
 
 Many packs ship a numbered **legend key** image (`*_Key.webp`, already imaged into the pack journal in
-Step 5). This follow-up turns each numbered room into a clickable **GM map-note pin** on the scene. It is
-**opt-in and approximate** — vision-read pin positions land in roughly the right cell, but expect a few to
-be a room off. Frame it that way; the GM review/nudge at the end is the **norm**, not an exception.
+Step 5). This turns each numbered room into a clickable **GM map-note pin** on the scene. **Do it BY
+DEFAULT whenever the import has a per-map legend key — don't ask first** — then TELL the user the keys
+were found and the pins placed. Placement is **approximate**: vision-read positions land in roughly the
+right cell, a few may be a room off, so the GM review/nudge at the end is the **norm**, not an exception.
 
-**Gate (ASK, default no).** Only after the base import: *"This pack has a numbered legend key. Want me to
-drop GM-only room-note pins on the scene? I'll place draft pins for you to review and nudge — they're
-approximate."* If no, stop here.
+**Default behavior: place, then report.** After the base import, scan the imported maps for numbered
+legend keys; place the pins automatically and report it — e.g. *"Found numbered legend keys for <maps> →
+placed N GM-only room pins (screenshot-verified); a couple sit slightly off — nudge or drag as you like."*
+Skip only a key that is a composite **overview** of the other maps (its rooms are already pinned on the
+individual maps) and a map with no key. Honor an explicit user request to NOT place pins.
 
-If yes, per scene that has a key:
+For each imported map with its own (non-overview) legend key:
 
 1. **Read the legend with vision (SKILL).** Look at the `*_Key.webp` and extract, per numbered room:
    its `number`, its `name` (from the legend box), and **where the red number sits on the map** as a
