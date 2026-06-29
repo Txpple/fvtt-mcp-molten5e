@@ -61,6 +61,11 @@ It returns `{ module, descriptor, scenes[], journals[], assets[] }`:
   `sourceId`.
 - `assets[]` — every referenced file as `{ diskPath, dataPath }`, deduped and percent-decoded.
 
+> **Large packs:** the manifest itself must fit the tool-response cap (~20K chars) — a few-scene pack
+> is fine read whole, but for a pack with many dozens of scenes (some of Tom's are 100+), read in
+> batches with `sceneLimit` and import each batch before reading the next. (The heavy walls/lights are
+> already off-manifest in payload files; this cap is only about the per-scene metadata.)
+
 ## Step 2 — Choose which variants to import (ASK)
 
 Tom ships each map in **variants** — a lit "regular", sometimes a **Night** render, and a **Clean**

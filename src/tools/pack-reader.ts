@@ -308,6 +308,13 @@ export class PackReaderTools {
         assets.set(src, computeAssetRewrite(src, moduleId, moduleDir, destRoot));
       return assets.get(src);
     };
+    // Lean projection for the manifest: only the upload source + destination the skill needs.
+    // Dropping docSrc/rel keeps the whole manifest under the MCP response cap (a full pack's
+    // background/thumb/key paths otherwise blow past ~20K on their own).
+    const leanAsset = (a: Partial<AssetRewrite> | undefined) => {
+      if (!a) return null;
+      return a.diskPath ? { diskPath: a.diskPath, dataPath: a.dataPath } : { docSrc: a.docSrc };
+    };
 
     // Heavy placeable arrays (hundreds of walls/lights per scene) are written to per-scene payload
     // FILES here and referenced by `placeablesPath`, NOT returned inline — the MCP tool-response cap
@@ -351,8 +358,8 @@ export class PackReaderTools {
           gridDistance: d.grid?.distance,
           gridUnits: d.grid?.units,
           padding: d.padding,
-          background: noteAsset(bgSrc) ?? { docSrc: bgSrc },
-          thumb: thumbSrc ? noteAsset(thumbSrc) : null,
+          background: leanAsset(noteAsset(bgSrc) ?? { docSrc: bgSrc }),
+          thumb: thumbSrc ? leanAsset(noteAsset(thumbSrc)) : null,
           environment: d.environment,
           fog: d.fog,
           initial: d.initial,
@@ -383,7 +390,7 @@ export class PackReaderTools {
             name: p.name,
             type: p.type,
             sort: p.sort,
-            src: p.src ? (noteAsset(p.src) ?? { docSrc: p.src }) : null,
+            src: p.src ? leanAsset(noteAsset(p.src) ?? { docSrc: p.src }) : null,
             textLength: p.text?.content?.length ?? 0,
             text: p.text?.content,
           })),
@@ -396,7 +403,7 @@ export class PackReaderTools {
       descriptor: descriptor ?? null,
       scenes,
       journals,
-      assets: [...assets.values()],
+      assets: [...assets.values()].map(leanAsset),
       payloadDir, // temp dir holding the per-scene {walls,lights,regions} files; safe to delete after import
     };
   }
