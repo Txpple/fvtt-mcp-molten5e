@@ -45,13 +45,14 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 94 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 95 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
     // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
     // + update-note + delete-note + upload-asset-tree (M6) + screenshot-scene (visual QA)
-    expect(names.length).toBe(94);
+    // + content-audit (rules 7/8/9 finishing check)
+    expect(names.length).toBe(95);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
