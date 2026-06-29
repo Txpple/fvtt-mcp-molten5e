@@ -31,11 +31,13 @@ era detection, and asset path-rewrite math), `upload-asset` (Plane B), `create-s
 `create-folder` / `move-documents`, `list-scenes` / `list-journals`. To boot the world first, hand off
 to **`start-session`**.
 
-> **Scope (v1 — modern packs):** this skill imports **modern** (≈ Foundry v13 / LevelDB) packs
-> end-to-end — **including cross-scene teleporters** (the stairs/portals between levels) — minus only
-> the optional legend→map-pins feature. If `read-pack` reports a `legacy`/`nedb` era, say so and stop —
-> the legacy branch isn't wired yet. **Never reconstruct a wall, light, or region field-by-field** —
-> `read-pack` hands them back whole; pass them through whole (the dropped-`sight`/blown-out-lights trap).
+> **Scope — all eras:** this skill imports **modern** (v13/LevelDB), **mid** (v10–v11), and **legacy**
+> (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
+> modern pack's split walls / `config{}` lights / `environment{}` mood and cross-scene **teleporters**
+> (the stairs/portals), or a legacy pack's `sense` walls, flat torch lights, flat grid/mood, and `img`
+> background. The only piece that's still opt-in is the legend→map-pins feature (below). **Never
+> reconstruct a wall, light, or region field-by-field** — `read-pack` hands them back whole; pass them
+> through whole (the dropped-`sight`/blown-out-lights trap).
 
 ## Step 0 — Boot the world and locate the module
 
@@ -54,35 +56,46 @@ read-pack { modulePath: "<abs module folder>",
             destRoot: "worlds/<world>/assets/tom-cartos/<module-id>" }
 ```
 
-It returns `{ module, descriptor, scenes[], journals[], assets[] }`:
-- `descriptor.era` — `v12+` (proceed), `v10-v11` (proceed; no regions to worry about), or
-  `legacy`/`storage:"nedb"` (**stop** — not wired in v1; tell the user it's the deferred legacy branch).
-- each `scenes[]` entry carries `name`, `width/height`, `gridType/gridSize/gridDistance/gridUnits`,
-  `padding`, `background`/`thumb` (each with a `dataPath` rewrite + on-disk `diskPath`), `environment`,
-  `fog`, `initial`, `sourceId`, a per-scene `placeablesPath` (the off-manifest file holding the
-  `walls[]`/`lights[]`/`regions[]`), and `counts` (incl. `regions` — how many teleporter/zone regions
-  the scene has).
-- `assets[]` — every referenced file as `{ diskPath, dataPath }`, deduped and percent-decoded.
+It returns `{ module, descriptor, scenes[], totalScenes, nextOffset, journals[], assets[] }`:
+- `descriptor.era` — `v12+`, `v10-v11`, or `legacy` (`storage:"nedb"`). **All proceed.** Era only changes
+  which fields carry the mood (see Step 6): modern → `environment`/`fog`; legacy/mid → flat
+  `darkness`/`globalLight`/`tokenVision`. `read-pack` has already normalized the rest.
+- each `scenes[]` entry carries `name`, `width/height`, the normalized
+  `gridType/gridSize/gridDistance/gridUnits/gridColor/gridAlpha`, `padding`, flat
+  `darkness`/`globalLight`/`tokenVision` (when the pack set them), `background`/`thumb` (each with a
+  `dataPath` rewrite + on-disk `diskPath`; `thumb` is `null` for legacy packs — they ship a data-URI
+  thumb Foundry regenerates anyway), `environment`/`fog`/`initial` (modern only), `sourceId`, a per-scene
+  `placeablesPath` (the off-manifest file holding `walls[]`/`lights[]`/`regions[]`), and `counts`.
+- `assets[]` — every referenced file for THIS page as `{ diskPath, dataPath }`, deduped + percent-decoded.
 
-> **Large packs:** the manifest itself must fit the tool-response cap (~20K chars) — a few-scene pack
-> is fine read whole, but for a pack with many dozens of scenes (some of Tom's are 100+), read in
-> batches with `sceneLimit` and import each batch before reading the next. (The heavy walls/lights are
-> already off-manifest in payload files; this cap is only about the per-scene metadata.)
+> **Paging (big packs):** the manifest is **paged** to fit the response cap — `read-pack` returns
+> `totalScenes`, the page of `scenes[]` (default 10), and `nextOffset`. If `nextOffset` is not null,
+> **import this page fully, then call `read-pack` again with `offset: <nextOffset>`** and repeat until
+> `nextOffset` is null (it also prints a `note` reminding you). Each page's `assets[]` covers only that
+> page's scenes. (A ≤10-scene pack returns everything in one call, `nextOffset: null`.)
 
-## Step 2 — Choose which variants to import (ASK)
+## Step 2 — Survey the whole pack, then choose which variants to import (ASK)
+
+To plan across a paged pack, first take the **survey** — one cheap call that lists every scene's name +
+counts without paths/payloads:
+
+```
+read-pack { modulePath: "<abs module folder>", index: true }
+```
 
 Tom ships each map in **variants** — a lit "regular", sometimes a **Night** render, and a **Clean**
-(props/lighting removed) version. Don't assume a fixed set; read what's actually in `scenes[]`.
+(props/lighting removed) version (legacy packs also use `- Bottom`, `- C/D/E`, etc.). Don't assume a
+fixed set; group the survey's `sceneIndex[]` by the `NN <Map Name>` prefix and spot the variant suffix
+tokens. A **Clean** scene is a *different* scene (fewer walls, no lights), not a re-skin.
 
-- Group scenes by the `NN <Map Name>` prefix; spot variant suffix tokens (`Clean`, `Night`, `Day`,
-  `Gridless`). A **Clean** scene is a *different* scene (fewer walls, no lights), not a re-skin.
 - **Propose the regular/lit variant of each map** as the default, and offer the Night/Clean ones as
-  extras. Confirm the selection before creating anything.
+  extras. Confirm the selection before creating anything. Hold the chosen `sourceId`s — you'll import
+  the scenes whose `sourceId` is in that set as you page through the full read in Step 6.
 
 ## Step 3 — Skip anything already imported (dedup)
 
-`create-scene` is not idempotent. Before creating, `list-scenes` and skip any scene already stamped
-with `flags["tom-cartos-import"].sourceId` equal to a `scenes[].sourceId` you're about to import
+`create-scene` is not idempotent. `list-scenes` and skip any scene already stamped with
+`flags["tom-cartos-import"].sourceId` equal to a survey `sceneIndex[].sourceId` you're about to import
 (re-runs and resumes are safe this way). Dedup on the **stamped flag**, never the name — variant names
 like `01 Iris` collide across packs.
 
@@ -110,8 +123,11 @@ For each `journals[]` entry, recreate it so the legend keys travel with the scen
 
 ## Step 6 — Create each scene (pass the exact geometry + everything whole)
 
-One `create-scene` per chosen scene. Pass the pack's **exact** geometry — auto-size is disabled when you
-pass dimensions, and you MUST here, or the canvas-pixel walls/lights won't align:
+Now page the **full** read (`read-pack` with `destRoot`, default page 10; advance `offset` to
+`nextOffset` until null — see Step 1). For each returned scene whose `sourceId` is in your chosen set
+(Step 2) and not already imported (Step 3), one `create-scene`. Pass the pack's **exact** geometry —
+auto-size is disabled when you pass dimensions, and you MUST here, or the canvas-pixel walls/lights
+won't align:
 
 ```
 create-scene {
@@ -120,14 +136,22 @@ create-scene {
   width: <scene.width>, height: <scene.height>,
   gridSize: <scene.gridSize>, gridType: <scene.gridType>,
   gridDistance: <scene.gridDistance>, gridUnits: <scene.gridUnits>,
+  gridColor: <scene.gridColor>, gridAlpha: <scene.gridAlpha>,
   padding: <scene.padding>,
-  thumb: <scene.thumb.dataPath>,
+  thumb: <scene.thumb?.dataPath>,        // omit when thumb is null (legacy)
+  // MOOD — pass whichever the pack provided (read-pack gives one or the other by era):
+  //  modern → environment/fog/initial ; legacy/mid → darkness/globalLight/tokenVision
   environment: <scene.environment>, fog: <scene.fog>, initial: <scene.initial>,
+  darkness: <scene.darkness>, globalLight: <scene.globalLight>, tokenVision: <scene.tokenVision>,
   placeablesPath: <scene.placeablesPath>,
   journal: "<the journal entry from Step 5>",
   flags: { "tom-cartos-import": { sourceModule: <module.id>, sourceId: <scene.sourceId> } }
 }
 ```
+
+Pass only the fields `read-pack` actually returned for the scene (it omits what the pack didn't set):
+a **modern** scene carries `environment`/`fog`/`initial`; a **legacy/mid** scene carries flat
+`darkness`/`globalLight`/`tokenVision` and a `null` `thumb` (skip the `thumb` arg). Don't invent values.
 
 - **Placeables go via `placeablesPath`, never inline.** `read-pack` wrote each scene's hundreds of
   walls/lights **and its regions** to a payload file and gave you the path; `create-scene` reads it

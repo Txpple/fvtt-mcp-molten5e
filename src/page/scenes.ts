@@ -196,13 +196,20 @@ interface SidecarLight {
   alpha?: number; // v14
   rotation?: number;
   angle?: number;
+  lightAnimation?: Record<string, unknown>; // legacy → config.animation
+  darkness?: Record<string, unknown>; // legacy per-light {min,max} → config.darkness
+  darknessThreshold?: number; // legacy — no v14 top-level equivalent
+  t?: string; // legacy type marker ("l")
   config?: Record<string, unknown>;
 }
 
 /**
- * Convert one sidecar light (legacy flat `{x,y,dim,bright,tintColor,tintAlpha}`
- * OR v14 `{x,y,config}`) to a v14 AmbientLightDocument create object. x/y are
- * top-level absolute pixels; all emission props nest under `config`.
+ * Convert one sidecar light (legacy flat `{x,y,dim,bright,tintColor,tintAlpha,lightAnimation,
+ * darkness}` OR v14 `{x,y,config}`) to a v14 AmbientLightDocument create object. x/y are top-level
+ * absolute pixels; all emission props nest under `config`. The legacy→v14 nesting is the full set
+ * the v8/v9-era flat shape needs: emission radii/tint, the torch/pulse `lightAnimation`, and the
+ * per-light `darkness`{min,max} activation range — dropping any of these silently loses the
+ * authored mood (flat torch flicker → a dead steady glow). An explicit `config` (v10+) wins.
  */
 export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
   const config: Record<string, unknown> = {};
@@ -213,10 +220,14 @@ export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
   const alpha = l.tintAlpha ?? l.alpha;
   if (typeof alpha === 'number') config.alpha = alpha;
   if (typeof l.angle === 'number') config.angle = l.angle;
-  if (l.config && typeof l.config === 'object') Object.assign(config, l.config);
+  // Legacy flat animation/darkness → nested config (v10+ moved them under config).
+  if (l.lightAnimation && typeof l.lightAnimation === 'object') config.animation = l.lightAnimation;
+  if (l.darkness && typeof l.darkness === 'object') config.darkness = l.darkness;
+  if (l.config && typeof l.config === 'object') Object.assign(config, l.config); // explicit v10+ wins
 
   // Pass the light WHOLE — preserve authored top-level fields (walls, vision, hidden, elevation,
-  // flags, …). x/y/rotation/config are set explicitly; the flat emission inputs fold into config.
+  // flags, …). x/y/rotation/config are set explicitly; the flat emission inputs fold into config;
+  // legacy-only markers (`t`, `darknessThreshold`) and source/cli ids are dropped.
   const rest: Record<string, unknown> = { ...(l as Record<string, unknown>) };
   for (const k of [
     'dim',
@@ -228,6 +239,10 @@ export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
     'angle',
     'rotation',
     'config',
+    'lightAnimation',
+    'darkness',
+    'darknessThreshold',
+    't',
     'x',
     'y',
     '_id',

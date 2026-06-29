@@ -226,6 +226,42 @@ describe('sidecarLightToV14', () => {
     expect((l.config as any).dim).toBe(30);
   });
 
+  it('nests a LEGACY torch light fully (lightAnimation→config.animation, darkness→config.darkness) and strips legacy markers', () => {
+    // The real v10 Into-the-Wilds shape: flat emission + a flat lightAnimation + a per-light darkness
+    // {min,max} activation range + the legacy `t`/darknessThreshold markers. Dropping animation/darkness
+    // silently kills the torch flicker and the darkness-activated glow.
+    const l = sidecarLightToV14({
+      t: 'l',
+      x: 2471,
+      y: 980,
+      rotation: 0,
+      dim: 12,
+      bright: 6,
+      angle: 0,
+      tintColor: '#fcd674',
+      tintAlpha: 0.16,
+      lightAnimation: { speed: 3, intensity: 3, type: 'torch' },
+      darknessThreshold: 0,
+      darkness: { min: 0.5, max: 1 },
+      hidden: false,
+    } as any);
+    expect(l.config).toEqual({
+      dim: 12,
+      bright: 6,
+      color: '#fcd674',
+      alpha: 0.16,
+      angle: 0,
+      animation: { speed: 3, intensity: 3, type: 'torch' },
+      darkness: { min: 0.5, max: 1 },
+    });
+    expect(l).toMatchObject({ x: 2471, y: 980, rotation: 0, hidden: false });
+    // legacy-only markers must not survive at the top level
+    expect(l).not.toHaveProperty('t');
+    expect(l).not.toHaveProperty('lightAnimation');
+    expect(l).not.toHaveProperty('darkness');
+    expect(l).not.toHaveProperty('darknessThreshold');
+  });
+
   it('passes authored top-level fields through WHOLE (walls, vision, hidden, elevation, flags) and strips ids', () => {
     const l = sidecarLightToV14({
       x: 10,

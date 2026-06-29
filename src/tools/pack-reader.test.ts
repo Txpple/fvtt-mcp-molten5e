@@ -12,6 +12,9 @@ import {
   decodeAssetSegments,
   detectPackEra,
   PackReaderTools,
+  parseNedbDocs,
+  projectSceneGeometry,
+  resolvePackPath,
   stripPackArtifacts,
 } from './pack-reader.js';
 
@@ -120,6 +123,102 @@ describe('computeAssetRewrite', () => {
   });
 });
 
+describe('resolvePackPath', () => {
+  it('strips a leading slash so an absolute-style pack path stays module-relative', () => {
+    // Older Tom manifests (Into-the-Wilds v10) declare "/packs/foo.db"; resolve() would jump to the
+    // drive root and lose the module folder.
+    const r = resolvePackPath('/abs/module', '/packs/into-the-wilds.db');
+    expect(r).toMatch(/module[\\/]packs[\\/]into-the-wilds\.db$/);
+    expect(r).not.toMatch(/^[\\/]packs/);
+  });
+
+  it('leaves a normal relative pack path module-relative', () => {
+    expect(resolvePackPath('/abs/module', 'packs/temple')).toMatch(/module[\\/]packs[\\/]temple$/);
+  });
+});
+
+describe('parseNedbDocs', () => {
+  it('parses newline-JSON docs, applies last-write-wins, and honors $$deleted tombstones', () => {
+    const content = [
+      JSON.stringify({ _id: 'a', name: 'First' }),
+      JSON.stringify({ $$indexCreated: { fieldName: 'name' } }), // control line — skipped
+      JSON.stringify({ _id: 'b', name: 'Keep' }),
+      JSON.stringify({ _id: 'a', name: 'Updated' }), // supersedes the first 'a'
+      JSON.stringify({ $$deleted: true, _id: 'b' }), // tombstone — 'b' must not resurrect
+      '', // blank line tolerated
+      '{not valid json', // unparseable — skipped
+    ].join('\n');
+    const docs = parseNedbDocs(content);
+    expect(docs).toEqual([{ _id: 'a', name: 'Updated' }]);
+  });
+
+  it('preserves first-seen order and returns [] for empty input', () => {
+    const content = [
+      JSON.stringify({ _id: 'x', n: 1 }),
+      JSON.stringify({ _id: 'y', n: 2 }),
+      JSON.stringify({ _id: 'x', n: 3 }), // update keeps x's original position
+    ].join('\n');
+    expect(parseNedbDocs(content).map(d => d._id)).toEqual(['x', 'y']);
+    expect(parseNedbDocs('')).toEqual([]);
+  });
+});
+
+describe('projectSceneGeometry', () => {
+  it('reads a LEGACY scene: flat grid number + sibling grid fields + flat mood', () => {
+    const d = {
+      width: 3080,
+      height: 2380,
+      padding: 0.25,
+      grid: 140, // legacy: grid IS the px size
+      gridType: 1,
+      gridDistance: 5,
+      gridUnits: 'ft',
+      gridColor: '#000000',
+      gridAlpha: 0.2,
+      darkness: 0,
+      globalLight: false,
+      tokenVision: true,
+    };
+    expect(projectSceneGeometry(d)).toEqual({
+      width: 3080,
+      height: 2380,
+      padding: 0.25,
+      gridSize: 140,
+      gridType: 1,
+      gridDistance: 5,
+      gridUnits: 'ft',
+      gridColor: '#000000',
+      gridAlpha: 0.2,
+      darkness: 0,
+      globalLight: false,
+      tokenVision: true,
+    });
+  });
+
+  it('reads a MODERN scene: grid object + environment{} mood', () => {
+    const d = {
+      width: 4760,
+      height: 3080,
+      grid: { size: 140, type: 1, distance: 5, units: 'ft', color: '#fff', alpha: 0.1 },
+      environment: { darknessLevel: 0.6, globalLight: { enabled: true } },
+      tokenVision: true,
+    };
+    const g = projectSceneGeometry(d);
+    expect(g.gridSize).toBe(140);
+    expect(g.gridColor).toBe('#fff');
+    expect(g.darkness).toBe(0.6);
+    expect(g.globalLight).toBe(true);
+    expect(g.tokenVision).toBe(true);
+  });
+
+  it('omits fields the pack did not set (no spurious nulls/zeros)', () => {
+    const g = projectSceneGeometry({ width: 1000, height: 800 });
+    expect(g).toEqual({ width: 1000, height: 800 });
+    expect(g).not.toHaveProperty('gridSize');
+    expect(g).not.toHaveProperty('darkness');
+  });
+});
+
 // --- integration (real pack on disk) ---------------------------------------
 
 const REAL_PACK = 'C:/Users/sippelmc/Desktop/tom-cartos-temple-of-night';
@@ -176,3 +275,57 @@ const logger: any = { child: () => ({ info() {}, debug() {}, warn() {}, error() 
     );
   }, 30000);
 });
+
+const LEGACY_PACK = 'C:/Users/sippelmc/Desktop/tomcartos-into-the-wilds-dungeons';
+const haveLegacy = existsSync(LEGACY_PACK);
+
+(haveLegacy ? describe : describe.skip)(
+  'read-pack integration (real v10 NeDB Into-the-Wilds pack)',
+  () => {
+    it('reads the NeDB pack, detects legacy, normalizes flat grid/mood, drops data-URI thumbs, pages', async () => {
+      const tools = new PackReaderTools({ logger });
+      const dest = 'worlds/test/assets/tom-cartos/tomcartos-into-the-wilds-dungeons';
+
+      // Survey mode — the whole pack's names in one cheap call, no payloads/assets, fits the cap.
+      const survey = await tools.handleReadPack({ modulePath: LEGACY_PACK, index: true });
+      expect(survey.totalScenes).toBe(28);
+      expect(survey.sceneIndex.length).toBe(28);
+      expect(survey).not.toHaveProperty('payloadDir');
+      expect(JSON.stringify(survey).length).toBeLessThan(20000);
+
+      // Page 1 — default page, must fit the response cap.
+      const res = await tools.handleReadPack({ modulePath: LEGACY_PACK, destRoot: dest });
+      expect(res.descriptor.storage).toBe('nedb'); // .db file parsed directly (no cli)
+      expect(res.descriptor.era).toBe('legacy');
+      expect(res.descriptor.needsWallSenseTranslation).toBe(true);
+      expect(res.totalScenes).toBe(28);
+      expect(res.scenes.length).toBe(10); // default page
+      expect(res.nextOffset).toBe(10);
+      expect(JSON.stringify(res).length).toBeLessThan(20000); // paged manifest fits the cap
+
+      // Last page.
+      const last = await tools.handleReadPack({
+        modulePath: LEGACY_PACK,
+        destRoot: dest,
+        offset: 20,
+      });
+      expect(last.scenes.length).toBe(8);
+      expect(last.nextOffset).toBeNull();
+
+      // Geometry/mood normalized from the legacy flat shape; data-URI thumb dropped; path decoded.
+      const all = await tools.handleReadPack({
+        modulePath: LEGACY_PACK,
+        destRoot: dest,
+        sceneLimit: 28,
+      });
+      const s = all.scenes[0];
+      expect(s.gridSize).toBe(140);
+      expect(s.gridType).toBe(1);
+      expect(typeof s.darkness).toBe('number');
+      expect(typeof s.globalLight).toBe('boolean');
+      expect(s.environment).toBeUndefined();
+      expect(s.thumb).toBeNull(); // legacy data: URI thumb not surfaced as an asset
+      expect(s.background.dataPath).not.toContain('%');
+    }, 30000);
+  }
+);
