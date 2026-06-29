@@ -882,6 +882,38 @@ async function removeFolderIfEmptyAndMcp(
 // ---------------------------------------------------------------------------
 
 /**
+ * Pull the damage TYPES a creature's attacks/abilities deal, from its embedded item SOURCE objects
+ * (toSource(item)). create-actor-from-compendium surfaces this so a reskin can't hide the base theme
+ * (rule 7): when you copy a creature and re-theme it (a radiant Priest → a necrotic Shar priestess),
+ * you must SEE "this base deals radiant" and replace the off-theme abilities with real ones of the new
+ * type — not reflavor in prose. PURE — unit-tested in actors.test.ts.
+ */
+export function extractDamageProfile(sourceItems: any[]): {
+  damageTypes: string[];
+  attacks: Array<{ name: string; types: string[] }>;
+} {
+  const all = new Set<string>();
+  const attacks: Array<{ name: string; types: string[] }> = [];
+  for (const src of sourceItems ?? []) {
+    if (src?.type !== 'weapon' && src?.type !== 'feat') continue;
+    const sys = src.system ?? {};
+    const types = new Set<string>();
+    for (const t of sys.damage?.base?.types ?? []) if (t) types.add(t);
+    for (const act of Object.values<any>(sys.activities ?? {})) {
+      for (const part of act?.damage?.parts ?? []) {
+        for (const t of part?.types ?? []) if (t) types.add(t);
+      }
+    }
+    if (types.size > 0) {
+      const sorted = [...types].sort();
+      attacks.push({ name: src.name ?? '', types: sorted });
+      for (const t of sorted) all.add(t);
+    }
+  }
+  return { damageTypes: [...all].sort(), attacks };
+}
+
+/**
  * Create one or more world actors by copying a specific compendium entry
  * (resolved by exact packId + itemId). Each copy carries the source's full
  * system data, embedded items, effects, and prototype token (with remote token
@@ -1011,11 +1043,17 @@ export async function createActorFromCompendium(request: {
         }
       }
 
+      // Rule 7 — surface the base creature's damage themes so a reskin must reconcile (never reflavor).
+      const damageProfile = extractDamageProfile(
+        (newActor.items ?? []).map((i: any) => toSource(i))
+      );
+
       createdActors.push({
         id: newActor.id,
         name: newActor.name,
         originalName: sourceActor.name,
         sourcePackLabel: pack.metadata.label,
+        ...(damageProfile.attacks.length > 0 ? { damageProfile } : {}),
         ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
         ...(modifications_applied
           ? { modifications: { applied: modifications_applied, warnings: modifications_warnings } }

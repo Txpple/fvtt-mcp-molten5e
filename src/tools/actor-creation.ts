@@ -390,6 +390,19 @@ export class ActorCreationTools {
       }))
     );
 
+    // Rule 7 — surface the copied creature's attack damage types. If the agent reskinned this base to
+    // a new theme (a rename / modifications), it must SEE the off-theme damage and replace those
+    // abilities with real ones — not reflavor in prose. The tool removes the "didn't notice" excuse.
+    const damageTypes: string[] = Array.from(
+      new Set<string>((result.actors ?? []).flatMap((a: any) => a.damageProfile?.damageTypes ?? []))
+    ).sort();
+    const damageInfo =
+      damageTypes.length > 0
+        ? `\n⚔️ Base attacks deal: **${damageTypes.join(', ')}**. If you reskinned this creature to a ` +
+          'different theme, REPLACE each off-theme attack/ability with a real one of the new damage ' +
+          'type (rule 7) — never reflavor it in prose.'
+        : '';
+
     return {
       summary,
       success: result.success,
@@ -404,9 +417,10 @@ export class ActorCreationTools {
         ...(modApplied.length > 0
           ? { modifications: { applied: modApplied, warnings: modWarnings } }
           : {}),
+        ...(damageTypes.length > 0 ? { damageTypes } : {}),
         ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       },
-      message: `${summary}\n\n${details}${modInfo}${sceneInfo}${errorInfo}${formatUnresolvedScale(unresolvedScale)}`,
+      message: `${summary}\n\n${details}${modInfo}${sceneInfo}${errorInfo}${damageInfo}${formatUnresolvedScale(unresolvedScale)}`,
     };
   }
 }
