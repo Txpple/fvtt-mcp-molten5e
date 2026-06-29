@@ -15,8 +15,44 @@ import {
   parseNedbDocs,
   projectSceneGeometry,
   resolvePackPath,
+  staleTmpDirs,
   stripPackArtifacts,
 } from './pack-reader.js';
+
+describe('staleTmpDirs', () => {
+  const now = 10_000_000;
+  const maxAge = 60 * 60 * 1000; // 1h
+
+  it('returns read-pack temp dirs older than maxAge, by name', () => {
+    const out = staleTmpDirs(
+      [
+        { name: 'tc-scene-payloads-abc', mtimeMs: now - maxAge - 1 }, // old → swept
+        { name: 'tc-pack-xyz', mtimeMs: now - maxAge - 5000 }, // old → swept
+        { name: 'tc-scene-payloads-fresh', mtimeMs: now - 1000 }, // fresh → kept
+      ],
+      now,
+      maxAge
+    );
+    expect(out).toEqual(['tc-scene-payloads-abc', 'tc-pack-xyz']);
+  });
+
+  it('never touches non-read-pack temp dirs, even when old', () => {
+    const out = staleTmpDirs(
+      [
+        { name: 'npm-cache-123', mtimeMs: 0 },
+        { name: 'some-other-tmp', mtimeMs: 0 },
+        { name: 'tc-pack-old', mtimeMs: 0 },
+      ],
+      now,
+      maxAge
+    );
+    expect(out).toEqual(['tc-pack-old']);
+  });
+
+  it('keeps everything when nothing is past maxAge', () => {
+    expect(staleTmpDirs([{ name: 'tc-pack-recent', mtimeMs: now - 1 }], now, maxAge)).toEqual([]);
+  });
+});
 
 describe('stripPackArtifacts', () => {
   it('removes the cli _key recursively but keeps _id/_stats and real fields', () => {

@@ -281,6 +281,57 @@ export function computeAssetRewrite(
   return out;
 }
 
+/** OS-tmp dir-name prefixes read-pack creates: payload dirs (this tool) + cli unpack dirs (child). */
+const TMP_DIR_PREFIX = /^tc-(scene-payloads|pack)-/;
+/** Sweep temp dirs older than this (read-pack leaves a payload dir per call; OS-cleaned eventually). */
+const TMP_SWEEP_MAX_AGE_MS = 60 * 60 * 1000; // 1h
+
+/**
+ * Pick the STALE read-pack temp dirs to sweep: name matches a read-pack temp prefix
+ * (`tc-scene-payloads-*` from this tool, `tc-pack-*` from the cli child) AND older than `maxAgeMs`.
+ * read-pack deliberately leaves its payload dir behind (create-scene reads it server-side after the
+ * call, and a resumed import may re-read it), so a fresh dir is never swept — only old leftovers, to
+ * keep OS tmp from accumulating across many imports. Pure/exported for unit testing.
+ */
+export function staleTmpDirs(
+  entries: Array<{ name: string; mtimeMs: number }>,
+  nowMs: number,
+  maxAgeMs: number
+): string[] {
+  return entries
+    .filter(e => TMP_DIR_PREFIX.test(e.name) && nowMs - e.mtimeMs > maxAgeMs)
+    .map(e => e.name);
+}
+
+/**
+ * Best-effort sweep of OLD read-pack temp dirs from the OS tmp dir. NEVER throws — a cleanup failure
+ * must not block a read. Runs at the start of handleReadPack. (Regular Node fs/time, fine here.)
+ */
+function sweepStaleTmpDirs(): void {
+  try {
+    const root = tmpdir();
+    const now = Date.now();
+    const entries = readdirSync(root, { withFileTypes: true })
+      .filter(e => e.isDirectory() && TMP_DIR_PREFIX.test(e.name))
+      .map(e => {
+        try {
+          return { name: e.name, mtimeMs: statSync(join(root, e.name)).mtimeMs };
+        } catch {
+          return { name: e.name, mtimeMs: now }; // unreadable → treat as fresh, skip
+        }
+      });
+    for (const name of staleTmpDirs(entries, now, TMP_SWEEP_MAX_AGE_MS)) {
+      try {
+        rmSync(join(root, name), { recursive: true, force: true });
+      } catch {
+        /* ignore — best-effort */
+      }
+    }
+  } catch {
+    /* ignore — never block a read on cleanup */
+  }
+}
+
 // --- I/O: extract a pack via the foundryvtt-cli child process ----------------
 
 const execFileAsync = promisify(execFile);
@@ -374,6 +425,9 @@ export class PackReaderTools {
     const { modulePath, destRoot, packName, sceneLimit, offset, index } = ReadPackSchema.parse(
       args ?? {}
     );
+
+    // Best-effort hygiene: clear OLD read-pack temp dirs (payload + cli unpack) before this run.
+    sweepStaleTmpDirs();
 
     // Resolve the module folder + manifest.
     const asPath = resolve(modulePath);
