@@ -79,6 +79,14 @@ const sceneCommonFields = {
     .string()
     .optional()
     .describe('JournalEntry id or exact name to attach as scene notes. "" clears it.'),
+  thumb: z
+    .string()
+    .optional()
+    .describe(
+      'Data-relative path to a pre-rendered navigation thumbnail (e.g. an uploaded ' +
+        '<id>-thumb.webp shipped by a map pack). Foundry may regenerate it on a later in-app edit, ' +
+        'so treat it as a nice-to-have, not load-bearing.'
+    ),
 };
 
 // A wall placeable from a map sidecar JSON. Accepts the LEGACY Foundry shape OR the v14 shape; the
@@ -161,6 +169,13 @@ const CreateSceneSchema = z.object({
     .describe('Foundry grid type (0 gridless, 1 square, 2+ hex). Default 1.'),
   padding: z.number().min(0).max(0.5).optional().describe('Scene padding fraction (optional).'),
   activate: z.boolean().default(false).describe('Activate the scene after creating it.'),
+  flags: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Document flags to stamp on the new scene, namespaced by scope — e.g. ' +
+        '{"tom-cartos-import":{sourceModule,sourceId}} for import provenance/dedup. Merged verbatim.'
+    ),
   ...sceneCommonFields,
 });
 
@@ -233,7 +248,8 @@ export class SceneTools {
           'Create a Foundry Scene from a Data-relative background image path (e.g. an uploaded map). ' +
           'Width/height auto-detect from the image when omitted. Optionally set grid size/type/' +
           'distance/units/color/alpha, token vision, fog mode, lighting (darkness, global light), ' +
-          'weather, a linked playlist/journal, padding, and activate it. Can also IMPORT walls + ' +
+          'weather, a linked playlist/journal, a nav thumbnail, padding, provenance flags, and ' +
+          'activate it. Can also IMPORT walls + ' +
           'ambient lights from a map sidecar JSON (the `walls`/`lights` arrays many battlemaps ship ' +
           'alongside the image): pass them and they are placed on the new scene (legacy or v14 shapes ' +
           'both accepted, normalized to v14). GM-only.',
@@ -251,8 +267,9 @@ export class SceneTools {
         description:
           'Update an existing Scene document — rename, swap its background image (Data-relative path), ' +
           'toggle navigation, set the navigation label, change dimensions/grid (size/type/distance/' +
-          'units)/padding, token vision, fog mode, lighting (darkness, global light), weather, or the ' +
-          'linked playlist/journal ("" clears a link). Scene-document only: never touches placeables ' +
+          'units)/padding, token vision, fog mode, lighting (darkness, global light), weather, a nav ' +
+          'thumbnail, or the linked playlist/journal ("" clears a link). Scene-document only: never ' +
+          'touches placeables ' +
           '(walls/lights/tokens) and never activates the scene. GM-only.',
         inputSchema: toInputSchema(UpdateSceneSchema),
       },

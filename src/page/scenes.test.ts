@@ -133,6 +133,30 @@ describe('sidecarWallToV14', () => {
     expect(w?.light).toBe(10);
     expect(w?.move).toBe(20);
   });
+
+  it('passes authored fields through WHOLE (threshold, animation, flags) and strips source/cli ids', () => {
+    // The "pass placeables whole" rule: a v12+ wall carries more than restriction channels —
+    // threshold (proximity), animation (door swing/slide), flags — and those must survive import.
+    const w = sidecarWallToV14({
+      c: [0, 0, 5, 5],
+      sight: 30,
+      light: 20,
+      move: 20,
+      threshold: { sight: 12, attenuation: true },
+      animation: { direction: 1, type: 'swing' },
+      flags: { mod: { tag: 'x' } },
+      _id: 'origWallId000000',
+      _key: '!scenes.walls!s.w',
+    } as any);
+    expect(w).toMatchObject({
+      threshold: { sight: 12, attenuation: true },
+      animation: { direction: 1, type: 'swing' },
+      flags: { mod: { tag: 'x' } },
+      sight: 30,
+    });
+    expect(w).not.toHaveProperty('_id');
+    expect(w).not.toHaveProperty('_key');
+  });
 });
 
 describe('countWallsMissingSight', () => {
@@ -197,5 +221,33 @@ describe('sidecarLightToV14', () => {
     expect(l.y).toBe(200);
     expect(l.rotation).toBe(45);
     expect((l.config as any).dim).toBe(30);
+  });
+
+  it('passes authored top-level fields through WHOLE (walls, vision, hidden, elevation, flags) and strips ids', () => {
+    const l = sidecarLightToV14({
+      x: 10,
+      y: 20,
+      rotation: 0,
+      walls: false,
+      vision: true,
+      hidden: true,
+      elevation: 5,
+      flags: { mod: { tag: 'y' } },
+      config: { dim: 30, bright: 10, color: '#fcd674', animation: { type: 'torch' } },
+      _id: 'origLightId00000',
+      _key: '!scenes.lights!s.l',
+    } as any);
+    expect(l).toMatchObject({
+      x: 10,
+      y: 20,
+      walls: false,
+      vision: true,
+      hidden: true,
+      elevation: 5,
+      flags: { mod: { tag: 'y' } },
+      config: { dim: 30, bright: 10, color: '#fcd674', animation: { type: 'torch' } },
+    });
+    expect(l).not.toHaveProperty('_id');
+    expect(l).not.toHaveProperty('_key');
   });
 });

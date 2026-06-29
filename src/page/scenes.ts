@@ -135,7 +135,13 @@ interface SidecarWall {
 export function sidecarWallToV14(w: SidecarWall): Record<string, unknown> | null {
   const c = Array.isArray(w?.c) ? w.c.map(Number) : [];
   if (c.length < 4 || c.some(n => !Number.isFinite(n))) return null;
-  const doc: Record<string, unknown> = { c: [c[0], c[1], c[2], c[3]] };
+
+  // Pass the wall WHOLE — preserve every authored field (threshold, animation, flags, …); only the
+  // restriction channels + cleaned coords are overlaid below. Drop the legacy `sense` key (folded
+  // into sight/light) and any source/cli ids (the create path mints fresh ones without keepId).
+  const rest: Record<string, unknown> = { ...(w as Record<string, unknown>) };
+  for (const k of ['sense', '_id', '_key', '_stats']) delete rest[k];
+  const doc: Record<string, unknown> = { ...rest, c: [c[0], c[1], c[2], c[3]] };
 
   // sight: explicit v14 `sight` wins, else the legacy `sense` key.
   const sightSrc = w.sight ?? w.sense;
@@ -209,7 +215,29 @@ export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
   if (typeof l.angle === 'number') config.angle = l.angle;
   if (l.config && typeof l.config === 'object') Object.assign(config, l.config);
 
+  // Pass the light WHOLE — preserve authored top-level fields (walls, vision, hidden, elevation,
+  // flags, …). x/y/rotation/config are set explicitly; the flat emission inputs fold into config.
+  const rest: Record<string, unknown> = { ...(l as Record<string, unknown>) };
+  for (const k of [
+    'dim',
+    'bright',
+    'tintColor',
+    'tintAlpha',
+    'color',
+    'alpha',
+    'angle',
+    'rotation',
+    'config',
+    'x',
+    'y',
+    '_id',
+    '_key',
+    '_stats',
+  ])
+    delete rest[k];
+
   const doc: Record<string, unknown> = {
+    ...rest,
     x: Number(l.x ?? 0),
     y: Number(l.y ?? 0),
     config,
@@ -327,6 +355,7 @@ interface SceneFieldArgs {
   weather?: string;
   playlist?: string;
   journal?: string;
+  thumb?: string;
 }
 
 /**
@@ -351,6 +380,7 @@ export async function createScene(
     activate?: boolean;
     walls?: SidecarWall[];
     lights?: SidecarLight[];
+    flags?: Record<string, unknown>;
   } & SceneFieldArgs
 ): Promise<unknown> {
   if (!args.name || !args.backgroundPath) {
@@ -387,6 +417,11 @@ export async function createScene(
     const flat = buildSceneFields(args);
     if (Object.keys(flat).length > 0 && foundryUtils?.expandObject && foundryUtils?.mergeObject) {
       foundryUtils.mergeObject(sceneData, foundryUtils.expandObject(flat));
+    }
+
+    // Provenance/dedup flags, namespaced by scope (e.g. {"tom-cartos-import":{sourceModule,sourceId}}).
+    if (args.flags && typeof args.flags === 'object') {
+      sceneData.flags = { ...(sceneData.flags ?? {}), ...args.flags };
     }
 
     const scene = await SceneClass.create(sceneData);
@@ -565,6 +600,8 @@ function buildSceneFields(args: SceneFieldArgs): Record<string, unknown> {
   if (typeof args.playlist === 'string')
     flat.playlist = resolveSceneLink('playlist', args.playlist);
   if (typeof args.journal === 'string') flat.journal = resolveSceneLink('journal', args.journal);
+  if (typeof args.thumb === 'string' && args.thumb.trim().length > 0)
+    flat.thumb = normalizeAssetPath(args.thumb);
   return flat;
 }
 

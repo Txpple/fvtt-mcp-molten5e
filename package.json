@@ -26,6 +26,7 @@
     "spike": "node scripts/spike-headless.mjs"
   },
   "dependencies": {
+    "@foundryvtt/foundryvtt-cli": "^3.0.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^16.3.0",
     "zod": "^4.4.3"

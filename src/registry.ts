@@ -39,6 +39,7 @@ import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
 import { UserTools } from './tools/users.js';
 import { OrganizationTools } from './tools/organization.js';
+import { PackReaderTools } from './tools/pack-reader.js';
 
 export interface ToolRegistry {
   /** Advertised tool definitions — one per dispatchable handler, derived from `handlers`. */
@@ -99,6 +100,10 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const userTools = new UserTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
+  // read-pack: a Node-only tool (no Foundry) — it reads a scene-pack MODULE off disk via the
+  // foundryvtt-cli child process. Seeds the tom-cartos-import skill (docs/tom-cartos-import-plan.md).
+  const packReaderTools = new PackReaderTools({ logger });
+
   // Unified add-feature tool: composes the three mode schemas (feature / compendium-features /
   // items) — each generated from the owning handler's zod — into a single-entry `add-feature`.
   const addFeatureTool = buildAddFeatureTool();
@@ -132,6 +137,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...chatTools.getToolDefinitions(),
     ...userTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
+    ...packReaderTools.getToolDefinitions(),
   ]) {
     defByName.set(def.name, def);
   }
@@ -247,6 +253,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'relink-asset': args => assetBridgeTools.handleRelinkAsset(args),
     'set-actor-art': args => assetBridgeTools.handleSetActorArt(args),
     'add-journal-image': args => assetBridgeTools.handleAddJournalImage(args),
+
+    // Scene-pack module import (Node-only, off-line): read a Tom-Cartos-style module's packs off disk
+    'read-pack': args => packReaderTools.handleReadPack(args),
 
     // Scenes (authoring) — SceneTools also owns get-current-scene / get-world-info above
     'create-scene': args => sceneTools.handleCreateScene(args),
