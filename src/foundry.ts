@@ -32,6 +32,13 @@ export interface FoundryBridge {
    * `call<ReturnShape>('method', args)` sites are unchanged.
    */
   call<T = any>(name: keyof PageApi, args?: unknown): Promise<T>;
+  /**
+   * Capture a PNG screenshot of the live page (the rendered Foundry canvas + UI) to `outPath`.
+   * Playwright-level — the page-side bundle can't reach `page.screenshot`, so this is the one
+   * screenshot path. Pair with the page-side `prepareSceneShot` (view + fit + optional marker
+   * overlay) to shoot a specific scene. Visual QA for scene/import work.
+   */
+  screenshot(outPath: string): Promise<void>;
 }
 
 export interface FoundryConfig {
@@ -447,6 +454,17 @@ export class Foundry implements FoundryBridge {
     this.ready = false;
     this.page = undefined;
     await this.connect();
+  }
+
+  /**
+   * Capture a PNG screenshot of the live page to `outPath`. The only screenshot path (the page-side
+   * bundle can't reach Playwright's page.screenshot). Pair with the page-side `prepareSceneShot`
+   * (view + fit + optional marker overlay) to shoot a specific scene for visual QA.
+   */
+  async screenshot(outPath: string): Promise<void> {
+    await this.ensureReady();
+    const page = this.page!; // capture before any await can null this.page (see invoke()).
+    await page.screenshot({ path: outPath, type: 'png' });
   }
 
   /** Escape hatch for one-off page logic (used sparingly; prefer named page functions). */

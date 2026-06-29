@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
@@ -408,6 +410,27 @@ const DeleteNoteSchema = z.object({
     .describe('Note ids to delete (from create-scene-notes).'),
 });
 
+const ScreenshotSceneSchema = z.object({
+  sceneIdentifier: z.string().min(1).describe('Scene id or exact name to screenshot.'),
+  outputPath: z
+    .string()
+    .optional()
+    .describe('Absolute local path to write the PNG to. Default: a temp file (path returned).'),
+  fit: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Fit the whole scene into the viewport (default). false keeps the saved camera view.'
+    ),
+  mark: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Draw a transient numbered marker over each map-note pin (QA for legend-pin placement). ' +
+        'No document changes — the overlay is view-only.'
+    ),
+});
+
 export class SceneTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -521,6 +544,17 @@ export class SceneTools {
           'Remove one or more map-note pins from a scene by note id (from create-scene-notes). ' +
           'Missing ids are reported, never fatal. GM-only.',
         inputSchema: toInputSchema(DeleteNoteSchema),
+      },
+      {
+        name: 'screenshot-scene',
+        description:
+          'Render a scene in the headless bridge and capture a PNG to a local file — visual QA for ' +
+          'imports/maps. Views the scene, waits for the WebGL canvas to draw, fits the whole map ' +
+          'into the viewport (or keeps the saved camera with fit:false), and optionally draws ' +
+          'numbered markers over each map-note pin (mark:true) to check legend-pin placement (a ' +
+          'view-only overlay, no document changes). Returns the file path + scene metadata; ' +
+          'open/read that file to view the image. GM-only.',
+        inputSchema: toInputSchema(ScreenshotSceneSchema),
       },
     ];
   }
@@ -646,6 +680,32 @@ export class SceneTools {
         ? ` (${result.notFoundIds.length} id(s) not found: ${result.notFoundIds.join(', ')})`
         : '';
     return `Deleted ${result?.deleted ?? 0} note(s) from "${result?.sceneName}" (${result?.sceneId})${missing}.`;
+  }
+
+  async handleScreenshotScene(args: any): Promise<string> {
+    const parsed = ScreenshotSceneSchema.parse(args ?? {});
+    // Page-side: view + fit + (optional) marker overlay, returning scene metadata.
+    const meta = await this.foundry.call('prepareSceneShot', {
+      sceneIdentifier: parsed.sceneIdentifier,
+      fit: parsed.fit,
+      mark: parsed.mark,
+    });
+    if (!meta?.found) {
+      return `Scene not found: "${meta?.notFound ?? parsed.sceneIdentifier}". Nothing captured.`;
+    }
+    // Bridge-side (Playwright): capture the rendered page to a file. Default to a temp path.
+    const safeId = String(meta.sceneId ?? 'scene').replace(/[^a-zA-Z0-9_-]/g, '');
+    const outPath = parsed.outputPath || join(tmpdir(), `fvtt-scene-${safeId}.png`);
+    await this.foundry.screenshot(outPath);
+    const dims = meta.dimensions
+      ? `\n  canvas: ${meta.dimensions.width}×${meta.dimensions.height}px (renderer ${meta.renderer ?? '?'})`
+      : '';
+    return (
+      `Captured "${meta.sceneName}" (${meta.sceneId}) → ${outPath}` +
+      (parsed.mark ? `\n  marked ${meta.noteCount ?? 0} note pin(s)` : '') +
+      dims +
+      '\n  (open or Read the file to view the image)'
+    );
   }
 
   async handleListScenes(args: any): Promise<string> {

@@ -45,13 +45,13 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 93 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 94 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
     // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
-    // + update-note + delete-note + upload-asset-tree (M6)
-    expect(names.length).toBe(93);
+    // + update-note + delete-note + upload-asset-tree (M6) + screenshot-scene (visual QA)
+    expect(names.length).toBe(94);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -88,6 +88,12 @@ describe('tool registry', () => {
     expect(names.has('delete-note')).toBe(true);
     expect(typeof handlers['update-note']).toBe('function');
     expect(typeof handlers['delete-note']).toBe('function');
+  });
+
+  it('registers screenshot-scene (headless canvas capture for visual QA)', () => {
+    const { tools, handlers } = build();
+    expect(tools.map(t => t.name)).toContain('screenshot-scene');
+    expect(typeof handlers['screenshot-scene']).toBe('function');
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {

@@ -39,6 +39,9 @@ export function makeFoundry(response: any = {}): {
       calls.push([name, args]);
       return typeof response === 'function' ? response(name, args) : response;
     }),
+    // The bridge seam also exposes screenshot(outPath) (Playwright-level). Recorded as a no-op so
+    // tool handlers that capture screenshots can be exercised offline.
+    screenshot: vi.fn(async (_outPath: string) => {}),
   };
   return { foundry, calls };
 }

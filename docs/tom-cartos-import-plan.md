@@ -325,6 +325,21 @@ CreateSceneNotesSchema = z.object({
 > unit-tested + a gated integration test against the real Hilltop pack. The skill (Step 4b) uploads them
 > via `upload-asset-tree` and reports each footprint; placement stays a GM drag (no place-tile tool).
 
+### 6.13 `screenshot-scene` — headless canvas capture for visual QA (**TOOL**)
+
+> **AS BUILT (2026-06-29, post-M6).** Born from the legend→pins review: there was no way to *see* the
+> rendered result, so placement could only be eyeballed by the GM. The headless bridge IS Playwright, so
+> it can screenshot its own Chromium — and a spike proved headless Chromium **does** render Foundry's
+> PIXI/WebGL canvas (renderer type 1 = WebGL), not a black frame. `screenshot-scene { sceneIdentifier,
+> fit?, mark?, outputPath? }` views the scene, waits for the canvas to draw, fits the whole map (or keeps
+> the saved camera), optionally overlays a numbered marker on each note pin (`mark:true` — view-only, no
+> document changes), then captures a PNG to a file (path returned; too big for the 20K response cap, same
+> as read-pack payloads). The capture is the one Playwright touch — a new `screenshot(outPath)` on the
+> `FoundryBridge` seam in `src/foundry.ts`; the view/fit/overlay is the page fn `prepareSceneShot`
+> (`src/page/scenes.ts`). Used live to verify the Hilltop legend pins (13/14 dead-on; one Dock pin nudged
+> via `update-note`, re-shot to confirm). **94 tools.** Proof script: `scripts/spike-screenshot.mjs`
+> (drives the shipped path against `dist/`). General-purpose visual QA for any scene/import, not just pins.
+
 ### 6.11 Asset-path rewrite as a TOOL, not skill string-surgery (**TOOL** · correctness — boundary fix from critique #11)
 **Target:** fold into `read-pack` (§6.1) via the `destRoot` param — `read-pack` emits a `rewriteHint` (`modules/<id>/<rel>` → `<destRoot>/<rel>`, decoded) per asset. The skill only **chooses `destRoot`** (judgment); the tool **computes the rewritten path** (deterministic). The skill no longer does string surgery on `background.src`/`thumb`/`src`. (A standalone `rewrite-pack-assets` tool is an alternative; folding into `read-pack` is lighter.)
 

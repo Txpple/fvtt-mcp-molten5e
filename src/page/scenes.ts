@@ -911,6 +911,103 @@ export async function deleteSceneNotes(args: {
   };
 }
 
+/**
+ * Prepare the page to screenshot a scene: VIEW it, wait for the WebGL canvas to draw THIS scene, fit
+ * the whole map into the viewport (unless fit:false → keep the saved camera), and — when mark:true —
+ * draw a transient numbered marker over each map-note pin (a QA overlay on the notes layer, the same
+ * coordinate space as the pins, so it aligns exactly; NO document changes). Returns scene metadata;
+ * the bridge then captures the PNG via page.screenshot. Page-side (game/canvas/PIXI) — proven live by
+ * the screenshot spike, not unit-tested by convention.
+ */
+export async function prepareSceneShot(args: {
+  sceneIdentifier: string;
+  fit?: boolean;
+  mark?: boolean;
+}): Promise<{
+  found: boolean;
+  notFound?: string;
+  sceneId?: string;
+  sceneName?: string;
+  noteCount?: number;
+  renderer?: string;
+  dimensions?: { width: number; height: number; sceneX: number; sceneY: number };
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { found: false, notFound: args.sceneIdentifier };
+
+  await scene.view();
+  const canvas: any = (globalThis as any).canvas;
+  const PIXI: any = (globalThis as any).PIXI;
+  // Wait (up to ~12s) for the canvas to finish drawing THIS scene before capturing.
+  for (let i = 0; i < 48; i++) {
+    if (canvas?.ready && canvas?.scene?.id === scene.id) break;
+    await new Promise(r => setTimeout(r, 250));
+  }
+  if (!canvas?.ready) {
+    return { found: true, sceneId: scene.id, sceneName: scene.name, noteCount: 0 };
+  }
+
+  const d = canvas.dimensions;
+  if (args.fit !== false) {
+    const w: any = (globalThis as any).window;
+    const sw = w?.innerWidth || 1920;
+    const sh = w?.innerHeight || 1080;
+    const scale = Math.min(sw / d.width, sh / d.height) * 0.95;
+    canvas.pan({ x: d.width / 2, y: d.height / 2, scale });
+  }
+
+  // Clear any prior QA overlay (repeated shots must not stack), then optionally redraw markers.
+  const prior = canvas.notes?.children?.find((c: any) => c?.name === 'fvtt-shot-overlay');
+  if (prior) prior.destroy({ children: true });
+  if (args.mark && PIXI && canvas.notes) {
+    const overlay = new PIXI.Container();
+    overlay.name = 'fvtt-shot-overlay';
+    for (const n of canvas.notes.placeables ?? []) {
+      const x = n.document?.x;
+      const y = n.document?.y;
+      if (typeof x !== 'number' || typeof y !== 'number') continue;
+      const num = String(n.document.text || '?').split(/[ —-]/)[0];
+      const gfx = new PIXI.Graphics();
+      gfx.lineStyle(12, 0x000000, 1);
+      gfx.beginFill(0xff1744, 0.95);
+      gfx.drawCircle(x, y, 170);
+      gfx.endFill();
+      overlay.addChild(gfx);
+      const txt = new PIXI.Text(num, {
+        fontFamily: 'Arial',
+        fontSize: 220,
+        fontWeight: 'bold',
+        fill: 0xffffff,
+        stroke: 0x000000,
+        strokeThickness: 16,
+      });
+      txt.anchor.set(0.5);
+      txt.position.set(x, y);
+      overlay.addChild(txt);
+    }
+    canvas.notes.addChild(overlay);
+  }
+  // Let the pan settle + the overlay draw before the screenshot.
+  await new Promise(r => setTimeout(r, 600));
+
+  let renderer = 'unknown';
+  try {
+    renderer = canvas.app?.renderer?.type === 1 ? 'WebGL' : String(canvas.app?.renderer?.type);
+  } catch {
+    /* renderer introspection is best-effort */
+  }
+
+  return {
+    found: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    noteCount: canvas.notes?.placeables?.length ?? 0,
+    renderer,
+    dimensions: { width: d.width, height: d.height, sceneX: d.sceneX, sceneY: d.sceneY },
+  };
+}
+
 // --- local helpers (page-coupled) --------------------------------------------
 
 /**

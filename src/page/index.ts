@@ -21,6 +21,7 @@ import {
   createSceneNotes,
   updateSceneNote,
   deleteSceneNotes,
+  prepareSceneShot,
 } from './scenes.js';
 import {
   listActors,
@@ -117,6 +118,7 @@ const api = {
   createSceneNotes,
   updateSceneNote,
   deleteSceneNotes,
+  prepareSceneShot,
   // actors / characters
   listActors,
   getCharacterInfo,

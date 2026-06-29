@@ -39,6 +39,7 @@ describe('SceneTools.getToolDefinitions', () => {
         'get-world-info',
         'list-scenes',
         'remap-teleporters',
+        'screenshot-scene',
         'update-note',
         'update-scene',
       ].sort()
@@ -669,6 +670,50 @@ describe('handleDeleteNote', () => {
     await expect(
       tools.handleDeleteNote({ sceneIdentifier: 'Iris', noteIds: [] })
     ).rejects.toThrow();
+  });
+});
+
+describe('handleScreenshotScene', () => {
+  it('preps the scene (fit + mark) then captures to the requested path + reports metadata', async () => {
+    const { tools, calls, foundry } = build({
+      found: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      noteCount: 5,
+      renderer: 'WebGL',
+      dimensions: { width: 4760, height: 7280, sceneX: 840, sceneY: 1260 },
+    });
+    const out = await tools.handleScreenshotScene({
+      sceneIdentifier: 'Iris',
+      outputPath: '/tmp/iris.png',
+      mark: true,
+    });
+    expect(calls[0][0]).toBe('prepareSceneShot');
+    expect(calls[0][1]).toMatchObject({ sceneIdentifier: 'Iris', fit: true, mark: true });
+    expect(foundry.screenshot).toHaveBeenCalledWith('/tmp/iris.png');
+    expect(out).toContain('Captured "Iris" (sc1)');
+    expect(out).toContain('/tmp/iris.png');
+    expect(out).toContain('marked 5 note pin(s)');
+    expect(out).toContain('renderer WebGL');
+  });
+
+  it('defaults the output path to a temp file named for the scene id', async () => {
+    const { tools, foundry } = build({ found: true, sceneId: 'abc123', sceneName: 'X' });
+    await tools.handleScreenshotScene({ sceneIdentifier: 'X' });
+    expect(foundry.screenshot).toHaveBeenCalledTimes(1);
+    expect((foundry.screenshot as any).mock.calls[0][0]).toMatch(/fvtt-scene-abc123\.png$/);
+  });
+
+  it('reports not-found and does NOT capture when the scene does not resolve', async () => {
+    const { tools, foundry } = build({ found: false, notFound: 'Ghost' });
+    const out = await tools.handleScreenshotScene({ sceneIdentifier: 'Ghost' });
+    expect(out).toBe('Scene not found: "Ghost". Nothing captured.');
+    expect(foundry.screenshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty sceneIdentifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleScreenshotScene({ sceneIdentifier: '' })).rejects.toThrow();
   });
 });
 
