@@ -150,6 +150,7 @@ export async function addJournalImage(data: {
   imagePath: string;
   pageName?: string;
   caption?: string;
+  playerVisible?: boolean;
 }): Promise<unknown> {
   if (!data.journalIdentifier || !data.imagePath) {
     throw new Error('journalIdentifier and imagePath are both required');
@@ -167,6 +168,8 @@ export async function addJournalImage(data: {
     src,
   };
   if (data.caption) pageData.image = { caption: data.caption };
+  // playerVisible -> page ownership OBSERVER (2); omitted inherits the journal's GM-only default.
+  if (data.playerVisible) pageData.ownership = { default: 2 };
   const created = await journal.createEmbeddedDocuments('JournalEntryPage', [pageData]);
   const page = created?.[0];
   return {

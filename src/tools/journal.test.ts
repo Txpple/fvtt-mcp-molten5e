@@ -442,6 +442,47 @@ describe('handleCreateJournal', () => {
     expect(calls[0][1].folderName).toBe('Lore');
   });
 
+  it('forwards an image page (kind:image -> src + caption + ownership) beside text pages', async () => {
+    const { tools, calls } = build({ id: 'j3', name: 'Keys', pageCount: 2, pages: [] });
+    await tools.handleCreateJournal({
+      name: 'Keys',
+      pages: [
+        { name: 'Overview', content: '<p>Map keys</p>' },
+        {
+          name: 'Iris Key',
+          kind: 'image',
+          src: 'worlds/w/assets/iris_Key.webp',
+          caption: 'Iris',
+          playerVisible: true,
+        },
+      ],
+    });
+    const pages = calls[0][1].pages;
+    // text page unchanged (no kind/src leaks in)
+    expect(pages[0]).toEqual({ name: 'Overview', content: '<p>Map keys</p>' });
+    // image page carries kind + src + caption + ownership, NOT a content field
+    expect(pages[1]).toEqual({
+      name: 'Iris Key',
+      kind: 'image',
+      src: 'worlds/w/assets/iris_Key.webp',
+      caption: 'Iris',
+      ownership: { default: 2 },
+    });
+  });
+
+  it('forwards an explicit sort key when given', async () => {
+    const { tools, calls } = build({ id: 'j', name: 'J', pageCount: 1, pages: [] });
+    await tools.handleCreateJournal({ name: 'J', pages: [{ name: 'P', content: 'x', sort: 200 }] });
+    expect(calls[0][1].pages[0]).toEqual({ name: 'P', content: 'x', sort: 200 });
+  });
+
+  it('rejects an image page with no src (refine)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateJournal({ name: 'J', pages: [{ name: 'Img', kind: 'image' }] })
+    ).rejects.toThrow();
+  });
+
   it('rejects an empty name', async () => {
     const { tools } = build();
     await expect(tools.handleCreateJournal({ name: '', pages: [{ name: 'p' }] })).rejects.toThrow();

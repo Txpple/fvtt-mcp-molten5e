@@ -47,6 +47,10 @@ const AddJournalImageSchema = z.object({
   imagePath: z.string().min(1).describe('Data-relative path to the image.'),
   pageName: z.string().optional().describe('Page title (defaults to the file name).'),
   caption: z.string().optional().describe('Optional image caption.'),
+  playerVisible: z
+    .boolean()
+    .optional()
+    .describe('If true, players can OBSERVE this image page (a handout). Default: GM-only.'),
 });
 
 export interface AssetBridgeToolsOptions {
@@ -91,8 +95,8 @@ export class AssetBridgeTools {
       {
         name: 'add-journal-image',
         description:
-          'Composition. Append an image page to a journal entry from a Data-relative image path. ' +
-          'GM-only.',
+          'Composition. Append an image page to a journal entry from a Data-relative image path, ' +
+          'with an optional caption. GM-only by default; set playerVisible to expose it as a handout.',
         inputSchema: toInputSchema(AddJournalImageSchema),
       },
     ];

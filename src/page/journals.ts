@@ -9,7 +9,7 @@
 // @2969-3022, deleteJournals @3022-3083) and the contracts the Node tools in
 // src/tools/quest-creation.ts + its tests expect.
 
-import { resolveJournalStrict, getOrCreateFolder } from './_shared.js';
+import { resolveJournalStrict, getOrCreateFolder, normalizeAssetPath } from './_shared.js';
 
 // Foundry document class (JournalEntry) lives in the page global scope but is
 // not declared in foundry-globals.d.ts; reach it off globalThis.
@@ -221,7 +221,15 @@ export async function updateJournalContent(request: {
  */
 export async function createJournal(params: {
   name: string;
-  pages: Array<{ name: string; content: string; ownership?: { default: number } }>;
+  pages: Array<{
+    name: string;
+    kind?: 'image';
+    content?: string;
+    src?: string;
+    caption?: string;
+    sort?: number;
+    ownership?: { default: number };
+  }>;
   folderName?: string;
 }): Promise<{
   id: string;
@@ -240,12 +248,34 @@ export async function createJournal(params: {
     if (!p || typeof p.name !== 'string' || p.name.trim().length === 0) {
       throw new Error(`pages[${idx}]: "name" is required and must be a non-empty string`);
     }
+    // An explicit sort lets the caller interleave/order pages; otherwise creation (array) order
+    // stands. Per-page ownership (JournalEntryPage carries its own in v10+) is omitted to inherit GM-only.
+    const sortField = typeof p.sort === 'number' ? { sort: p.sort } : {};
+    const ownershipField = p.ownership ? { ownership: p.ownership } : {};
+
+    // Image page (e.g. a map legend key): a picture page with no HTML body. Mirrors addJournalImage.
+    if (p.kind === 'image') {
+      const src = normalizeAssetPath(p.src ?? '');
+      if (!src) {
+        throw new Error(`pages[${idx}]: an image page requires a non-empty "src"`);
+      }
+      return {
+        type: 'image',
+        name: p.name,
+        src,
+        ...(p.caption ? { image: { caption: p.caption } } : {}),
+        ...sortField,
+        ...ownershipField,
+      };
+    }
+
+    // Text page (default): HTML content body.
     return {
       type: 'text',
       name: p.name,
       text: { content: typeof p.content === 'string' ? p.content : '' },
-      // Per-page ownership (JournalEntryPage carries its own ownership in v10+); omit to inherit GM-only.
-      ...(p.ownership ? { ownership: p.ownership } : {}),
+      ...sortField,
+      ...ownershipField,
     };
   });
 

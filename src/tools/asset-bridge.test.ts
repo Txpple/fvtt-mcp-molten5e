@@ -232,6 +232,23 @@ describe('handleAddJournalImage', () => {
     expect(calls[0][1]).toMatchObject({ pageName: 'Title', caption: 'A caption' });
   });
 
+  it('passes playerVisible through (handout image page)', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      pageName: 'Map',
+      pageId: 'pg1',
+      journalName: 'Lore',
+      journalId: 'j1',
+      src: 'i.webp',
+    });
+    await tools.handleAddJournalImage({
+      journalIdentifier: 'Lore',
+      imagePath: 'i.webp',
+      playerVisible: true,
+    });
+    expect(calls[0][1]).toMatchObject({ playerVisible: true });
+  });
+
   it('reports not-found branch when updated === false', async () => {
     const { tools } = build({ updated: false, notFound: 'Ghost' });
     const out = await tools.handleAddJournalImage({

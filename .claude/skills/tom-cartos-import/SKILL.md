@@ -115,8 +115,11 @@ upload-asset { localPath: <asset.diskPath>, remotePath: <asset.dataPath>, overwr
 ## Step 5 — Recreate the journal(s) and keep their links
 
 For each `journals[]` entry, recreate it so the legend keys travel with the scenes:
-- Create the entry with `create-journal`, then add each **image** page with `add-journal-image`
-  (`src` = the page's rewritten `dataPath`); for text pages pass the page text. Keep page order.
+- Build it in ONE `create-journal` call: pass each page in `pages[]` as either a text page
+  (`{name, content}`) or an **image** page (`{name, kind:"image", src}`, where `src` = the page's
+  rewritten `dataPath`, plus an optional `caption`). Keep the pack's page order (or set `sort`). An
+  image-only legend journal now builds cleanly with **no spurious leading "Map Keys" text page** and
+  no per-image `add-journal-image` loop. (Use `add-journal-image` only to append to an EXISTING journal.)
 - Stamp the same `flags["tom-cartos-import"]` for dedup.
 - This entry is what you'll link as each scene's `journal` in Step 6 (the GM opens the keys from the
   scene). Follow the **`journal-builder`** conventions for page kinds/visibility.

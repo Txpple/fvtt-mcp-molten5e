@@ -117,21 +117,52 @@ const SearchJournalsSchema = z.object({
     .describe('Where to search (default: both)'),
 });
 
+// A create-journal page is either a TEXT page (HTML body) or an IMAGE page (a picture — e.g. a map
+// legend key). `kind` selects which; an image page requires `src` (a Data-relative image path).
+// Both kinds carry per-page `playerVisible` (handout) and an optional explicit `sort` for ordering.
+// This lets an image-only journal (e.g. a Tom-Cartos legend pack) build in ONE call instead of
+// create-journal + N add-journal-image (which also leaves a spurious leading text page).
+const createJournalPageSchema = z
+  .object({
+    name: z.string().min(1, 'Page name is required').describe('Page title.'),
+    kind: z
+      .enum(['text', 'image'])
+      .default('text')
+      .describe("Page kind: 'text' (HTML body, default) or 'image' (a picture page)."),
+    content: z
+      .string()
+      .optional()
+      .default('')
+      .describe('HTML content for a text page (ignored when kind is "image").'),
+    src: z
+      .string()
+      .optional()
+      .describe(
+        'Data-relative image path — REQUIRED when kind is "image" (e.g. a map legend key).'
+      ),
+    caption: z.string().optional().describe('Caption shown beneath an image page.'),
+    sort: z
+      .number()
+      .optional()
+      .describe('Optional explicit sort key (ascending). Omit to keep the given array order.'),
+    playerVisible: z
+      .boolean()
+      .optional()
+      .describe('If true, players can OBSERVE this page (a handout). Default: GM-only.'),
+  })
+  .refine(p => p.kind !== 'image' || (typeof p.src === 'string' && p.src.trim().length > 0), {
+    message: 'An image page requires "src" (a Data-relative image path).',
+  });
+
 const CreateJournalSchema = z.object({
   name: z.string().min(1, 'Journal name is required').describe('Journal entry name.'),
   pages: z
-    .array(
-      z.object({
-        name: z.string().min(1, 'Page name is required').describe('Page title.'),
-        content: z.string().optional().default('').describe('HTML content for the page.'),
-        playerVisible: z
-          .boolean()
-          .optional()
-          .describe('If true, players can OBSERVE this page (a handout). Default: GM-only.'),
-      })
-    )
+    .array(createJournalPageSchema)
     .min(1, 'At least one page is required')
-    .describe('Ordered text pages. Each needs a name; content is HTML (may be empty).'),
+    .describe(
+      'Ordered pages — each a TEXT page (HTML content) or an IMAGE page (kind:"image" + src). ' +
+        'Each needs a name; text content is HTML (may be empty).'
+    ),
   folderName: z
     .string()
     .optional()
@@ -233,10 +264,12 @@ export class JournalTools {
       {
         name: 'create-journal',
         description:
-          'Create a generic multi-page JournalEntry from caller-supplied text pages. Unlike ' +
-          'create-quest-journal (which generates styled quest content and auto-folders), this takes ' +
-          'an explicit pages array of {name, content} and only folders the entry when folderName is ' +
-          'given. Page content is HTML (Foundry v13 ProseMirror). GM-only.',
+          'Create a generic multi-page JournalEntry from caller-supplied pages. Each page is either ' +
+          'a TEXT page ({name, content} — HTML, Foundry v13 ProseMirror) or an IMAGE page ' +
+          '({name, kind:"image", src, caption?} — a picture page, e.g. a map legend key), so an ' +
+          'image-only journal builds in one call. Unlike create-quest-journal (styled blocks, ' +
+          'auto-folders), this takes explicit pages and only folders when folderName is given. ' +
+          'Per-page playerVisible exposes a handout; otherwise GM-only.',
         inputSchema: toInputSchema(CreateJournalSchema),
       },
       {
@@ -586,10 +619,15 @@ export class JournalTools {
     try {
       const request = CreateJournalSchema.parse(args);
 
-      // Map the friendly per-page `playerVisible` onto Foundry's page ownership (2 = observe).
+      // Map each page to the bridge shape: a TEXT page forwards `content`; an IMAGE page forwards
+      // `kind:'image'` + `src` (+ optional caption). `playerVisible` -> ownership.default 2 (observe);
+      // an explicit `sort` is forwarded when given (otherwise the page side keeps the array order).
       const pages = request.pages.map(p => ({
         name: p.name,
-        content: p.content,
+        ...(p.kind === 'image'
+          ? { kind: 'image' as const, src: p.src, ...(p.caption ? { caption: p.caption } : {}) }
+          : { content: p.content }),
+        ...(typeof p.sort === 'number' ? { sort: p.sort } : {}),
         ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
       }));
 
