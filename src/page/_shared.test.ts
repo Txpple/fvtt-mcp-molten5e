@@ -32,6 +32,19 @@ describe('normalizeAssetPath', () => {
     expect(normalizeAssetPath('assets/a%20b.png')).toBe('assets/a b.png');
     expect(normalizeAssetPath('assets/100%.png')).toBe('assets/100%.png'); // invalid % left as-is
   });
+  it('preserves a literal # / ? inside a path segment, re-encoded (Tom Cartos "#48 - Room/" folders)', () => {
+    // Regression caught live at the e2e: the legacy Into-the-Wilds pack stores maps under "#48 - …/"
+    // folders. The old split('#') truncated the path to ".../maps/", losing the file; the `#` must
+    // survive as %23 so Foundry's texture URL doesn't read it as a fragment.
+    expect(normalizeAssetPath('worlds/w/assets/maps/#48 - Prison & Guard/TC_map.webp')).toBe(
+      'worlds/w/assets/maps/%2348 - Prison & Guard/TC_map.webp'
+    );
+    expect(normalizeAssetPath('maps/q?2/a.webp')).toBe('maps/q%3F2/a.webp');
+  });
+  it('still strips a genuine trailing query/fragment on the file', () => {
+    expect(normalizeAssetPath('maps/a.webp#thumb')).toBe('maps/a.webp');
+    expect(normalizeAssetPath('maps/a.webp?v=3')).toBe('maps/a.webp');
+  });
   it('returns empty string for empty/non-string input', () => {
     expect(normalizeAssetPath('')).toBe('');
     expect(normalizeAssetPath(undefined as unknown as string)).toBe('');

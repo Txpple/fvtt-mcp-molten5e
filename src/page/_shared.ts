@@ -22,13 +22,18 @@ const FolderClass: any = (globalThis as any).Folder;
 export const MCP_FLAG_SCOPE = 'world';
 
 /**
- * Normalize an asset path: strip query/hash, decode percent-encoding, drop a
- * leading host/protocol, convert backslashes, and remove a leading slash or
- * `Data/` prefix. Mirrors the old data-access.normalizeAssetPath.
+ * Normalize an asset path: strip a TRAILING query/fragment, decode percent-encoding, drop a
+ * leading host/protocol, convert backslashes, remove a leading slash or `Data/` prefix, and
+ * re-encode the URL-structural chars (`#`, `?`) that can appear literally in a path segment.
+ * Mirrors the old data-access.normalizeAssetPath.
  */
 export function normalizeAssetPath(src: string): string {
   if (!src || typeof src !== 'string') return '';
-  let s = src.trim().split('?')[0].split('#')[0];
+  // Strip ONLY a trailing ?query / #fragment (a delimiter whose remainder has no more path
+  // separators). A `#`/`?` INSIDE a path segment — e.g. Tom Cartos's legacy "#48 - Room/" folders —
+  // is a literal filename char, not a URL delimiter, and MUST be preserved. (The old
+  // `split('?')[0].split('#')[0]` truncated such a path to its parent dir, losing the file.)
+  let s = src.trim().replace(/[?#][^/]*$/, '');
   try {
     s = decodeURI(s);
   } catch {
@@ -36,11 +41,15 @@ export function normalizeAssetPath(src: string): string {
   }
   const urlMatch = s.match(/^https?:\/\/[^/]+\/(.*)$/i);
   if (urlMatch) s = urlMatch[1];
-  return s
+  s = s
     .replace(/\\/g, '/')
     .replace(/^\/+/, '')
     .replace(/^Data\//i, '')
     .replace(/^\/+/, '');
+  // Re-encode the URL-structural chars so Foundry's loader builds a valid texture URL from the stored
+  // src: a raw `#` would be read as a fragment (truncating the URL → no image), `?` as a query. Spaces
+  // / `&` / apostrophes stay literal — Foundry percent-encodes those itself when it loads the asset.
+  return s.replace(/#/g, '%23').replace(/\?/g, '%3F');
 }
 
 /** File name (last path segment) of an asset path. */
