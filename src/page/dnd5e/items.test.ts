@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildPhysicalItemData } from './items.js';
+import { isPlaceholderIcon, resolveAuthoredIcon } from './icons.js';
 
 describe('buildPhysicalItemData — cross-cutting fields', () => {
   it('sets price/weight/quantity/rarity/identified defaults', () => {
@@ -94,6 +95,43 @@ describe('buildPhysicalItemData — cross-cutting fields', () => {
     });
     expect(doc.system.properties).toContain('mgc');
     expect(doc.system.magicalBonus).toBe('-1');
+  });
+
+  // Rule 8 — an authored item must never ship a blank icon (the DataModel default placeholder).
+  it('fills a real, non-placeholder icon when none is given', () => {
+    for (const itemType of [
+      'weapon',
+      'armor',
+      'shield',
+      'consumable',
+      'tool',
+      'loot',
+      'container',
+    ]) {
+      const doc = buildPhysicalItemData({ itemType, name: 'X' });
+      expect(doc.img, `${itemType} should get a real icon`).toBeTruthy();
+      expect(isPlaceholderIcon(doc.img)).toBe(false);
+    }
+  });
+
+  it('picks a subtype-specific icon for a wondrous ring vs a bare wondrous item', () => {
+    const ring = buildPhysicalItemData({
+      itemType: 'wondrous',
+      name: 'Ring',
+      equipmentType: 'ring',
+    });
+    const trinket = buildPhysicalItemData({ itemType: 'wondrous', name: 'Bauble' });
+    expect(ring.img).toBe(resolveAuthoredIcon('wondrous', { subtype: 'ring' }));
+    expect(ring.img).not.toBe(trinket.img);
+  });
+
+  it('respects an explicit img over the auto-filled default', () => {
+    const doc = buildPhysicalItemData({
+      itemType: 'weapon',
+      name: 'Custom',
+      img: 'icons/weapons/swords/sword-runed.webp',
+    });
+    expect(doc.img).toBe('icons/weapons/swords/sword-runed.webp');
   });
 });
 

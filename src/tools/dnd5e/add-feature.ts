@@ -97,6 +97,15 @@ export const AddFeatureSchema = z.object({
     .describe(
       'HTML description of the feature (optional). Used by: passive, save, attack, attack-with-save, aura.'
     ),
+  img: z
+    .string()
+    .optional()
+    .describe(
+      'Icon path for the authored feature. OMIT and a real, kind-appropriate icon is auto-filled ' +
+        '(no blank star). Set it to the img of the compendium feature you are emulating ' +
+        '(search-compendium-* → copy its img) for an exact match. Used by: passive, save, attack, ' +
+        'attack-with-save, aura, homebrew-spell.'
+    ),
   activationType: z
     .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
     .default('action')
@@ -533,6 +542,7 @@ export class DnD5eAddFeatureTool {
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       featureName: z.string().min(1, 'featureName cannot be empty'),
       description: z.string().default(''),
+      img: z.string().optional(),
       featType: z.string().optional(),
       requirements: z.string().optional(),
       sourceRules: z.enum(['2014', '2024']).default('2024'),
@@ -591,6 +601,7 @@ export class DnD5eAddFeatureTool {
         actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
         featureName: z.string().min(1, 'featureName cannot be empty'),
         description: z.string().default(''),
+        img: z.string().optional(),
         activationType: z
           .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
           .default('action'),
@@ -678,6 +689,7 @@ export class DnD5eAddFeatureTool {
         actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
         featureName: z.string().min(1, 'featureName cannot be empty'),
         description: z.string().default(''),
+        img: z.string().optional(),
         activationType: z
           .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
           .default('action'),
@@ -809,6 +821,7 @@ export class DnD5eAddFeatureTool {
         actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
         featureName: z.string().min(1, 'featureName cannot be empty'),
         description: z.string().default(''),
+        img: z.string().optional(),
         activationType: z
           .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
           .default('action'),
@@ -939,6 +952,7 @@ export class DnD5eAddFeatureTool {
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       featureName: z.string().min(1, 'featureName cannot be empty'),
       description: z.string().default(''),
+      img: z.string().optional(),
       activationType: z
         .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
         .default('action'),
@@ -1145,6 +1159,7 @@ export class DnD5eAddFeatureTool {
         actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
         featureName: z.string().min(1, 'featureName cannot be empty'),
         description: z.string().default(''),
+        img: z.string().optional(),
         spellLevel: z.number().int().min(0).max(9),
         spellSchool: z.enum(['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs']).optional(),
         spellMethod: z.enum(['atwill', 'innate', 'ritual', 'pact', 'spell']).default('spell'),
@@ -1246,6 +1261,7 @@ export class DnD5eAddFeatureTool {
       const result = await this.foundry.call('addHomebrewSpellToActor', {
         actorIdentifier: parsed.actorIdentifier,
         name: parsed.featureName,
+        img: parsed.img,
         level: parsed.spellLevel,
         school: parsed.spellSchool,
         method: parsed.spellMethod,

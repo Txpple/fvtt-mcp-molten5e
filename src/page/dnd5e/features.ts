@@ -10,6 +10,7 @@
 // (src/tools/dnd5e/add-feature.ts) and its test stay green.
 
 import { slugify, resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
+import { resolveAuthoredIcon } from './icons.js';
 
 // ---------------------------------------------------------------------------
 // save feature — feat Item with a single "save" activity
@@ -28,6 +29,7 @@ export async function addSaveFeatureToActor(args: {
   areaSize?: number;
   areaUnits: string;
   affectsType: string;
+  img?: string;
 }): Promise<unknown> {
   // 1. Lookup actor
   const actor = findActorByIdentifier(args.actorIdentifier);
@@ -61,8 +63,9 @@ export async function addSaveFeatureToActor(args: {
   // 6. Build item data — schema verified against dnd5e real output
   const itemData = {
     name: args.featureName,
+    // Rule 8 — a real, verified icon, not the blank feature star. The caller may override via img.
+    img: args.img ?? resolveAuthoredIcon('save'),
     type: 'feat',
-    img: 'systems/dnd5e/icons/svg/items/feature.svg',
     system: {
       description: { value: args.description, chat: '' },
       identifier,
@@ -179,8 +182,9 @@ export async function addPassiveFeatureToActor(args: any): Promise<unknown> {
   // 4. Build item data — no activities, no activityId needed
   const itemData = {
     name: args.featureName,
+    // Rule 8 — a real, verified icon, not the blank feature star. The caller may override via img.
+    img: args.img ?? resolveAuthoredIcon('passive'),
     type: 'feat',
-    img: 'systems/dnd5e/icons/svg/items/feature.svg',
     system: {
       description: { value: args.description ?? '', chat: '' },
       identifier,

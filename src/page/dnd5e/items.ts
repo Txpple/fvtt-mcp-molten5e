@@ -21,6 +21,22 @@ import {
 } from '../_shared.js';
 import { buildActivity } from './activities.js';
 import { createWorldItems } from '../items.js';
+import { resolveAuthoredIcon } from './icons.js';
+
+/** The finer kind used to pick a default icon: equipmentType for wondrous, consumableType for a
+ * consumable, lootType for loot. Other item types have no sub-kind icon (resolver uses the bare key). */
+function iconSubtype(opts: PhysicalItemOpts): string | undefined {
+  switch (opts.itemType) {
+    case 'wondrous':
+      return opts.equipmentType;
+    case 'consumable':
+      return opts.consumableType;
+    case 'loot':
+      return opts.lootType;
+    default:
+      return undefined;
+  }
+}
 
 // itemType (tool-facing) -> Foundry Item document type.
 const DOC_TYPE: Record<string, string> = {
@@ -233,7 +249,9 @@ export function buildPhysicalItemData(opts: PhysicalItemOpts): {
     type: docType,
     system,
   };
-  if (opts.img) doc.img = opts.img;
+  // Rule 8 — never ship a blank icon. Use the caller's img if given; otherwise fill a real, verified
+  // core icon for this item kind (the DataModel would otherwise default to a monochrome placeholder).
+  doc.img = opts.img ?? resolveAuthoredIcon(opts.itemType, { subtype: iconSubtype(opts) });
   return doc;
 }
 

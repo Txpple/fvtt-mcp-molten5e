@@ -16,6 +16,7 @@
 import { slugify, resolveActorFuzzy as findActorByIdentifier, DAMAGE_TYPES } from '../_shared.js';
 import { WEAPON_PROPERTIES } from '../../utils/dnd5e-canonical.js';
 import { buildActivity } from './activities.js';
+import { resolveAuthoredIcon } from './icons.js';
 
 // =============================================================================
 // Method-specific constants (ported verbatim from the oracle).
@@ -133,6 +134,8 @@ export async function addAttackToActor(data: any): Promise<unknown> {
   // 8. Build item data
   const itemData: Record<string, any> = {
     name: data.featureName,
+    // Rule 8 — a real, verified weapon-strike icon (the DataModel default would be blank).
+    img: data.img ?? resolveAuthoredIcon('attack'),
     type: 'weapon',
     system: {
       description: {
@@ -279,8 +282,9 @@ export async function addAuraToActor(data: any): Promise<unknown> {
   // 7. Build item data — schema verified against dnd5e 5.1.8 Banshee Wail
   const itemData = {
     name: data.featureName,
+    // Rule 8 — a real, verified area/aura icon, not the blank feature star. Override via img.
+    img: data.img ?? resolveAuthoredIcon('aura'),
     type: 'feat',
-    img: 'systems/dnd5e/icons/svg/items/feature.svg',
     system: {
       description: { value: data.description ?? '', chat: '' },
       identifier,
@@ -441,6 +445,8 @@ export async function addAttackWithSaveToActor(data: any): Promise<unknown> {
   // 9. Build item data
   const itemData: Record<string, any> = {
     name: data.featureName,
+    // Rule 8 — a real, verified weapon-strike icon (the DataModel default would be blank).
+    img: data.img ?? resolveAuthoredIcon('attack'),
     type: 'weapon',
     system: {
       description: {

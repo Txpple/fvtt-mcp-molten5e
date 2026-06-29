@@ -10,6 +10,7 @@
 
 import { resolveActorFuzzy as findActorByIdentifier } from '../_shared.js';
 import { buildActivity } from './activities.js';
+import { resolveAuthoredIcon } from './icons.js';
 import { DEFAULT_SPELL_PACKS } from '../../utils/compendium-sources.js';
 
 // =============================================================================
@@ -393,6 +394,7 @@ export async function addSpellsToActor(data: any): Promise<unknown> {
 export async function addHomebrewSpellToActor(args: {
   actorIdentifier: string;
   name: string;
+  img?: string;
   level: number;
   school?: string;
   method?: string;
@@ -462,7 +464,8 @@ export async function addHomebrewSpellToActor(args: {
   const itemData = {
     name: args.name,
     type: 'spell',
-    img: 'icons/svg/daze.svg',
+    // Rule 8 — a real, verified spell icon (not the generic monochrome placeholder). Override via img.
+    img: args.img ?? resolveAuthoredIcon('spell'),
     system,
   };
   const [created] = (await actor.createEmbeddedDocuments('Item', [itemData])) as any[];
