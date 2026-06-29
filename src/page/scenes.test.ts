@@ -361,6 +361,18 @@ describe('remapTeleportDestination', () => {
     expect(res.status).toBe('unchanged');
   });
 
+  it('is IDEMPOTENT: a destination already holding the new ids (map VALUES) is unchanged, not unresolved', () => {
+    // Regression (caught live at the e2e): on a second remap pass the destination already points at
+    // the NEW scene/region (the map values), which are NOT keys — the old code flagged these
+    // already-correct teleporters as "unresolved". They must read as `unchanged`.
+    const res = remapTeleportDestination('Scene.newSceneC.Region.newRegD', sceneIdMap, regionIdMap);
+    expect(res.status).toBe('unchanged');
+    // mixed: scene already-new but region still an old key → resolves to a fresh rewrite
+    expect(
+      remapTeleportDestination('Scene.oldSceneA.Region.oldRegB', sceneIdMap, regionIdMap).status
+    ).toBe('rewritten');
+  });
+
   it('is no-match for a non-teleport / unset destination', () => {
     expect(remapTeleportDestination(undefined, sceneIdMap, regionIdMap).status).toBe('no-match');
     expect(remapTeleportDestination('', sceneIdMap, regionIdMap).status).toBe('no-match');

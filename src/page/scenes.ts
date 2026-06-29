@@ -325,9 +325,19 @@ export function remapTeleportDestination(
   const [, oldScene, oldRegion] = m;
   const newScene = sceneIdMap[oldScene];
   const newRegion = regionIdMap[oldRegion];
-  if (!newScene || !newRegion) return { status: 'unresolved', reason: dest };
-  const newDest = `Scene.${newScene}.Region.${newRegion}`;
-  return newDest === dest ? { status: 'unchanged', dest } : { status: 'rewritten', dest: newDest };
+  if (newScene && newRegion) {
+    const newDest = `Scene.${newScene}.Region.${newRegion}`;
+    return newDest === dest
+      ? { status: 'unchanged', dest }
+      : { status: 'rewritten', dest: newDest };
+  }
+  // Re-run / resume: the destination may already hold the NEW ids (the map VALUES, not keys) from a
+  // prior remap. That's done, not broken — report `unchanged`, not `unresolved`. Only a destination
+  // whose scene+region is neither an old source id NOR a current in-import id truly points outside it.
+  const sceneIsCurrent = Object.values(sceneIdMap).includes(oldScene);
+  const regionIsCurrent = Object.values(regionIdMap).includes(oldRegion);
+  if (sceneIsCurrent && regionIsCurrent) return { status: 'unchanged', dest };
+  return { status: 'unresolved', reason: dest };
 }
 
 /**
