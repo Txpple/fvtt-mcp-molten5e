@@ -133,6 +133,30 @@ const SidecarLightSchema = z
   })
   .passthrough();
 
+// Modern-pack scene MOOD objects, carried mostly-whole (typed minimal + .passthrough()) so a v12+
+// scene's full environment/fog and saved camera round-trip — not just the scalar knobs in
+// sceneCommonFields. Minimal typing (not z.any()) keeps the generated JSON schema useful.
+const SceneEnvironmentSchema = z
+  .object({
+    darknessLevel: z.number().min(0).max(1).optional(),
+    globalLight: z.object({ enabled: z.boolean().optional() }).passthrough().optional(),
+    cycle: z.boolean().optional(),
+  })
+  .passthrough();
+const SceneFogSchema = z
+  .object({
+    exploration: z.boolean().optional(),
+    overlay: z.string().nullable().optional(),
+  })
+  .passthrough();
+const SceneInitialSchema = z
+  .object({
+    x: z.number().optional(),
+    y: z.number().optional(),
+    scale: z.number().optional(),
+  })
+  .passthrough();
+
 const CreateSceneSchema = z.object({
   name: z.string().min(1).describe('Scene name.'),
   backgroundPath: z.string().min(1).describe('Data-relative path to the background/map image.'),
@@ -176,6 +200,17 @@ const CreateSceneSchema = z.object({
       'Document flags to stamp on the new scene, namespaced by scope — e.g. ' +
         '{"tom-cartos-import":{sourceModule,sourceId}} for import provenance/dedup. Merged verbatim.'
     ),
+  environment: SceneEnvironmentSchema.optional().describe(
+    "A v12+ scene's full environment{} mood object, carried whole (darknessLevel, globalLight{...}, " +
+      'cycle, base, dark{hue,luminosity}…). Prefer this over the flat darkness/globalLight knobs when ' +
+      'importing a pack so the authored day/night mood round-trips.'
+  ),
+  fog: SceneFogSchema.optional().describe(
+    "A v12+ scene's full fog{} object (exploration, overlay, colors), carried whole."
+  ),
+  initial: SceneInitialSchema.optional().describe(
+    'The saved initial camera view {x,y,scale} to restore on scene load.'
+  ),
   ...sceneCommonFields,
 });
 
@@ -247,8 +282,9 @@ export class SceneTools {
         description:
           'Create a Foundry Scene from a Data-relative background image path (e.g. an uploaded map). ' +
           'Width/height auto-detect from the image when omitted. Optionally set grid size/type/' +
-          'distance/units/color/alpha, token vision, fog mode, lighting (darkness, global light), ' +
-          'weather, a linked playlist/journal, a nav thumbnail, padding, provenance flags, and ' +
+          'distance/units/color/alpha, token vision, fog mode, lighting (darkness, global light, or a ' +
+          'whole environment{}/fog{} mood object + saved camera for pack imports), weather, a linked ' +
+          'playlist/journal, a nav thumbnail, padding, provenance flags, and ' +
           'activate it. Can also IMPORT walls + ' +
           'ambient lights from a map sidecar JSON (the `walls`/`lights` arrays many battlemaps ship ' +
           'alongside the image): pass them and they are placed on the new scene (legacy or v14 shapes ' +

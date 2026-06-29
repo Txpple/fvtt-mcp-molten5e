@@ -381,6 +381,9 @@ export async function createScene(
     walls?: SidecarWall[];
     lights?: SidecarLight[];
     flags?: Record<string, unknown>;
+    environment?: Record<string, unknown>;
+    fog?: Record<string, unknown>;
+    initial?: Record<string, unknown>;
   } & SceneFieldArgs
 ): Promise<unknown> {
   if (!args.name || !args.backgroundPath) {
@@ -417,6 +420,16 @@ export async function createScene(
     const flat = buildSceneFields(args);
     if (Object.keys(flat).length > 0 && foundryUtils?.expandObject && foundryUtils?.mergeObject) {
       foundryUtils.mergeObject(sceneData, foundryUtils.expandObject(flat));
+    }
+
+    // Modern-pack mood objects (environment/fog) + saved camera (initial), merged WHOLE (deep) so a
+    // v12+ scene's full authored mood round-trips, layering over any flat scalar knobs set above.
+    for (const key of ['environment', 'fog', 'initial'] as const) {
+      const v = args[key];
+      if (v && typeof v === 'object') {
+        if (foundryUtils?.mergeObject) foundryUtils.mergeObject(sceneData, { [key]: v });
+        else sceneData[key] = { ...(sceneData[key] ?? {}), ...v };
+      }
     }
 
     // Provenance/dedup flags, namespaced by scope (e.g. {"tom-cartos-import":{sourceModule,sourceId}}).
