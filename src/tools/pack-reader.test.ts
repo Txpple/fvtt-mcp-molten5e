@@ -5,18 +5,23 @@
  * shells out to the foundryvtt-cli child process, so it is skipped where the pack/cli aren't there).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   computeAssetRewrite,
   decodeAssetSegments,
   detectPackEra,
+  discoverTiles,
   PackReaderTools,
   parseNedbDocs,
+  parseTileName,
   projectSceneGeometry,
   resolvePackPath,
   staleTmpDirs,
   stripPackArtifacts,
+  summarizeTileDir,
 } from './pack-reader.js';
 
 describe('staleTmpDirs', () => {
@@ -255,6 +260,79 @@ describe('projectSceneGeometry', () => {
   });
 });
 
+describe('parseTileName', () => {
+  it('parses the Tile_<W>x<H> grid footprint from a tile filename', () => {
+    expect(parseTileName('TC_Hilltop Ritual Temple 02_Hut Tile_10x7.webp')).toEqual({
+      gridWidth: 10,
+      gridHeight: 7,
+    });
+    expect(parseTileName('TC_Storage Cave Tile_22x34.webp')).toEqual({
+      gridWidth: 22,
+      gridHeight: 34,
+    });
+  });
+
+  it('returns null for maps, legend keys, thumbs, and non-images', () => {
+    expect(parseTileName('TC_Clifftop_No Grid_22x34.webp')).toBeNull(); // a MAP (no Tile_ token)
+    expect(parseTileName('TC_Hilltop Ritual Temple_Key.webp')).toBeNull(); // a legend KEY
+    expect(parseTileName('aHlOFtz85k69X7KA-thumb.webp')).toBeNull(); // a scene thumb
+    expect(parseTileName('Tile_10x7.txt')).toBeNull(); // not an image
+  });
+});
+
+describe('discoverTiles + summarizeTileDir', () => {
+  let mod: string;
+  beforeEach(() => {
+    mod = mkdtempSync(join(tmpdir(), 'tc-tiles-test-'));
+    mkdirSync(join(mod, 'images', 'assets'), { recursive: true });
+    mkdirSync(join(mod, 'images', 'maps'), { recursive: true });
+    mkdirSync(join(mod, 'packs', 'scene-pack'), { recursive: true });
+    // two real tiles
+    writeFileSync(join(mod, 'images', 'assets', 'TC_Hut Tile_10x7.webp'), 'x');
+    writeFileSync(join(mod, 'images', 'assets', 'TC_Roof Tile_12x16.webp'), 'x');
+    // a map (not a tile), a key (not a tile), and a pack file that must be skipped
+    writeFileSync(join(mod, 'images', 'maps', 'TC_Map_No Grid_22x34.webp'), 'x');
+    writeFileSync(join(mod, 'images', 'TC_Temple_Key.webp'), 'x');
+    writeFileSync(join(mod, 'packs', 'scene-pack', 'Tile_99x99.webp'), 'x'); // inside packs/ → ignored
+  });
+  afterEach(() => rmSync(mod, { recursive: true, force: true }));
+
+  it('finds only the tile images, with parsed dims + module-relative paths, skipping packs/', () => {
+    const tiles = discoverTiles(mod).sort((a, b) => a.name.localeCompare(b.name));
+    expect(tiles.map(t => t.name)).toEqual(['TC_Hut Tile_10x7.webp', 'TC_Roof Tile_12x16.webp']);
+    expect(tiles[0]).toMatchObject({
+      rel: 'images/assets/TC_Hut Tile_10x7.webp',
+      gridWidth: 10,
+      gridHeight: 7,
+    });
+    expect(tiles[0].diskPath).toContain('images'); // absolute on-disk path
+    expect(tiles[0].dataPath).toBeUndefined(); // no destRoot → no rewrite hint
+  });
+
+  it('emits a dataPath rewrite hint mirroring the subtree when destRoot is given', () => {
+    const tiles = discoverTiles(mod, 'worlds/w/assets/tom-cartos/m');
+    const hut = tiles.find(t => t.name.includes('Hut'))!;
+    expect(hut.dataPath).toBe('worlds/w/assets/tom-cartos/m/images/assets/TC_Hut Tile_10x7.webp');
+  });
+
+  it('summarizeTileDir returns the single shared dir (the common case)', () => {
+    const tiles = discoverTiles(mod);
+    const { relDir, localDir } = summarizeTileDir(tiles);
+    expect(relDir).toBe('images/assets');
+    expect(localDir).toContain('images'); // dirname of the tiles' diskPath
+  });
+
+  it('returns [] for a module with no tiles', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'tc-notiles-'));
+    try {
+      expect(discoverTiles(empty)).toEqual([]);
+      expect(summarizeTileDir([])).toEqual({});
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+});
+
 // --- integration (real pack on disk) ---------------------------------------
 
 const REAL_PACK = 'C:/Users/sippelmc/Desktop/tom-cartos-temple-of-night';
@@ -362,6 +440,37 @@ const haveLegacy = existsSync(LEGACY_PACK);
       expect(s.environment).toBeUndefined();
       expect(s.thumb).toBeNull(); // legacy data: URI thumb not surfaced as an asset
       expect(s.background.dataPath).not.toContain('%');
+    }, 30000);
+  }
+);
+
+const TILES_PACK = 'C:/Users/sippelmc/Desktop/tom-cartos-hilltop-ritual-temple';
+const haveTiles = existsSync(TILES_PACK);
+
+(haveTiles ? describe : describe.skip)(
+  'read-pack integration (real Hilltop pack — standalone TILES)',
+  () => {
+    it('discovers the pack tiles with parsed dims + a single shared dir + rewrite hints', async () => {
+      const tools = new PackReaderTools({ logger });
+      const dest = 'worlds/test/assets/tom-cartos/tom-cartos-hilltop-ritual-temple';
+      const res = await tools.handleReadPack({ modulePath: TILES_PACK, destRoot: dest });
+
+      expect(res.tiles).toBeTruthy();
+      expect(res.tiles.count).toBeGreaterThan(0);
+      // Hilltop's tiles all live in images/assets → one shared dir for an upload-asset-tree call.
+      expect(res.tiles.relDir).toBe('images/assets');
+      const hut = res.tiles.files.find((t: any) => /Hut Tile_10x7/.test(t.name));
+      expect(hut).toBeTruthy();
+      expect(hut.gridWidth).toBe(10);
+      expect(hut.gridHeight).toBe(7);
+      expect(hut.dataPath).toBe(`${dest}/images/assets/${hut.name}`);
+      // no maps/keys leaked into tiles
+      expect(res.tiles.files.every((t: any) => !/_Key\.webp$|_No Grid_/.test(t.name))).toBe(true);
+
+      // Survey mode reports compact tile presence for planning.
+      const survey = await tools.handleReadPack({ modulePath: TILES_PACK, index: true });
+      expect(survey.tiles.count).toBe(res.tiles.count);
+      expect(survey.tiles.dir).toBe('images/assets');
     }, 30000);
   }
 );

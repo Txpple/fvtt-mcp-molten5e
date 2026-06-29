@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { z } from 'zod';
@@ -303,6 +303,88 @@ export function staleTmpDirs(
     .map(e => e.name);
 }
 
+// --- tile assets (standalone props the GM drags onto scenes) -----------------
+//
+// Some scene-pack modules ship a folder of TILE images — individual building/prop pieces (a hut, a
+// temple, a roof) separate from the full battlemaps. They are NOT referenced by any scene doc, so the
+// doc-driven asset walk never finds them; they're discovered by scanning the module folder. Tom
+// Cartos bakes each tile's grid footprint into the filename as `Tile_<W>x<H>` (e.g. `Tile_10x7`),
+// which also distinguishes a tile from a map (`_No Grid_WxH`) or a legend key (`_Key`). The skill
+// uploads them so the GM can browse + drag them onto scenes (the WxH tells them how big to size it).
+
+export interface TileAsset {
+  name: string; // file name
+  rel: string; // module-relative path (e.g. images/assets/TC_… Tile_10x7.webp)
+  diskPath: string; // absolute on-disk source (for upload)
+  dataPath?: string; // rewritten Data-relative path (only when destRoot given)
+  gridWidth: number; // cells wide (from the filename)
+  gridHeight: number; // cells tall
+}
+
+/**
+ * Parse a tile image filename's baked-in grid footprint (`…Tile_<W>x<H>.<ext>`). Returns the cell
+ * dimensions, or null when the name is not a tile image (a map's `_No Grid_WxH`, a `_Key`, or a
+ * non-image all return null — the `Tile_` token + trailing position is the discriminator).
+ * Pure/exported for unit testing.
+ */
+export function parseTileName(filename: string): { gridWidth: number; gridHeight: number } | null {
+  const m = filename.match(/Tile_(\d+)x(\d+)\.(?:webp|png|jpe?g)$/i);
+  if (!m) return null;
+  return { gridWidth: Number(m[1]), gridHeight: Number(m[2]) };
+}
+
+/**
+ * Recursively find tile images under a module folder (skips the compendium `packs/` dir and dotfiles).
+ * Each tile carries its module-relative path, on-disk path, parsed grid footprint, and — given the
+ * dest root the skill chose — a rewrite hint mirroring the module subtree. Returns [] when the pack
+ * ships no tiles. Exported for unit testing (deterministic given a folder).
+ */
+export function discoverTiles(moduleDir: string, destRoot?: string): TileAsset[] {
+  const out: TileAsset[] = [];
+  const walk = (dir: string, relParts: string[]): void => {
+    // Loop inside the try so TS infers Dirent<string> (a withFileTypes annotation defaults the
+    // Dirent generic to Buffer); an unreadable dir is simply skipped.
+    try {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.name.startsWith('.')) continue;
+        if (e.isDirectory()) {
+          if (relParts.length === 0 && e.name === 'packs') continue; // skip the compendium DBs
+          walk(join(dir, e.name), [...relParts, e.name]);
+        } else if (e.isFile()) {
+          const dims = parseTileName(e.name);
+          if (!dims) continue;
+          const rel = [...relParts, e.name].join('/');
+          const tile: TileAsset = {
+            name: e.name,
+            rel,
+            diskPath: join(dir, e.name),
+            gridWidth: dims.gridWidth,
+            gridHeight: dims.gridHeight,
+          };
+          if (destRoot) tile.dataPath = `${destRoot.replace(/\/+$/, '')}/${rel}`;
+          out.push(tile);
+        }
+      }
+    } catch {
+      /* unreadable dir — skip */
+    }
+  };
+  walk(moduleDir, []);
+  return out;
+}
+
+/**
+ * If every discovered tile shares ONE parent directory (the common case — Tom packs put them all in
+ * one `images/assets`), return that dir (absolute + module-relative) so the skill can upload the whole
+ * folder in one upload-asset-tree call. Spread across dirs → {} (skill falls back to per-file). Pure.
+ */
+export function summarizeTileDir(tiles: TileAsset[]): { localDir?: string; relDir?: string } {
+  if (tiles.length === 0) return {};
+  const relDirs = new Set(tiles.map(t => t.rel.split('/').slice(0, -1).join('/')));
+  if (relDirs.size !== 1) return {};
+  return { relDir: [...relDirs][0], localDir: dirname(tiles[0].diskPath) };
+}
+
 /**
  * Best-effort sweep of OLD read-pack temp dirs from the OS tmp dir. NEVER throws — a cleanup failure
  * must not block a read. Runs at the start of handleReadPack. (Regular Node fs/time, fine here.)
@@ -390,7 +472,9 @@ const READ_PACK_DESCRIPTION =
   'v10/NeDB vs newer v13/LevelDB), extracts each Scene (dimensions, grid, background, thumbnail, ' +
   'walls, lights, regions/teleporters) and JournalEntry (pages), strips cli pack artifacts, and — ' +
   'when given the destination root the skill chose — emits per-asset path REWRITE HINTS (the ' +
-  'module-relative %-encoded src → a clean Data-relative path). The heavy per-scene ' +
+  'module-relative %-encoded src → a clean Data-relative path). Also discovers any standalone TILE ' +
+  'images the pack ships (building/prop pieces with a `Tile_<W>x<H>` grid footprint in the name, not ' +
+  'referenced by any scene) so the skill can make them available for the GM to drop onto scenes. The heavy per-scene ' +
   'walls/lights/regions are written to PAYLOAD FILES and referenced by `placeablesPath` (NOT inline — ' +
   'the response cap truncates them at scene scale); pass that path to create-scene, which reads it ' +
   'server-side. The skill then uploads the assets, recreates the scenes/journals, and (modern packs) ' +
@@ -440,6 +524,26 @@ export class PackReaderTools {
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const moduleId: string = manifest.id ?? manifest.name ?? 'unknown-module';
+
+    // Standalone TILE images (props the GM drags onto scenes) live in the module folder, not in any
+    // scene doc — discover them by scanning (cheap; bounded to the module's asset dirs). Module-global.
+    const tiles = discoverTiles(moduleDir, destRoot);
+    const tileDir = summarizeTileDir(tiles);
+    const tilesBlock =
+      tiles.length > 0
+        ? {
+            count: tiles.length,
+            localDir: tileDir.localDir,
+            relDir: tileDir.relDir,
+            files: tiles.map(t => ({
+              name: t.name,
+              gridWidth: t.gridWidth,
+              gridHeight: t.gridHeight,
+              diskPath: t.diskPath,
+              ...(t.dataPath ? { dataPath: t.dataPath } : {}),
+            })),
+          }
+        : null;
 
     const packs: any[] = Array.isArray(manifest.packs) ? manifest.packs : [];
     const scenePacks = packs.filter(
@@ -544,6 +648,8 @@ export class PackReaderTools {
           name: d.name,
           pageCount: Array.isArray(d.pages) ? d.pages.length : 0,
         })),
+        // Compact tile presence for planning ("this pack has N tiles" → offer to make them available).
+        tiles: tilesBlock ? { count: tilesBlock.count, dir: tilesBlock.relDir } : null,
       };
     }
 
@@ -629,6 +735,8 @@ export class PackReaderTools {
         : {}),
       journals,
       assets: [...assets.values()].map(leanAsset),
+      // Tile assets are module-global → returned once on the FIRST page (not repeated while paging).
+      ...(start === 0 && tilesBlock ? { tiles: tilesBlock } : {}),
       payloadDir, // temp dir holding the per-scene {walls,lights,regions} files; safe to delete after import
     };
   }

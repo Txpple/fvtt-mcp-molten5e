@@ -8,9 +8,10 @@ description: >-
   the pack off disk, detects its Foundry era, uploads and re-points all its assets, and recreates each
   scene faithfully — dimensions, grid, background, thumbnail, environment/fog mood, every wall and
   light, and the cross-scene teleporters (stairs between levels) — plus the pack's journal of legend
-  keys. The tools own correctness (extraction, era detection, path rewrite, whole-placeable creation,
-  teleporter remap); this skill owns the judgment: which variants to import, naming/foldering, the asset
-  destination, the import order, and dedup.
+  keys. Also makes any standalone TILES the pack ships (huts/roofs/props) available for the GM to drag
+  onto scenes. The tools own correctness (extraction, era detection, path rewrite, whole-placeable
+  creation, teleporter remap, tile discovery); this skill owns the judgment: which variants to import,
+  naming/foldering, the asset destination, the import order, and dedup.
 ---
 
 # Tom Cartos import
@@ -124,6 +125,35 @@ It walks `localRoot` recursively, skips existing files (unless `overwrite`), and
 uploaded/skipped/error counts. Fall back to the per-file `upload-asset` loop only when you need a
 hand-picked subset (e.g. just the chosen variants' backgrounds).
 
+## Step 4b — Make the pack's TILES available to the GM (when present)
+
+Some packs ship a folder of **tiles** — individual building/prop pieces (a hut, a temple, a roof, an
+animal pen) separate from the full battlemaps. They are NOT part of any scene; the GM drags them onto
+scenes with Foundry's Tile tool. `read-pack` discovers them and returns a **`tiles`** block on the
+first page (`{ count, localDir, relDir, files:[{name, gridWidth, gridHeight, diskPath, dataPath}] }`);
+the `index` survey reports `tiles:{count, dir}` for the upfront planning view. (Not all packs have
+tiles — `tiles` is null when none.)
+
+If `tiles.count > 0`, **ask** (default yes — they're useful and harmless): *"This pack also ships N
+standalone tiles (huts/roofs/props). Want me to upload them so you can drag them onto scenes from the
+file picker?"* If yes:
+
+- Upload the whole tile folder in one call — `read-pack` already gives you the shared `localDir`:
+
+  ```
+  upload-asset-tree { localRoot: <tiles.localDir>, remoteRoot: worlds/<world>/assets/tom-cartos/<id>/tiles, overwrite: true, includeExt: ["webp","png","jpg"] }
+  ```
+
+  (If `tiles.localDir` is absent — tiles spread across dirs — fall back to a per-file `upload-asset`
+  loop over `tiles.files[]` using each `diskPath` → `dataPath`.)
+- **Report the tiles to the GM with their grid footprint** so they know how big each lands: e.g.
+  *"Uploaded 13 tiles to `…/tiles/` — Hut (10×7), Temple (12×20), Roof (12×16)…. In Foundry: Tiles
+  control → Browse → that folder → drag onto a scene; the WxH is the cell footprint."* The
+  `gridWidth`×`gridHeight` come straight from each tile's filename — surface them; don't guess.
+
+Tiles are creation-time **assets**, not placeables — the skill makes them available; placing one on a
+specific scene stays a GM drag (there's no place-tile tool, same as token placement).
+
 ## Step 5 — Recreate the journal(s) and keep their links
 
 For each `journals[]` entry, recreate it so the legend keys travel with the scenes:
@@ -210,9 +240,10 @@ to the right new scene. You do **not** pass or transcribe any ids — the tool r
 ## Step 9 — Report what landed (and what didn't)
 
 Summarize: scenes created (with wall/light/**region** counts), **teleporters linked** (and any
-unresolved ones from Step 8), the journal, the asset count + destination, and — **explicitly, never
-silently** — anything skipped: any `sounds`/`tiles`/`foreground` the pack carried that v1 doesn't
-import, and the legend→pins follow-up (still opt-in/deferred). A faithful-import skill reports its gaps.
+unresolved ones from Step 8), the journal, the asset count + destination, the **tiles** made available
+(count + folder, when the pack had any — Step 4b), and — **explicitly, never silently** — anything
+skipped: any `sounds`/scene `foreground` (overhead) the pack carried that v1 doesn't import, and the
+legend→pins follow-up (still opt-in/deferred). A faithful-import skill reports its gaps.
 
 ## Optional follow-up — legend keys → GM map-pins (opt-in; DRAFT pins for review)
 
