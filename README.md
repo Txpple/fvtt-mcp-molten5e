@@ -10,8 +10,18 @@ Paired with its bundled **skills**, it goes well beyond CRUD: it can author a **
 adventure end to end** — scene, monsters, NPCs, a pregen PC or party, treasure, linked journals, and
 roll tables — scaled to however much the DM provides. Hand it **only a map image** and Claude reads the
 map and builds the whole module; hand it **your own finished module** and it faithfully recreates every
-stat block, item, and handout in the VTT. It can also import a player's character straight from a
-**publicly shared D&D Beyond** sheet.
+stat block, item, and handout in the VTT.
+
+**Two importers worth calling out:**
+
+- **D&D Beyond → a real PC.** Point it at a player's **publicly shared D&D Beyond** sheet and it builds
+  a fully leveled Foundry character — class/subclass/species/background, ability scores, the level-1
+  choices, spells, and starting equipment — canonicalized to the premium **2024** books.
+- **Adventure map packs → your world.** Import a battlemap *module* (a distributed Foundry scene-pack
+  with its own compendiums) faithfully: every scene with its walls, lights, day/night mood, and
+  navigation thumbnails, plus the journal of map keys — with all assets re-pointed into your world, and
+  cross-version (older and newer Foundry formats) handled. **[Tom Cartos](https://www.tomcartos.com)**
+  packs are the first supported format; more to come.
 
 ---
 
@@ -66,14 +76,17 @@ automated.
 **In scope:** actors — both **NPCs** and full leveled **PCs** (including import from a publicly shared
 **D&D Beyond** character) — items, journals, scenes (as _documents_), playlists, roll tables, cards,
 compendium manipulation — especially **pulling** content out ("make an actor from the MM owlbear") —
-and asset upload. With the bundled skills these compose into **end-to-end adventures**, including
-**reading a provided map image** to drive the scene and everything in it. Authoring prefers the
+and asset upload. With the bundled skills these compose into **end-to-end adventures** — from
+**reading a provided map image** to drive a scene and everything in it, to **importing a distributed
+battlemap module** (e.g. Tom Cartos scene-packs) faithfully into your world. Authoring prefers the
 **2024** dnd5e data model, sourced from **PHB / DMG / MM**; if the requested content isn't in those
 packs the tool says so rather than inventing it.
 
-**Out of scope:** non-5e game systems; maps & active-scene / placeable manipulation (walls, lights,
-ambient sounds, placing/moving tokens) and live "running" of play; AI **map-image** generation (Claude
-reads a *provided* map, it does not draw one); scripting the Molten management panel.
+**Out of scope:** non-5e game systems; **live** placeable manipulation on the running canvas
+(placing/moving tokens, editing walls, lights, ambient sounds) and live "running" of play; AI
+**map-image** generation (Claude reads a *provided* map, it does not draw one); scripting the Molten
+management panel. (Walls and lights _are_ imported when a scene is built — from a map sidecar or a
+scene-pack module — just not manipulated live.)
 
 ---
 
