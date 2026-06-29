@@ -242,6 +242,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'asset-info': args => moltenTools.handleAssetInfo(args),
     'download-asset': args => moltenTools.handleDownloadAsset(args),
     'upload-asset': args => moltenTools.handleUploadAsset(args),
+    'upload-asset-tree': args => moltenTools.handleUploadAssetTree(args),
     'create-asset-folder': args => moltenTools.handleCreateAssetFolder(args),
     'delete-asset': args => moltenTools.handleDeleteAsset(args),
     'move-asset': args => moltenTools.handleMoveAsset(args),

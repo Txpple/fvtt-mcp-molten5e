@@ -26,10 +26,10 @@ dead-ends. We read the pack off disk, upload its images, and recreate the docume
 See [`docs/tom-cartos-import-plan.md`](../../../docs/tom-cartos-import-plan.md) for the full design.
 
 Tools used: **`read-pack`** (the off-line extractor/detector — owns all the LevelDB/NeDB reading,
-era detection, and asset path-rewrite math), `upload-asset` (Plane B), `create-scene`,
-**`remap-teleporters`** (the second-pass teleporter fixer), `create-journal` / `add-journal-image`,
-`create-folder` / `move-documents`, `list-scenes` / `list-journals`. To boot the world first, hand off
-to **`start-session`**.
+era detection, tile discovery, and asset path-rewrite math), `upload-asset` / **`upload-asset-tree`**
+(Plane B — single file vs whole subtree), `create-scene`, **`remap-teleporters`** (the second-pass
+teleporter fixer), `create-journal` / `add-journal-image`, `create-folder` / `move-documents`,
+`list-scenes` / `list-journals`. To boot the world first, hand off to **`start-session`**.
 
 > **Scope — all eras:** this skill imports **modern** (v13/LevelDB), **mid** (v10–v11), and **legacy**
 > (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
@@ -111,6 +111,18 @@ upload-asset { localPath: <asset.diskPath>, remotePath: <asset.dataPath>, overwr
 
 `upload-asset` auto-creates parent folders and content-types. `overwrite:true` keeps re-imports clean.
 (Note: assets are world-public, no auth — fine for map art.)
+
+**Bulk shortcut (preferred for whole subtrees).** When you're pushing a whole on-disk subtree — the
+pack's `images/` folder, or its tiles folder (Step 4b) — use **`upload-asset-tree`** to upload it in
+one call instead of N `upload-asset`s, preserving the layout:
+
+```
+upload-asset-tree { localRoot: <module-dir>/images, remoteRoot: worlds/<world>/assets/tom-cartos/<id>/images, overwrite: true, includeExt: ["webp","png","jpg"] }
+```
+
+It walks `localRoot` recursively, skips existing files (unless `overwrite`), and reports
+uploaded/skipped/error counts. Fall back to the per-file `upload-asset` loop only when you need a
+hand-picked subset (e.g. just the chosen variants' backgrounds).
 
 ## Step 5 — Recreate the journal(s) and keep their links
 

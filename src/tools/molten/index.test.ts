@@ -35,7 +35,10 @@ vi.mock('./webdav.js', async importActual => {
   };
 });
 
-import { MoltenTools } from './index.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MoltenTools, joinRemote, matchesIncludeExt } from './index.js';
 import { config } from '../../config.js';
 
 const makeLogger = (): any => {
@@ -61,7 +64,7 @@ afterEach(() => {
 });
 
 describe('getToolDefinitions', () => {
-  it('exposes the nine Plane-B file tools', () => {
+  it('exposes the ten Plane-B file tools', () => {
     const names = build()
       .getToolDefinitions()
       .map(t => t.name)
@@ -77,8 +80,40 @@ describe('getToolDefinitions', () => {
         'list-assets',
         'move-asset',
         'upload-asset',
+        'upload-asset-tree',
       ].sort()
     );
+  });
+});
+
+describe('joinRemote (pure — literal chars preserved, no double-encode)', () => {
+  it('joins root + rel with a single slash and strips dupes', () => {
+    expect(joinRemote('worlds/w/assets/tiles', 'a/b.webp')).toBe('worlds/w/assets/tiles/a/b.webp');
+    expect(joinRemote('worlds/w/assets/tiles/', '/a.webp')).toBe('worlds/w/assets/tiles/a.webp');
+    expect(joinRemote('root', '')).toBe('root');
+  });
+
+  it('keeps spaces / # / & LITERAL (the WebDAV client encodes once on PUT)', () => {
+    const out = joinRemote('worlds/w/tom-cartos', '#48 - Throne & Hall/TC_Big Tile_10x7.webp');
+    expect(out).toBe('worlds/w/tom-cartos/#48 - Throne & Hall/TC_Big Tile_10x7.webp');
+    expect(out).not.toContain('%23'); // not pre-encoded → no %2520 double-encode downstream
+    expect(out).not.toContain('%20');
+  });
+
+  it('normalizes backslashes in the relative path', () => {
+    expect(joinRemote('root', 'sub\\file.webp')).toBe('root/sub/file.webp');
+  });
+});
+
+describe('matchesIncludeExt (pure)', () => {
+  it('accepts everything when the filter is omitted/empty', () => {
+    expect(matchesIncludeExt('a.txt')).toBe(true);
+    expect(matchesIncludeExt('a.txt', [])).toBe(true);
+  });
+  it('matches by extension case-insensitively, dot optional in the filter', () => {
+    expect(matchesIncludeExt('Tile.WEBP', ['webp'])).toBe(true);
+    expect(matchesIncludeExt('Tile.webp', ['.webp', '.png'])).toBe(true);
+    expect(matchesIncludeExt('notes.txt', ['webp', 'png'])).toBe(false);
   });
 });
 
@@ -267,6 +302,89 @@ describe('upload-asset happy path', () => {
     });
     expect(out).toMatch(/already exists/);
     expect(davInstance.putFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('upload-asset-tree', () => {
+  let root: string;
+  beforeEach(() => {
+    // Build a small local tree, incl. a subfolder whose name has a space + `#` + `&` (Tom's "#48 …").
+    root = mkdtempSync(join(tmpdir(), 'uat-test-'));
+    writeFileSync(join(root, 'a.webp'), 'A');
+    writeFileSync(join(root, 'notes.txt'), 'skip me with includeExt');
+    const sub = join(root, '#48 - Throne & Hall');
+    mkdirSync(sub);
+    writeFileSync(join(sub, 'TC_Big Tile_10x7.webp'), 'B');
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('uploads every file under the root, preserving the subtree with LITERAL paths', async () => {
+    davInstance.exists.mockResolvedValue(false);
+    davInstance.putFile.mockResolvedValue(undefined);
+    davInstance.ensureParents.mockResolvedValue(undefined);
+
+    const out = await build().handleUploadAssetTree({
+      localRoot: root,
+      remoteRoot: 'worlds/w/assets/tom-cartos/tiles',
+    });
+
+    expect(out).toMatch(/Uploaded 3 file\(s\)/);
+    const remotePaths = davInstance.putFile.mock.calls.map((c: any[]) => c[0]).sort();
+    expect(remotePaths).toContain('worlds/w/assets/tom-cartos/tiles/a.webp');
+    // the spaced/#/& subfolder path stays LITERAL (the client encodes once → no %2520)
+    const nested = remotePaths.find((p: string) => p.includes('Throne'));
+    expect(nested).toBe(
+      'worlds/w/assets/tom-cartos/tiles/#48 - Throne & Hall/TC_Big Tile_10x7.webp'
+    );
+    expect(nested).not.toContain('%23');
+    expect(nested).not.toContain('%20');
+  });
+
+  it('filters by includeExt (skips the .txt)', async () => {
+    davInstance.exists.mockResolvedValue(false);
+    davInstance.putFile.mockResolvedValue(undefined);
+    const out = await build().handleUploadAssetTree({
+      localRoot: root,
+      remoteRoot: 'worlds/w/tiles',
+      includeExt: ['webp'],
+    });
+    expect(out).toMatch(/Uploaded 2 file\(s\)/);
+    expect(davInstance.putFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips files that already exist unless overwrite:true', async () => {
+    davInstance.exists.mockResolvedValue(true); // everything "exists"
+    const out = await build().handleUploadAssetTree({
+      localRoot: root,
+      remoteRoot: 'worlds/w/tiles',
+    });
+    expect(out).toMatch(/Uploaded 0 file\(s\) → Data\/worlds\/w\/tiles \(3 skipped/);
+    expect(davInstance.putFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a live world-DB remoteRoot before any upload', async () => {
+    const out = await build().handleUploadAssetTree({
+      localRoot: root,
+      remoteRoot: 'worlds/w/data',
+    });
+    expect(out).toMatch(/Refused/);
+    expect(davInstance.putFile).not.toHaveBeenCalled();
+  });
+
+  it('reports not-configured when no password is set', async () => {
+    const out = await build({ configured: false }).handleUploadAssetTree({
+      localRoot: root,
+      remoteRoot: 'worlds/w/tiles',
+    });
+    expect(out).toMatch(/not configured/);
+  });
+
+  it('errors clearly when the local directory is missing', async () => {
+    const out = await build().handleUploadAssetTree({
+      localRoot: join(root, 'does-not-exist'),
+      remoteRoot: 'worlds/w/tiles',
+    });
+    expect(out).toMatch(/Cannot read local directory/);
   });
 });
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import { Logger } from '../../logger.js';
 import { config } from '../../config.js';
 import type { MoltenConfig } from '../../config.js';
@@ -98,6 +98,32 @@ const UploadAssetSchema = z.object({
     .describe('Allow overwriting an existing file at remotePath.'),
 });
 
+const UploadAssetTreeSchema = z.object({
+  localRoot: z
+    .string()
+    .min(1)
+    .describe('Absolute path to a LOCAL directory; every file under it (recursive) is uploaded.'),
+  remoteRoot: z
+    .string()
+    .min(1)
+    .describe(
+      'Destination directory RELATIVE TO the Foundry `Data/` root, e.g. ' +
+        '"worlds/your-world/assets/tom-cartos/<id>/tiles". Each local file lands at ' +
+        "remoteRoot/<path-relative-to-localRoot>. Never inside a world's `data/` (LevelDB) dir."
+    ),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe('Overwrite existing files (otherwise an already-present file is skipped).'),
+  includeExt: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Only upload files with these extensions (no dot, case-insensitive), e.g. ' +
+        '["webp","png","jpg"]. Omit to upload every file.'
+    ),
+});
+
 const CreateAssetFolderSchema = z.object({
   remotePath: z
     .string()
@@ -156,6 +182,24 @@ const AssetUrlSchema = z.object({
     ),
 });
 
+/**
+ * Join a Data-relative remote root with a forward-slash relative path. LITERAL chars (spaces, `#`,
+ * `&`, apostrophes) are PRESERVED — the WebDAV client encodes each segment exactly once on PUT, so
+ * passing already-encoded text here would double-encode (`%20`→`%2520`). Pure/exported for testing.
+ */
+export function joinRemote(remoteRoot: string, rel: string): string {
+  const root = remoteRoot.replace(/\/+$/, '');
+  const cleanRel = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+  return cleanRel ? `${root}/${cleanRel}` : root;
+}
+
+/** Does a filename's extension match the includeExt filter? (undefined/empty = accept all.) */
+export function matchesIncludeExt(name: string, includeExt?: string[]): boolean {
+  if (!includeExt || includeExt.length === 0) return true;
+  const ext = name.toLowerCase().split('.').pop() ?? '';
+  return includeExt.some(e => e.toLowerCase().replace(/^\./, '') === ext);
+}
+
 export class MoltenTools {
   private logger: Logger;
   private molten: MoltenConfig;
@@ -205,6 +249,18 @@ export class MoltenTools {
           'paths are refused). PRIVACY: anything under Data/ is served publicly with no auth — do not ' +
           'upload anything sensitive. Requires MOLTEN_WEBDAV_PASSWORD.',
         inputSchema: toInputSchema(UploadAssetSchema),
+      },
+      {
+        name: 'upload-asset-tree',
+        description:
+          'Plane B (file channel, write). Recursively upload a LOCAL directory tree of ASSETS to ' +
+          'the Foundry data area over WebDAV, preserving the subtree layout (each file → ' +
+          'remoteRoot/<rel>), creating parent folders as needed. Use for BULK imports — a scene ' +
+          "pack's images, a tiles folder — instead of one upload-asset per file. Skips files that " +
+          'already exist unless overwrite:true; optional includeExt filter (e.g. ["webp"]). ASSETS ' +
+          'ONLY — refuses live world-DB paths. Reports uploaded/skipped/error counts. PRIVACY: ' +
+          'anything under Data/ is served publicly with no auth. Requires MOLTEN_WEBDAV_PASSWORD.',
+        inputSchema: toInputSchema(UploadAssetTreeSchema),
       },
       {
         name: 'create-asset-folder',
@@ -368,6 +424,75 @@ export class MoltenTools {
     } catch (err) {
       return this.davErrorMessage('upload-asset', err);
     }
+  }
+
+  async handleUploadAssetTree(args: any): Promise<string> {
+    const { localRoot, remoteRoot, overwrite, includeExt } = UploadAssetTreeSchema.parse(
+      args ?? {}
+    );
+    const root = toDataRelative(remoteRoot);
+
+    // The root guard covers the whole subtree (every leaf is remoteRoot/<rel>, no `..`).
+    if (this.looksLikeWorldDbPath(root)) return this.worldDbRefusal(remoteRoot);
+
+    const dav = this.dav();
+    if (!dav) return this.notConfigured('upload-asset-tree');
+
+    // Enumerate local files (recursive). A missing/non-directory localRoot is a clear up-front error.
+    let files: string[];
+    try {
+      const entries = await readdir(localRoot, { recursive: true, withFileTypes: true });
+      files = entries
+        .filter(e => e.isFile() && matchesIncludeExt(e.name, includeExt))
+        // Dirent.parentPath (Node 20.12+); fall back to the deprecated .path for safety.
+        .map(e => join((e as any).parentPath ?? (e as any).path, e.name));
+    } catch (err) {
+      return `Cannot read local directory "${localRoot}": ${(err as Error).message}`;
+    }
+
+    if (files.length === 0) {
+      const filt = includeExt?.length ? ` matching {${includeExt.join(', ')}}` : '';
+      return `No files${filt} found under "${localRoot}".`;
+    }
+
+    let uploaded = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (const localPath of files) {
+      // rel is always a forward descent under localRoot — pass LITERAL chars; the dav client encodes once.
+      const rel = relative(localRoot, localPath)
+        .split(/[/\\]+/)
+        .join('/');
+      const remote = joinRemote(root, rel);
+      try {
+        if (!overwrite && (await dav.exists(remote))) {
+          skipped++;
+          continue;
+        }
+        const bytes = await readFile(localPath);
+        await dav.ensureParents(remote);
+        await dav.putFile(remote, bytes, guessContentType(localPath));
+        uploaded++;
+      } catch (err) {
+        errors.push(`${rel}: ${(err as Error).message}`);
+      }
+    }
+
+    this.logger.info('upload-asset-tree', {
+      localRoot,
+      remoteRoot: root,
+      uploaded,
+      skipped,
+      errors: errors.length,
+    });
+    const lines = [
+      `Uploaded ${uploaded} file(s) → Data/${root} (${skipped} skipped, ${errors.length} error(s)).`,
+      `  Public root: ${this.buildPublicUrl(root)}`,
+      '  NOTE: anything under Data/ is publicly accessible with no auth — do not upload anything sensitive.',
+    ];
+    for (const e of errors.slice(0, 20)) lines.push(`  ⚠ ${e}`);
+    if (errors.length > 20) lines.push(`  …and ${errors.length - 20} more error(s)`);
+    return lines.join('\n');
   }
 
   async handleCreateAssetFolder(args: any): Promise<string> {
