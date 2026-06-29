@@ -282,19 +282,48 @@ CreateSceneNotesSchema = z.object({
   })).min(1),
 })
 ```
-*(Optional v2: `update-note`/`delete-note` for the Stage-5 nudge loop.)*
+*(Optional v2: `update-note`/`delete-note` for the Stage-5 nudge loop.)* — **DONE (M6, `345f2b5`):
+`create-scene-notes` returns each created note id (`notes:[{id,journal,label}]`); `update-note`
+(move/relabel/restyle/re-point one pin, ≥1 field) + `delete-note` (remove by id) close the loop.*
 
 ### 6.7 `scene.dimensions` read (**TOOL** · correctness)
 **Target:** `src/page/scenes.ts` (extend `getActiveScene`/add `getSceneDimensions`) → `src/tools/scene.ts`. Returns live padded canvas geometry (`sceneX/sceneY/sceneWidth/sceneHeight/size`) so the skill's cell→px math doesn't hand-roll padding. Feeds §4 Stage 3.
 
-### 6.8 One-shot ordered image pages on `create-journal` (**TOOL** · correctness, optional)
-**Target:** `src/tools/journal.ts` (`CreateJournalSchema`) + `src/page/journals.ts` (`createJournal`). Let `pages[]` accept `kind:'image'` with `src` (+ `sort`, + per-page `playerVisible`/`caption`), so the legend journal builds in one call instead of `create-journal` + N `add-journal-image`. Also surfaces the existing-but-hidden `caption` on `add-journal-image` and a `playerVisible` for handout images (journal finding gaps 1–2). **Optional** — v1 can compose the existing two tools.
+### 6.8 One-shot ordered image pages on `create-journal` (**TOOL** · correctness)
+
+> **AS BUILT (M6, 2026-06-29, commit `1ec8f49`).** `CreateJournalSchema.pages[]` now accepts
+> `kind:'text'|'image'` (default text) with `src` (required for image), `caption`, `sort`, and the
+> existing `playerVisible`. The page side (`createJournal`) builds a `type:'image'` page
+> (`normalizeAssetPath(src)` + `image:{caption}`) vs the text page, carrying `sort`/ownership — so an
+> image-only legend journal builds in ONE call with no spurious leading text page. `add-journal-image`
+> also gained `playerVisible` (its `caption` was already wired). Unit-tested in journal.test.ts +
+> asset-bridge.test.ts.
 
 ### 6.9 `path-prefix` mode on `relink-asset` (**TOOL**, optional — repair only)
 **Target:** `src/page/assets.ts` `relinkAsset` + `src/tools/asset-bridge.ts`. Add a `pathPrefix` rewrite mode so a whole `modules/<id>/...` prefix can be repointed in one call — **only** needed for repair of an already-installed copy (clean import feeds correct paths directly via §6.11). **Defer.**
 
-### 6.10 `upload-asset-tree` batch upload (**SKILL for v1**)
-The loop stays in the **skill** for v1 (`upload-asset` per file; "tools do, skills decide"). Promote to a tool (`src/tools/molten/index.ts`, reusing `dav.ensureParents`+`dav.putFile`) only if the per-file loop proves too chatty.
+### 6.10 `upload-asset-tree` batch upload (**TOOL**)
+
+> **AS BUILT (M6, 2026-06-29, commit `3f8cc33`).** Promoted from the skill loop to a tool when the
+> full-pack / tiles imports made the per-file loop chatty. `upload-asset-tree { localRoot, remoteRoot,
+> overwrite?, includeExt? }` walks `localRoot` recursively and PUTs each file to `remoteRoot/<rel>`
+> (reusing `dav.ensureParents`+`dav.putFile`+`guessContentType`), preserving layout; skips existing
+> unless `overwrite`; world-DB-refusal + not-configured guards like upload-asset. Pure `joinRemote`
+> (literal chars preserved → no `%2520` double-encode) + `matchesIncludeExt`, both unit-tested; handler
+> tested over a temp tree with a mocked DAV. The per-file `upload-asset` loop stays the documented
+> fallback for hand-picked subsets.
+
+### 6.12 Standalone TILE discovery on `read-pack` (**TOOL** · correctness)
+
+> **AS BUILT (M6, 2026-06-29, commit `0a7b374`).** Some packs ship a folder of standalone tile images
+> (huts/roofs/props the GM drags onto scenes) that aren't referenced by any scene doc, so the doc-driven
+> asset walk misses them. `read-pack` now scans the module folder (skipping `packs/`) for tile images by
+> the `Tile_<W>x<H>` filename signature — which also distinguishes a tile from a map (`_No Grid_WxH`) or
+> a legend `_Key` — parses the grid footprint, and returns a `tiles` block (full on the first page:
+> `{count, localDir, relDir, files:[{name, gridWidth, gridHeight, diskPath, dataPath?}]}`; compact
+> `{count, dir}` in the `index` survey). Pure `parseTileName`/`discoverTiles`/`summarizeTileDir`
+> unit-tested + a gated integration test against the real Hilltop pack. The skill (Step 4b) uploads them
+> via `upload-asset-tree` and reports each footprint; placement stays a GM drag (no place-tile tool).
 
 ### 6.11 Asset-path rewrite as a TOOL, not skill string-surgery (**TOOL** · correctness — boundary fix from critique #11)
 **Target:** fold into `read-pack` (§6.1) via the `destRoot` param — `read-pack` emits a `rewriteHint` (`modules/<id>/<rel>` → `<destRoot>/<rel>`, decoded) per asset. The skill only **chooses `destRoot`** (judgment); the tool **computes the rewritten path** (deterministic). The skill no longer does string surgery on `background.src`/`thumb`/`src`. (A standalone `rewrite-pack-assets` tool is an alternative; folding into `read-pack` is lighter.)
@@ -328,7 +357,12 @@ The loop stays in the **skill** for v1 (`upload-asset` per file; "tools do, skil
 - **M3 — regions/teleporters. ✅ DONE (2026-06-29, offline-gated).** `RegionSidecarSchema` + region import on `create-scene` (§6.4) + the new **`remap-teleporters`** tool (88th) with the page-side `remapSceneTeleporters` write-back via `updateEmbeddedDocuments('RegionBehavior', …)` (§6.2 AS BUILT — chose composable two-tool + flag-reconstruction over a `create-scenes` mega-tool with agent-shuttled maps). Pure cores `sidecarRegionToV14`/`remapTeleportDestination` unit-tested; SKILL.md two-pass flow added. *Highest-risk milestone — the live click-a-stair verify happens at the final e2e (per the batch build approach).*
 - **M4 — legend→notes opt-in. ✅ DONE (2026-06-29, offline-gated).** `create-scene-notes` (§6.6, 90th tool) + `get-scene-dimensions` read (§6.7, 89th tool) + the vision/cell pipeline written into SKILL.md ("draft pins for review"). Page-side `createSceneNotes` (per-note isolation, strict journal/page name→id, `texture.src` from an optional icon, GM secrecy via journal ownership not the note) + `getSceneDimensions` (padded canvas: sceneX/sceneY/size/columns/rows, works on a non-active scene). *Live verify deferred to the e2e.*
 - **M5 — cross-version (legacy/mid). ✅ DONE (2026-06-29), validated OFFLINE against the user's real v10 pack** (`tomcartos-into-the-wilds-dungeons`, 28 scenes, NeDB `.db`). read-pack is off-line, so the legacy branch was validated against real bytes without a live world. **The real pack broke 5 things the plan predicted ("fix whatever the real pack breaks"), all now fixed:** (1) **DECISION B reversed** — foundryvtt-cli v3's `extractPack` is BROKEN for pure-NeDB (it always also runs `extractClassicLevel`, which throws on a `.db`) and `extractNedb` isn't exported, so NeDB is now **parsed directly** (`parseNedbDocs`: newline-JSON, last-write-wins by `_id`, `$$deleted` tombstones honored — no native binding, no cli for NeDB); (2) leading-slash pack path `/packs/foo.db` → `resolvePackPath` strips it (resolve was jumping to the drive root); (3) `data:` URI thumbs dropped (would blow the manifest cap); (4) era-robust grid+mood projection (`projectSceneGeometry`: flat `grid` number + flat `darkness`/`globalLight`/`tokenVision` ↔ v10+ objects); (5) `sidecarLightToV14` now nests legacy `lightAnimation`→`config.animation` + `darkness`{min,max}→`config.darkness` + strips `t`/`darknessThreshold` (torch flicker was being lost). Plus **manifest pagination** (`offset`/`sceneLimit`/`totalScenes`/`nextOffset`, default page 10) + an **`index:true` survey** (names-only, whole pack, for variant planning) — needed because a 28-scene manifest is 34K > the 20K cap. Pure cores unit-tested; a gated real-pack integration test exercises the live `.db`. *Note: this pack has no regions (legacy has no teleporter regions — inter-level nav was tiles/Levels-module, out of scope); the live click-a-stair verify at the e2e uses the modern Temple-of-Night pack.*
-- **M6 (optional)** — one-shot/captioned/player-visible image pages (§6.8), `update-note`/`delete-note`, `upload-asset-tree`, `relink-asset` prefix mode.
+- **M6 — polish. ✅ DONE (2026-06-29, offline-gated).** One-shot/captioned/player-visible image pages
+  on `create-journal` (§6.8, `1ec8f49`) · `update-note`/`delete-note` + note-id return (§6.6, `345f2b5`)
+  · read-pack stale-temp-dir sweep (`86d73f7`) · `upload-asset-tree` (§6.10, `3f8cc33`) · standalone
+  **TILE discovery** on read-pack + skill Step 4b to make them GM-available (§6.12, `0a7b374`). **93
+  tools, 916 tests.** `relink-asset` prefix mode (§6.9) STILL deferred (repair-only, no consumer). *Live
+  e2e of the new tools is pending a CC restart (they're captured at MCP startup).*
 
 ### Risks (none hand-waved)
 - **Native-dep regression (S1):** adding `classic-level` turns a pure-JS-dep server into one needing a native build + version-lock against Foundry's LevelDB writer (manifest-drift → "unsupported manifest"). **Resolved via DECISION A**; whichever path is chosen, pin the version and add a CI smoke-unpack of the golden fixture.
