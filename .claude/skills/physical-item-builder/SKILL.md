@@ -136,22 +136,22 @@ them — and **pull an approximating icon from the compendium** (see House rules
 
 ## House rules for shaping items (apply to copied OR authored items)
 
-- **Never ship a blank or generic icon — grab approximating art from the compendium.** `add-item` and
-  any from-scratch author leave a generic placeholder (`systems/dnd5e/icons/svg/items/*.svg`); that is
-  not acceptable in finished content. Before you finish, set the item's `img` to a **real icon copied
-  from the compendium**: `search-compendium-items` for the closest same-kind item (ideally a thematic
-  one — a *Mace of Terror* icon for a dark mace, *Robe of Stars* for a night-veil, a *Dark Shard
-  Amulet* for an unholy focus) and copy its `img` onto your item (`update-item` for a world item,
-  `update-actor-item` for one on an actor). `import-item` copies already carry real art — this rule is
-  for the **authored** items.
+- **Never ship a blank or generic icon.** `add-item` now AUTO-FILLS a real icon when you give no `img`:
+  it tries a live same-kind compendium match by name/baseItem (so a "Mace of the Long Dark" → a real
+  mace icon), falling back to a verified core floor — a blank is impossible. So the floor is handled for
+  you, but for a *specific* look still prefer passing `img` (or fixing it after with `update-item` /
+  `update-actor-item`): `search-compendium-items` for the closest thematic item (a *Mace of Terror* icon
+  for a dark mace, *Robe of Stars* for a night-veil, a *Dark Shard Amulet* for an unholy focus) and copy
+  its `img`. `import-item` copies already carry real art.
 - **A custom item's MECHANICS must be real — never a "treat its X as Y" note.** If the item deals
   necrotic, SET its `damage` type to necrotic — do **not** leave a bludgeoning base and write *"deals
   necrotic in place of bludgeoning."* If it's +1, set `magicalBonus`. The description says what the item
   **is**; it never asks the GM to fudge the sheet (shared-policy rule 7).
-- **A magic item you place on an NPC must ALSO be created as a world Item (loot).** Build the on-actor
-  copy for the NPC to wield AND a matching world Item in a loot folder (`import-item` / `add-item` with
-  `folder`, no `actorIdentifier`) so the party can loot it — same stats, same real icon (shared-policy
-  rule 9).
+- **A magic item you place on an NPC is ALSO loot — now AUTOMATIC.** When you `import-item` / `add-item`
+  a magic item onto an actor, the tool also mints a matching loose **world Item** (same stats + real
+  icon) in a loot folder by default, so the party can loot it (shared-policy rule 9). Control it with
+  `lootCopyFolder` (default `"Loot"`); `lootCopy: false` suppresses it, `lootCopy: true` forces a copy of
+  mundane gear. **Don't also hand-create the world Item — that double-mints it.**
 - **Magic items need only `magicalBonus` and/or `magical: true`** — the `mgc` property is added for you.
   The numeric `+N` is stored only where dnd5e has a field: **weapons, body armor, magic ammunition**. A
   **wondrous item or potion has no `+N` field** — flag it `magical` and model the bonus as an
@@ -184,6 +184,10 @@ them — and **pull an approximating icon from the compendium** (see House rules
 spot-check one item's full system data (and that copied art/activities came across). Report what was
 built — each item, where it was copied from (or that it was authored), its rarity/bonus/attunement, and
 any coins — and flag anything you had to ask about or approximate.
+
+**Before declaring done, run `content-audit`** over what you built (`worldItemIds` / `itemFolders` for
+world items, `actorIdentifiers` for an NPC you geared up). It flags any placeholder icon (rule 8),
+GM-fudge language (rule 7), or magic item on an NPC with no loot twin (rule 9). Fix each and re-run.
 
 ## Notes
 

@@ -44,21 +44,26 @@
    what it claims to be, in its real mechanics, not in a GM note. If the books truly have nothing that
    fits, STOP and ASK (rule 5) — don't paper over the gap.
 
-8. **No blank art — every authored document gets an approximating compendium icon/portrait.** Authoring
-   from scratch (`add-item`, `author-npc`, authored features) leaves a generic placeholder
-   (`systems/dnd5e/icons/svg/...`); that reads as unfinished and is not acceptable in delivered content.
-   Before you finish, set the document's `img` from a **real compendium entry that approximates it** —
-   `search-compendium-*` for the closest same-kind/thematic one and copy its `img` (`update-item` /
-   `update-actor-item` / `set-actor-art`). Copied documents (`import-item` /
-   `create-actor-from-compendium`) already carry real art; this rule is for the **authored** ones.
-   **This includes authored FEATURES and abilities** — an `add-feature` passive/attack/etc. shows a
-   blank star until you set its `img`. Set each authored feature's icon (with `update-actor-item img`)
-   from the compendium feature you are emulating, right after you author it — every row on the sheet
-   carries real art, or you are not done.
+8. **No blank art — the tools now AUTO-FILL a real icon; still prefer a thematic one.** Authoring from
+   scratch used to leave a generic placeholder (`systems/dnd5e/icons/svg/...`). The tools now make that
+   impossible: `add-item` fills a real icon (a live same-kind compendium match by name/baseItem, else a
+   verified core floor), `add-feature` fills a real feature/attack/spell icon **and accepts an `img`**,
+   and `author-npc` fills a real creatureType portrait + token. So a blank is off the table — but for a
+   *specific* look, still pass `img` (to `add-item` / `add-feature`) or set it afterward from the
+   compendium feature/item you are emulating (`search-compendium-*` → copy its `img` via `update-item` /
+   `update-actor-item` / `set-actor-art`). Copied documents (`import-item` / `create-actor-from-compendium`)
+   already carry real art. Confirm with `content-audit` before you finish.
 
-9. **A magic item you put on an NPC must ALSO exist as a world Item, for loot.** When you give an NPC
-   notable gear (a magic weapon, a wondrous item, a special consumable), the on-actor copy is for the
-   NPC to wield — but the party loots it afterward. Create a matching **world Item** in a loot folder
-   too: `import-item` the same compendium source into the folder, or re-author the custom item with
-   `add-item` (`folder`, no `actorIdentifier`) — same stats, same real icon. Plain mundane gear doesn't
-   need this; anything magic or loot-worthy does.
+9. **A magic item you put on an NPC must ALSO exist as a world Item, for loot — now AUTOMATIC.** When you
+   `import-item` / `add-item` a magic item onto an actor, the tool mints a matching loose **world Item**
+   (same stats + real icon) in a loot folder by default — control it with `lootCopyFolder` (default
+   `"Loot"`) and `lootCopy` (`false` to suppress, `true` to force a mundane copy). **Don't hand-create
+   the twin too — that double-mints it.** Plain mundane gear doesn't need a twin; `content-audit` flags
+   any magic NPC item that's missing one.
+
+10. **Run `content-audit` as the finishing check.** Before declaring a build done, scan what you made
+    (`actorIdentifiers` for NPCs + their gear, `itemFolders` / `worldItemIds` for loot) with the
+    read-only `content-audit` tool. It flags any placeholder icon (rule 8), GM-fudge / pretend-reskin
+    language (rule 7), and magic NPC item with no loot twin (rule 9). Fix each finding and re-run until
+    it reports clean — these rules are enforced at the tool floor, and this is the belt-and-suspenders
+    check that nothing slipped through a hand edit.

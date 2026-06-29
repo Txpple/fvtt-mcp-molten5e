@@ -84,11 +84,13 @@ preference:
    > **⚠ Finish the divergence — don't leave the base's off-theme abilities behind.** `modifications`
    > only changes STATS (cr/hp/ac/abilities). If your creature's THEME differs from the base — you copied
    > a *radiant* Priest to make a *necrotic* Shar priestess — its inherited attacks and cantrips are now
-   > off-theme. You MUST `remove-from-actor` the mismatched ones and `add-feature` **real** replacements
-   > from the compendium (a necrotic attack from `dnd-monster-manual.features` like *Withering Touch*, a
-   > necrotic cantrip like *Toll the Dead* from the PHB). Reflavoring them with a *"treat its radiant as
-   > necrotic"* GM note is a **forbidden cop-out** (shared-policy rule 7) — the NPC must really be what it
-   > claims. If the books have nothing thematically fitting, STOP and ASK.
+   > off-theme. **`create-actor-from-compendium` reports the copied creature's `damageTypes`** (e.g.
+   > `radiant, slashing`) in its result — read it and reconcile every off-theme type. `remove-from-actor`
+   > the mismatched abilities and `add-feature` **real** replacements from the compendium (a necrotic
+   > attack from `dnd-monster-manual.features` like *Withering Touch*, a necrotic cantrip like *Toll the
+   > Dead* from the PHB). Reflavoring them with a *"treat its radiant as necrotic"* GM note is a
+   > **forbidden cop-out** (shared-policy rule 7) — the NPC must really be what it claims. If the books
+   > have nothing thematically fitting, STOP and ASK.
 3. **Authored — last resort.** Only when nothing in the premium MM/PHB/DMG books is a workable base do
    you author from scratch (Step 2, `author-npc`). Per the [shared authoring policy](../_shared/authoring-policy.md),
    if there's no 2024 match, **STOP and ASK** before inventing content.
@@ -212,11 +214,11 @@ defer item judgment to [[physical-item-builder]]:
   `manage-effect`) and rename. Author with `add-item` only as a last resort (and ASK first).
 - **Containers** → copy/create a `container` first, then place items with `container: "<name>"`.
 - **Coins** → already on the actor via `update-actor` `currency` (Step 3).
-> **⚠ A magic item on the NPC must ALSO be a world Item, for loot.** The on-actor copy is what the NPC
-> wields; the party loots it later. For each magic weapon / wondrous item / special consumable you put on
-> the NPC, also create a matching **world Item** in a loot folder — `import-item` the same compendium
-> source with `folder` (no `actorIdentifier`), or `add-item` the custom item with `folder` — same stats,
-> same real icon (shared-policy rule 9).
+> **⚠ A magic item on the NPC is ALSO loot — now AUTOMATIC.** When you `import-item` / `add-item` a
+> magic item onto the NPC, the tool also mints a matching loose **world Item** (same stats + real icon)
+> in a loot folder so the party can loot it (shared-policy rule 9). Steer it with `lootCopyFolder`
+> (default `"Loot"` — pass your treasure folder); `lootCopy: false` suppresses it, `lootCopy: true`
+> forces a copy of mundane gear. **Don't hand-create the world Item too — that double-mints it.**
 
 ## Step 9 — Biography
 
@@ -225,9 +227,15 @@ If not set in Step 3, `update-actor` `biography` (HTML) — lore, tactics, appea
 ## Step 10 — Finishing pass
 
 - **Art** → `set-actor-art` (portrait + token texture from a Data-relative path; upload first if needed).
+  A hand-authored NPC (`author-npc`) already gets a real creatureType portrait + token from the tool, so
+  this is only to upgrade it to specific art.
 - **Ownership** → `set-actor-ownership` (most NPCs stay GM-only; grant the party observer access to a
   visible ally if wanted).
 - **Folder** → `move-documents` to file the finished NPC somewhere findable.
+- **Audit (do this before declaring done)** → run `content-audit` (`actorIdentifiers: [<npc>]`, plus any
+  loot `itemFolders`). It flags placeholder icons (rule 8), GM-fudge language (rule 7), and magic items
+  with no loot twin (rule 9). Fix each finding (`update-actor-item img` / replace fudged mechanics /
+  mint the missing copy) and re-run until clean.
 
 ## Step 11 — Read back and confirm
 
