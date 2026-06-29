@@ -322,6 +322,47 @@ const RemapTeleportersSchema = z.object({
     ),
 });
 
+const GetSceneDimensionsSchema = z.object({
+  sceneIdentifier: z.string().min(1).describe('Scene id or exact name.'),
+});
+
+const CreateSceneNotesSchema = z.object({
+  sceneIdentifier: z.string().min(1).describe('Scene id or exact name to place the notes on.'),
+  notes: z
+    .array(
+      z.object({
+        journal: z
+          .string()
+          .min(1)
+          .describe('JournalEntry id or exact name the pin links to (strict resolve).'),
+        page: z
+          .string()
+          .optional()
+          .describe('Page id or exact name within that entry to open (strict resolve).'),
+        x: z.number().describe('Pin X in absolute canvas pixels.'),
+        y: z.number().describe('Pin Y in absolute canvas pixels.'),
+        label: z
+          .string()
+          .optional()
+          .describe('Text shown on the pin (e.g. "12 — Throne Room"); defaults to the entry name.'),
+        icon: z
+          .string()
+          .optional()
+          .describe("Data-relative icon image src; omit for Foundry's default note pin."),
+        iconSize: z.number().int().positive().optional().describe('Icon size in px (min 32).'),
+        global: z
+          .boolean()
+          .optional()
+          .describe(
+            'Render the pin through fog/vision occlusion. NOT a permission control — GM-only ' +
+              "secrecy comes from the linked journal's ownership (default 0)."
+          ),
+      })
+    )
+    .min(1)
+    .describe('The map-note pins to create.'),
+});
+
 export class SceneTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -398,6 +439,27 @@ export class SceneTools {
           'rather than dropping them silently. Call it ONCE after all chosen scenes are imported. GM-only.',
         inputSchema: toInputSchema(RemapTeleportersSchema),
       },
+      {
+        name: 'get-scene-dimensions',
+        description:
+          "Read a scene's live PADDED-CANVAS geometry (by id or exact name): total width/height, the " +
+          'background rect within the padding (sceneX/sceneY/sceneWidth/sceneHeight), grid size/distance, ' +
+          "and rows/columns. A scene insets its background by a padding border, so a placeable's canvas " +
+          'pixel is NOT just gridCell×size — use sceneX/sceneY to offset. Feeds the legend→pins cell→px ' +
+          'math. Works on any scene (no need to activate it).',
+        inputSchema: toInputSchema(GetSceneDimensionsSchema),
+      },
+      {
+        name: 'create-scene-notes',
+        description:
+          'Place map-note PINS on a scene, each linked to a JournalEntry (and optionally a specific ' +
+          'page) — the deterministic half of the legend→GM-room-pins feature. Pass absolute canvas ' +
+          'pixel x/y (see get-scene-dimensions for the padding-aware math), an optional label/icon/size, ' +
+          'and the journal id|name. Per-note error isolation: a pin whose journal does not resolve is ' +
+          "reported and skipped, not fatal. GM-only secrecy is the linked journal's ownership, not the " +
+          'pin; `global` only controls fog occlusion. GM-only.',
+        inputSchema: toInputSchema(CreateSceneNotesSchema),
+      },
     ];
   }
 
@@ -471,6 +533,30 @@ export class SceneTools {
       if (unresolved.length > 20) lines.push(`      …and ${unresolved.length - 20} more`);
     }
     return lines.join('\n');
+  }
+
+  async handleGetSceneDimensions(args: any): Promise<any> {
+    const parsed = GetSceneDimensionsSchema.parse(args ?? {});
+    const result = await this.foundry.call('getSceneDimensions', parsed);
+    if (result?.found === false) {
+      return `Scene not found: "${result?.notFound ?? parsed.sceneIdentifier}".`;
+    }
+    return result;
+  }
+
+  async handleCreateSceneNotes(args: any): Promise<string> {
+    const parsed = CreateSceneNotesSchema.parse(args ?? {});
+    const result = await this.foundry.call('createSceneNotes', parsed);
+    if (result?.notFound) {
+      return `Scene not found: "${result.notFound}". No notes placed.`;
+    }
+    const errs = Array.isArray(result?.errors)
+      ? result.errors.map((e: string) => `\n  ⚠ ${e}`).join('')
+      : '';
+    return (
+      `Placed ${result?.created ?? 0} map-note pin(s) on "${result?.sceneName}" (${result?.sceneId})` +
+      errs
+    );
   }
 
   async handleListScenes(args: any): Promise<string> {

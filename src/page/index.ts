@@ -17,6 +17,8 @@ import {
   updateScene,
   deleteScenes,
   remapSceneTeleporters,
+  getSceneDimensions,
+  createSceneNotes,
 } from './scenes.js';
 import {
   listActors,
@@ -109,6 +111,8 @@ const api = {
   updateScene,
   deleteScenes,
   remapSceneTeleporters,
+  getSceneDimensions,
+  createSceneNotes,
   // actors / characters
   listActors,
   getCharacterInfo,

@@ -31,8 +31,10 @@ describe('SceneTools.getToolDefinitions', () => {
     expect(names).toEqual(
       [
         'create-scene',
+        'create-scene-notes',
         'delete-scene',
         'get-current-scene',
+        'get-scene-dimensions',
         'get-world-info',
         'list-scenes',
         'remap-teleporters',
@@ -489,6 +491,89 @@ describe('handleRemapTeleporters', () => {
   it('rejects an empty sourceModule', async () => {
     const { tools } = build();
     await expect(tools.handleRemapTeleporters({ sourceModule: '' })).rejects.toThrow();
+  });
+});
+
+describe('handleGetSceneDimensions', () => {
+  it('forwards the read and returns the geometry object', async () => {
+    const { tools, calls } = build({
+      found: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      width: 5320,
+      height: 3640,
+      sceneX: 280,
+      sceneY: 280,
+      sceneWidth: 4760,
+      sceneHeight: 3080,
+      size: 140,
+      distance: 5,
+    });
+    const out = await tools.handleGetSceneDimensions({ sceneIdentifier: 'Iris' });
+    expect(calls[0][0]).toBe('getSceneDimensions');
+    expect(out).toMatchObject({ sceneX: 280, sceneY: 280, size: 140 });
+  });
+
+  it('reports a not-found scene', async () => {
+    const { tools } = build({ found: false, notFound: 'Ghost' });
+    const out = await tools.handleGetSceneDimensions({ sceneIdentifier: 'Ghost' });
+    expect(out).toBe('Scene not found: "Ghost".');
+  });
+
+  it('rejects an empty sceneIdentifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleGetSceneDimensions({ sceneIdentifier: '' })).rejects.toThrow();
+  });
+});
+
+describe('handleCreateSceneNotes', () => {
+  it('forwards the notes and summarizes how many pins landed', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      created: 2,
+    });
+    const out = await tools.handleCreateSceneNotes({
+      sceneIdentifier: 'Iris',
+      notes: [
+        { journal: 'Temple Keys', page: '1 — Entry', x: 100, y: 200, label: '1 — Entry' },
+        { journal: 'Temple Keys', page: '2 — Hall', x: 300, y: 400, label: '2 — Hall' },
+      ],
+    });
+    expect(calls[0][0]).toBe('createSceneNotes');
+    expect(calls[0][1].notes).toHaveLength(2);
+    expect(out).toContain('Placed 2 map-note pin(s) on "Iris" (sc1)');
+  });
+
+  it('surfaces per-note errors and the not-found scene branch', async () => {
+    const { tools } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      created: 1,
+      errors: ['note 1 (Missing): No journal found matching "Missing"'],
+    });
+    const out = await tools.handleCreateSceneNotes({
+      sceneIdentifier: 'Iris',
+      notes: [{ journal: 'Temple Keys', x: 1, y: 2 }],
+    });
+    expect(out).toContain('Placed 1 map-note pin(s)');
+    expect(out).toContain('⚠ note 1 (Missing)');
+
+    const { tools: t2 } = build({ notFound: 'Ghost' });
+    const out2 = await t2.handleCreateSceneNotes({
+      sceneIdentifier: 'Ghost',
+      notes: [{ journal: 'X', x: 1, y: 2 }],
+    });
+    expect(out2).toBe('Scene not found: "Ghost". No notes placed.');
+  });
+
+  it('rejects an empty notes array', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateSceneNotes({ sceneIdentifier: 'Iris', notes: [] })
+    ).rejects.toThrow();
   });
 });
 

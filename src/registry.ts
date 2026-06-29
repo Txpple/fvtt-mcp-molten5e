@@ -263,6 +263,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'update-scene': args => sceneTools.handleUpdateScene(args),
     'delete-scene': args => sceneTools.handleDeleteScene(args),
     'remap-teleporters': args => sceneTools.handleRemapTeleporters(args),
+    'get-scene-dimensions': args => sceneTools.handleGetSceneDimensions(args),
+    'create-scene-notes': args => sceneTools.handleCreateSceneNotes(args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

@@ -45,11 +45,12 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 88 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 90 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(88); // 87 + remap-teleporters (tom-cartos-import M3)
+    // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
+    expect(names.length).toBe(90);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -68,6 +69,15 @@ describe('tool registry', () => {
     const { tools, handlers } = build();
     expect(tools.map(t => t.name)).toContain('remap-teleporters');
     expect(typeof handlers['remap-teleporters']).toBe('function');
+  });
+
+  it('registers the legend→pins tools (get-scene-dimensions + create-scene-notes, tom-cartos-import M4)', () => {
+    const { tools, handlers } = build();
+    const names = new Set(tools.map(t => t.name));
+    expect(names.has('get-scene-dimensions')).toBe(true);
+    expect(names.has('create-scene-notes')).toBe(true);
+    expect(typeof handlers['get-scene-dimensions']).toBe('function');
+    expect(typeof handlers['create-scene-notes']).toBe('function');
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {

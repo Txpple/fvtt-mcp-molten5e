@@ -175,12 +175,37 @@ unresolved ones from Step 8), the journal, the asset count + destination, and �
 silently** — anything skipped: any `sounds`/`tiles`/`foreground` the pack carried that v1 doesn't
 import, and the legend→pins follow-up (still opt-in/deferred). A faithful-import skill reports its gaps.
 
-## Optional follow-up — legend keys → GM map-pins (deferred)
+## Optional follow-up — legend keys → GM map-pins (opt-in; DRAFT pins for review)
 
-The pack's `*_Key.webp` legends can become clickable GM **map-note pins** on each scene (read the legend
-→ a GM-only journal page per room → a pin linking each). This is a **later milestone** and is **opt-in**
-("place draft pins for you to review — they're approximate"). Don't offer it as done; mention it exists
-if the user asks about the room keys.
+Many packs ship a numbered **legend key** image (`*_Key.webp`, already imaged into the pack journal in
+Step 5). This follow-up turns each numbered room into a clickable **GM map-note pin** on the scene. It is
+**opt-in and approximate** — vision-read pin positions land in roughly the right cell, but expect a few to
+be a room off. Frame it that way; the GM review/nudge at the end is the **norm**, not an exception.
+
+**Gate (ASK, default no).** Only after the base import: *"This pack has a numbered legend key. Want me to
+drop GM-only room-note pins on the scene? I'll place draft pins for you to review and nudge — they're
+approximate."* If no, stop here.
+
+If yes, per scene that has a key:
+
+1. **Read the legend with vision (SKILL).** Look at the `*_Key.webp` and extract, per numbered room:
+   its `number`, its `name` (from the legend box), and **where the red number sits on the map** as a
+   normalized fraction (col/row, or x/y in 0–1 of the *map content* — NOT the key's pixels: the key bakes
+   in a title banner / legend box that offsets and rescales the map relative to the gridless background).
+2. **Get the live geometry (TOOL).** `get-scene-dimensions { sceneIdentifier }` → `sceneX/sceneY`
+   (the padding offset), `size` (px/cell), `columns/rows`. Compute each pin's canvas pixel from the room's
+   cell, snapping to the **cell center**: `x = sceneX + (col + 0.5) * size`, `y = sceneY + (row + 0.5) * size`.
+   Validate cells against `columns`/`rows` — never against the key image's own pixel size.
+3. **Build the GM journal (TOOL).** `create-journal` a GM-only entry (e.g. `"<NN Map> — Room Keys"`); its
+   default `ownership.default:0` IS the secrecy (players can't open it, so the pins don't render for them).
+   Add one text page per room named `"NN — Room Name"` with the key's blurb (follow `journal-builder`).
+4. **Place the pins (TOOL).** `create-scene-notes { sceneIdentifier, notes:[{ journal, page:"NN — Name",
+   x, y, label:"NN — Name" }, …] }`. The `label` carries number + name so a misplaced pin is
+   self-identifying on review. (GM secrecy is the journal's ownership — do **not** rely on `global`, which
+   only controls fog occlusion.)
+5. **Report + hand off the nudge (SKILL).** List each pin's room + the cell you computed, and tell the GM
+   to drag any that look off (v1 has no update-note — moving a pin is a manual in-app drag). Don't claim
+   pixel accuracy.
 
 ## The split — what this skill decides vs what the tools do
 

@@ -409,6 +409,40 @@ export function listScenes(args?: { filter?: string; includeActiveOnly?: boolean
   }));
 }
 
+/**
+ * Live padded-canvas geometry for one scene (by id or exact name). Foundry insets the
+ * background inside a padding border, so a placeable's canvas pixel is NOT just
+ * `gridCell * size` — it is offset by `sceneX`/`sceneY` (the background's top-left
+ * within the padded canvas). The legend→pins pipeline needs this to convert a room's
+ * grid cell to a Note's x/y. `scene.dimensions` computes from the document (no active
+ * canvas required). Returns `found:false` when the scene doesn't resolve.
+ */
+export function getSceneDimensions(args: { sceneIdentifier: string }): unknown {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { found: false, notFound: args.sceneIdentifier };
+  const d: any = scene.dimensions ?? {};
+  return {
+    found: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    // total padded canvas
+    width: d.width ?? scene.width,
+    height: d.height ?? scene.height,
+    // background rect within the padded canvas (the padding offset lives here)
+    sceneX: d.sceneX,
+    sceneY: d.sceneY,
+    sceneWidth: d.sceneWidth ?? scene.width,
+    sceneHeight: d.sceneHeight ?? scene.height,
+    // grid
+    size: d.size ?? scene.grid?.size,
+    distance: d.distance ?? scene.grid?.distance,
+    rows: d.rows,
+    columns: d.columns,
+    padding: scene.padding,
+  };
+}
+
 // --- writes ------------------------------------------------------------------
 
 /** Shape of the optional cross-cutting scene fields shared by create + update. */
@@ -658,7 +692,118 @@ export async function deleteScenes(args: { identifiers: string[] }): Promise<{
   }
 }
 
+interface SceneNoteInput {
+  journal: string; // JournalEntry id or exact name (strict)
+  page?: string; // page id or exact name within that entry (strict)
+  x: number;
+  y: number;
+  label?: string; // override text shown on the pin
+  icon?: string; // Data-relative icon src (→ v14 texture.src); omit for Foundry's default pin
+  iconSize?: number; // displayed icon size in px (Foundry min 32)
+  global?: boolean; // render through fog/vision occlusion (NOT a permission control)
+}
+
+/**
+ * Create map-note pins on a scene, each linked to a JournalEntry (and optionally a
+ * specific page) — the deterministic half of the legend→pins feature. Journal/page
+ * names resolve STRICT (id → exact name; ambiguity throws). Per-note error isolation
+ * mirrors importScenePlaceables: a bad note (e.g. an unresolved journal) is recorded
+ * and skipped, never voiding the rest. GM-only secrecy is a property of the linked
+ * journal's ownership (default 0), NOT of the note — `global` only controls fog
+ * occlusion. Coordinates are absolute canvas pixels (use getSceneDimensions for the
+ * padding-aware cell→px math).
+ */
+export async function createSceneNotes(args: {
+  sceneIdentifier: string;
+  notes: SceneNoteInput[];
+}): Promise<{
+  success: boolean;
+  sceneId?: string;
+  sceneName?: string;
+  notFound?: string;
+  created: number;
+  errors?: string[];
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!Array.isArray(args.notes) || args.notes.length === 0) {
+    throw new Error('notes array is required and must contain at least one entry');
+  }
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, created: 0, notFound: args.sceneIdentifier };
+
+  const data: Array<Record<string, unknown>> = [];
+  const errors: string[] = [];
+  for (let i = 0; i < args.notes.length; i++) {
+    const n = args.notes[i];
+    try {
+      const { entryId, pageId } = resolveNoteTarget(n.journal, n.page);
+      const doc: Record<string, unknown> = { entryId, x: Number(n.x), y: Number(n.y) };
+      if (pageId) doc.pageId = pageId;
+      if (typeof n.label === 'string' && n.label.trim() !== '') doc.text = n.label;
+      if (typeof n.iconSize === 'number') doc.iconSize = n.iconSize;
+      if (typeof n.global === 'boolean') doc.global = n.global;
+      if (typeof n.icon === 'string' && n.icon.trim() !== '')
+        doc.texture = { src: normalizeAssetPath(n.icon) };
+      data.push(doc);
+    } catch (e) {
+      errors.push(`note ${i} (${n.journal}): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  let created = 0;
+  if (data.length > 0) {
+    try {
+      const made = await scene.createEmbeddedDocuments('Note', data);
+      created = made?.length ?? 0;
+    } catch (e) {
+      errors.push(`notes: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return {
+    success: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    created,
+    ...(errors.length > 0 ? { errors } : {}),
+  };
+}
+
 // --- local helpers (page-coupled) --------------------------------------------
+
+/**
+ * Resolve a Note's journal target: a JournalEntry by id|exact-name (strict, ambiguity
+ * throws) and, optionally, a page within it by id|exact-name. Throws on no match.
+ */
+function resolveNoteTarget(journal: string, page?: string): { entryId: string; pageId?: string } {
+  const coll: any = game.journal;
+  const entry =
+    coll?.get?.(journal) ??
+    (() => {
+      const m = Array.from(coll ?? []).filter((d: any) => d?.name === journal);
+      if (m.length > 1)
+        throw new Error(`Ambiguous journal name "${journal}" (${m.length}). Pass the id.`);
+      return m[0];
+    })();
+  if (!entry) throw new Error(`No journal found matching "${journal}" (by id or exact name).`);
+
+  let pageId: string | undefined;
+  if (typeof page === 'string' && page.trim() !== '') {
+    const pages: any = entry.pages;
+    const p =
+      pages?.get?.(page) ??
+      (() => {
+        const m = Array.from(pages ?? []).filter((x: any) => x?.name === page);
+        if (m.length > 1)
+          throw new Error(`Ambiguous page name "${page}" in "${entry.name}" (${m.length}).`);
+        return m[0];
+      })();
+    if (!p) throw new Error(`No page "${page}" in journal "${entry.name}".`);
+    pageId = p.id;
+  }
+  // Omit pageId entirely when absent (exactOptionalPropertyTypes — no explicit undefined).
+  return pageId ? { entryId: entry.id, pageId } : { entryId: entry.id };
+}
 
 /**
  * Build the flat dot-path map of the shared scene fields, doing the page-side
