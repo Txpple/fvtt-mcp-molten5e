@@ -6,10 +6,11 @@ description: >-
   "install this map module", "bring this scene pack into my world", "import the dungeon/temple/keep
   module", "import a Foundry module's scenes", or points at a module folder / a `module.json`. Reads
   the pack off disk, detects its Foundry era, uploads and re-points all its assets, and recreates each
-  scene faithfully — dimensions, grid, background, thumbnail, environment/fog mood, and every wall and
-  light — plus the pack's journal of legend keys. The tools own correctness (extraction, era
-  detection, path rewrite, whole-placeable creation); this skill owns the judgment: which variants to
-  import, naming/foldering, the asset destination, the import order, and dedup.
+  scene faithfully — dimensions, grid, background, thumbnail, environment/fog mood, every wall and
+  light, and the cross-scene teleporters (stairs between levels) — plus the pack's journal of legend
+  keys. The tools own correctness (extraction, era detection, path rewrite, whole-placeable creation,
+  teleporter remap); this skill owns the judgment: which variants to import, naming/foldering, the asset
+  destination, the import order, and dedup.
 ---
 
 # Tom Cartos import
@@ -25,15 +26,16 @@ dead-ends. We read the pack off disk, upload its images, and recreate the docume
 See [`docs/tom-cartos-import-plan.md`](../../../docs/tom-cartos-import-plan.md) for the full design.
 
 Tools used: **`read-pack`** (the off-line extractor/detector — owns all the LevelDB/NeDB reading,
-era detection, and asset path-rewrite math), `upload-asset` (Plane B), `create-scene`, `create-journal`
-/ `add-journal-image`, `create-folder` / `move-documents`, `list-scenes` / `list-journals`. To boot the
-world first, hand off to **`start-session`**.
+era detection, and asset path-rewrite math), `upload-asset` (Plane B), `create-scene`,
+**`remap-teleporters`** (the second-pass teleporter fixer), `create-journal` / `add-journal-image`,
+`create-folder` / `move-documents`, `list-scenes` / `list-journals`. To boot the world first, hand off
+to **`start-session`**.
 
 > **Scope (v1 — modern packs):** this skill imports **modern** (≈ Foundry v13 / LevelDB) packs
-> end-to-end **except cross-scene teleporters** (regions — a later milestone) and the optional
-> legend→map-pins feature. If `read-pack` reports a `legacy`/`nedb` era, say so and stop — the legacy
-> branch isn't wired yet. **Never reconstruct a wall or light field-by-field** — `read-pack` hands them
-> back whole; pass them through whole (the dropped-`sight`/blown-out-lights trap).
+> end-to-end — **including cross-scene teleporters** (the stairs/portals between levels) — minus only
+> the optional legend→map-pins feature. If `read-pack` reports a `legacy`/`nedb` era, say so and stop —
+> the legacy branch isn't wired yet. **Never reconstruct a wall, light, or region field-by-field** —
+> `read-pack` hands them back whole; pass them through whole (the dropped-`sight`/blown-out-lights trap).
 
 ## Step 0 — Boot the world and locate the module
 
@@ -56,9 +58,10 @@ It returns `{ module, descriptor, scenes[], journals[], assets[] }`:
 - `descriptor.era` — `v12+` (proceed), `v10-v11` (proceed; no regions to worry about), or
   `legacy`/`storage:"nedb"` (**stop** — not wired in v1; tell the user it's the deferred legacy branch).
 - each `scenes[]` entry carries `name`, `width/height`, `gridType/gridSize/gridDistance/gridUnits`,
-  `padding`, `background`/`thumb` (each with a `dataPath` rewrite + on-disk `diskPath`), `walls[]`,
-  `lights[]`, `regions[]` (present but **not imported in v1**), `environment`, `fog`, `initial`, and
-  `sourceId`.
+  `padding`, `background`/`thumb` (each with a `dataPath` rewrite + on-disk `diskPath`), `environment`,
+  `fog`, `initial`, `sourceId`, a per-scene `placeablesPath` (the off-manifest file holding the
+  `walls[]`/`lights[]`/`regions[]`), and `counts` (incl. `regions` — how many teleporter/zone regions
+  the scene has).
 - `assets[]` — every referenced file as `{ diskPath, dataPath }`, deduped and percent-decoded.
 
 > **Large packs:** the manifest itself must fit the tool-response cap (~20K chars) — a few-scene pack
@@ -127,13 +130,16 @@ create-scene {
 ```
 
 - **Placeables go via `placeablesPath`, never inline.** `read-pack` wrote each scene's hundreds of
-  walls/lights to a payload file and gave you the path; `create-scene` reads it server-side. Passing
-  the arrays inline is infeasible — a single scene's walls overflow the tool-response cap, and they'd
-  bloat the agent context. The walls/lights in that file are already whole (threshold/animation/config
-  preserved); never reconstruct them. `create-scene` reports the counts placed and ⚠-warns on dropped
-  `sight`.
-- **Do NOT pass `regions`** in v1 — there is no region param yet, and the cross-scene teleporter remap
-  is the next milestone. **Tell the user** the stairs/teleporters between levels were not imported.
+  walls/lights **and its regions** to a payload file and gave you the path; `create-scene` reads it
+  server-side and places all three. Passing the arrays inline is infeasible — a single scene's walls
+  overflow the tool-response cap, and they'd bloat the agent context. Everything in that file is already
+  whole (wall threshold/animation, light config, region shapes/behaviors preserved); never reconstruct
+  them. `create-scene` reports the counts placed (walls/lights/**regions**) and ⚠-warns on dropped
+  `sight`. When a scene has regions, it prints a hint to run `remap-teleporters` afterward (Step 8).
+- **Teleporters are created here but not yet linked.** Each scene's teleporter regions ride along in the
+  payload, but their destinations still point at the *pack's* scene/region ids — the import mints fresh
+  ids, so the links are stale until the Step-8 remap. Don't try to fix them per-scene; that's a single
+  batch pass once every scene exists.
 
 ## Step 7 — Folder and name
 
@@ -142,12 +148,32 @@ create-scene {
 - Keep the pack's `NN <Map Name> [Variant]` scene names — the leading `NN` drives scene-nav order; land
   variants of one map together (`01 Iris`, `01 Iris (Night)`, `01 Iris (Clean)`).
 
-## Step 8 — Report what landed (and what didn't)
+## Step 8 — Link the teleporters (second pass — ONE call, after all scenes exist)
 
-Summarize: scenes created (with wall/light counts), the journal, the asset count + destination, and —
-**explicitly, never silently** — what was skipped: **teleporters/regions** (next milestone), and any
-`sounds`/`tiles`/`foreground` the pack carried that v1 doesn't import. A faithful-import skill reports
-its gaps.
+Once **every** chosen scene is created (so all the new scene + region ids exist), make a single call:
+
+```
+remap-teleporters { sourceModule: <module.id> }
+```
+
+This finds all scenes you stamped with that `sourceModule`, reconstructs the old→new scene/region id
+maps from the provenance flags they carry, and rewrites every teleporter destination so the stairs jump
+to the right new scene. You do **not** pass or transcribe any ids — the tool reads them from world state.
+
+- It's **idempotent** — safe to re-run, and re-running after a resumed/partial import fixes whatever's
+  newly present.
+- If a teleporter points at a scene you **chose not to import** (e.g. you took the regular variant but a
+  stair targets the Night one), it's reported as **unresolved** (left as-is, not dropped). Tell the user;
+  the fix is to import the missing variant and re-run `remap-teleporters`.
+- Only modern (v12+) packs have regions; if `counts.regions` was 0 across the import, this is a no-op and
+  you can skip it.
+
+## Step 9 — Report what landed (and what didn't)
+
+Summarize: scenes created (with wall/light/**region** counts), **teleporters linked** (and any
+unresolved ones from Step 8), the journal, the asset count + destination, and — **explicitly, never
+silently** — anything skipped: any `sounds`/`tiles`/`foreground` the pack carried that v1 doesn't
+import, and the legend→pins follow-up (still opt-in/deferred). A faithful-import skill reports its gaps.
 
 ## Optional follow-up — legend keys → GM map-pins (deferred)
 
@@ -159,9 +185,11 @@ if the user asks about the room keys.
 ## The split — what this skill decides vs what the tools do
 
 - **Skill (judgment):** which variants to import; the asset destination root; naming/foldering; the
-  import order; the dedup check; confirming the era is in scope; reporting the gaps.
+  import order (all scenes, *then* the single remap); the dedup check; confirming the era is in scope;
+  reporting the gaps + unresolved teleporters.
 - **Tools (correctness):** `read-pack` does all extraction, era detection, artifact stripping, and the
   asset path-rewrite math; `upload-asset` does the byte upload + content-type; `create-scene` writes the
-  scene + places walls/lights whole + stamps flags; `create-journal`/`add-journal-image` build the
-  journal; `create-folder`/`move-documents` organize. The skill never parses a `.db`/LevelDB file or
-  rewrites a path string by hand.
+  scene + places walls/lights/regions whole + stamps flags; `remap-teleporters` reconstructs the id maps
+  from world state and rewrites every cross-scene teleporter destination; `create-journal`/
+  `add-journal-image` build the journal; `create-folder`/`move-documents` organize. The skill never
+  parses a `.db`/LevelDB file, rewrites a path string, or transcribes a document id by hand.

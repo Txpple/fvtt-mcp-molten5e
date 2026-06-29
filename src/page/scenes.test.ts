@@ -15,6 +15,9 @@ import {
   sidecarWallToV14,
   countWallsMissingSight,
   sidecarLightToV14,
+  sidecarRegionToV14,
+  remapTeleportDestination,
+  TOM_CARTOS_FLAG_SCOPE,
 } from './scenes.js';
 
 describe('fogModeToNumber', () => {
@@ -249,5 +252,96 @@ describe('sidecarLightToV14', () => {
     });
     expect(l).not.toHaveProperty('_id');
     expect(l).not.toHaveProperty('_key');
+  });
+});
+
+describe('sidecarRegionToV14', () => {
+  it('passes the region WHOLE (shapes, elevation, behaviors) and strips source/cli ids', () => {
+    const r = sidecarRegionToV14({
+      _id: 'regSourceId00001',
+      _key: '!scenes.regions!s.r',
+      _stats: { coreVersion: '13.351' },
+      name: 'Stairs Up',
+      color: '#abcdef',
+      shapes: [{ type: 'rectangle', x: 0, y: 0, width: 100, height: 100 }],
+      elevation: { bottom: 0, top: null },
+      visibility: 0,
+      behaviors: [
+        { type: 'teleportToken', system: { destination: 'Scene.A.Region.B', choice: false } },
+      ],
+    } as any);
+    expect(r).toMatchObject({
+      name: 'Stairs Up',
+      color: '#abcdef',
+      shapes: [{ type: 'rectangle', x: 0, y: 0, width: 100, height: 100 }],
+      elevation: { bottom: 0, top: null },
+      behaviors: [{ type: 'teleportToken', system: { destination: 'Scene.A.Region.B' } }],
+    });
+    expect(r).not.toHaveProperty('_id');
+    expect(r).not.toHaveProperty('_key');
+    expect(r).not.toHaveProperty('_stats');
+  });
+
+  it('stamps the source _id into the provenance flag so the remap can map old→new', () => {
+    const r = sidecarRegionToV14({ _id: 'regSourceId00001', shapes: [] } as any);
+    expect((r?.flags as any)[TOM_CARTOS_FLAG_SCOPE]).toEqual({ sourceId: 'regSourceId00001' });
+  });
+
+  it('merges the source-id flag without clobbering existing flags', () => {
+    const r = sidecarRegionToV14({
+      _id: 'regSourceId00002',
+      flags: { 'tom-cartos-import': { other: 1 }, mod: { x: 2 } },
+    } as any);
+    expect((r?.flags as any)['tom-cartos-import']).toEqual({
+      other: 1,
+      sourceId: 'regSourceId00002',
+    });
+    expect((r?.flags as any).mod).toEqual({ x: 2 });
+  });
+
+  it('omits the flag when there is no source _id, and returns null for non-objects', () => {
+    const r = sidecarRegionToV14({ shapes: [] } as any);
+    expect(r).not.toHaveProperty('flags');
+    expect(sidecarRegionToV14(null as any)).toBeNull();
+    expect(sidecarRegionToV14([] as any)).toBeNull();
+  });
+});
+
+describe('remapTeleportDestination', () => {
+  const sceneIdMap = { oldSceneA: 'newSceneA', oldSceneC: 'newSceneC' };
+  const regionIdMap = { oldRegB: 'newRegB', oldRegD: 'newRegD' };
+
+  it('rewrites a Scene.X.Region.Y destination using both maps', () => {
+    const res = remapTeleportDestination('Scene.oldSceneC.Region.oldRegD', sceneIdMap, regionIdMap);
+    expect(res).toEqual({ status: 'rewritten', dest: 'Scene.newSceneC.Region.newRegD' });
+  });
+
+  it('reports unchanged when the destination already equals the rewrite', () => {
+    const res = remapTeleportDestination(
+      'Scene.newSceneA.Region.newRegB',
+      { newSceneA: 'newSceneA' },
+      { newRegB: 'newRegB' }
+    );
+    expect(res.status).toBe('unchanged');
+  });
+
+  it('is no-match for a non-teleport / unset destination', () => {
+    expect(remapTeleportDestination(undefined, sceneIdMap, regionIdMap).status).toBe('no-match');
+    expect(remapTeleportDestination('', sceneIdMap, regionIdMap).status).toBe('no-match');
+    expect(remapTeleportDestination('Macro.abc', sceneIdMap, regionIdMap).status).toBe('no-match');
+  });
+
+  it('is unresolved (and reports the original) when the target scene or region was not imported', () => {
+    const res = remapTeleportDestination(
+      'Scene.notImported.Region.oldRegB',
+      sceneIdMap,
+      regionIdMap
+    );
+    expect(res.status).toBe('unresolved');
+    expect(res.reason).toBe('Scene.notImported.Region.oldRegB');
+    // region missing from the map also fails closed
+    expect(
+      remapTeleportDestination('Scene.oldSceneA.Region.gone', sceneIdMap, regionIdMap).status
+    ).toBe('unresolved');
   });
 });

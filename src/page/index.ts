@@ -10,7 +10,14 @@
 // foundry-mcp-bridge.<name> methods 1:1, so the Node tools rewire mechanically.
 
 import { getWorldInfo } from './world.js';
-import { getActiveScene, listScenes, createScene, updateScene, deleteScenes } from './scenes.js';
+import {
+  getActiveScene,
+  listScenes,
+  createScene,
+  updateScene,
+  deleteScenes,
+  remapSceneTeleporters,
+} from './scenes.js';
 import {
   listActors,
   getCharacterInfo,
@@ -101,6 +108,7 @@ const api = {
   createScene,
   updateScene,
   deleteScenes,
+  remapSceneTeleporters,
   // actors / characters
   listActors,
   getCharacterInfo,

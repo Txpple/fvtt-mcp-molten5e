@@ -246,6 +246,75 @@ export function sidecarLightToV14(l: SidecarLight): Record<string, unknown> {
   return doc;
 }
 
+// --- regions / teleporters (tom-cartos-import M3) ----------------------------
+//
+// A scene-pack module's scenes carry `regions[]` — the v12+ RegionDocument, whose
+// `teleportToken` behaviors point at another region via a UUID string
+// `Scene.<sceneId>.Region.<regionId>`. Because the import mints FRESH ids (no
+// keepId on either SceneClass.create or createEmbeddedDocuments), BOTH ids in that
+// destination change, so every cross-scene teleporter must be rewritten AFTER all
+// scenes + regions exist (a teleporter can point at a scene created later in the
+// run — the forward-reference problem). We solve this without shuttling 16-char
+// ids back through the agent: each created region is stamped with its SOURCE id in
+// a provenance flag, and remapSceneTeleporters reconstructs the origId→newId maps
+// from world state (scenes already carry the same flag from the M2 import), then
+// rewrites every teleport destination. Robust across resumed/partial imports too.
+
+/** Flag scope stamped on imported scenes + regions for provenance / dedup / remap. */
+export const TOM_CARTOS_FLAG_SCOPE = 'tom-cartos-import';
+
+/** A teleporter destination UUID: Scene.<sceneId>.Region.<regionId> (ids have no dots). */
+const TELEPORT_DEST_RE = /^Scene\.([^.]+)\.Region\.([^.]+)$/;
+
+/**
+ * Convert one pack region to a Region create object: pass it WHOLE (shapes,
+ * elevation, visibility, behaviors — same "don't cherry-pick" rule as walls/lights),
+ * strip the source/cli ids (`_id`/`_key`/`_stats` — the create path mints fresh ids),
+ * and stamp the source `_id` into `flags[TOM_CARTOS_FLAG_SCOPE].sourceId` so the
+ * teleporter remap can later map this region's old id → its new id. Pure/exported
+ * for unit testing. Returns null only for a non-object input.
+ */
+export function sidecarRegionToV14(r: Record<string, unknown>): Record<string, unknown> | null {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const sourceId = typeof r._id === 'string' ? r._id : undefined;
+  const rest: Record<string, unknown> = { ...r };
+  for (const k of ['_id', '_key', '_stats']) delete rest[k];
+  if (sourceId) {
+    const flags: Record<string, any> =
+      rest.flags && typeof rest.flags === 'object' ? { ...(rest.flags as object) } : {};
+    flags[TOM_CARTOS_FLAG_SCOPE] = { ...(flags[TOM_CARTOS_FLAG_SCOPE] ?? {}), sourceId };
+    rest.flags = flags;
+  }
+  return rest;
+}
+
+export type RemapStatus = 'rewritten' | 'unchanged' | 'no-match' | 'unresolved';
+
+/**
+ * Compute the rewritten teleporter destination for one behavior's `system.destination`.
+ * Pure/exported — the page write-back fn applies the result; this is the unit-tested core.
+ *  - `no-match`: not a Scene.X.Region.Y string (a non-teleport behavior or an unset destination).
+ *  - `unresolved`: a valid destination whose scene OR region was NOT in this import (e.g. it
+ *    points at a variant the user chose not to import) — left as-is and reported, not silently dropped.
+ *  - `unchanged`: maps resolve but the destination already equals the rewrite (keepId / re-run).
+ *  - `rewritten`: returns the new Scene.<new>.Region.<new> destination to persist.
+ */
+export function remapTeleportDestination(
+  dest: unknown,
+  sceneIdMap: Record<string, string>,
+  regionIdMap: Record<string, string>
+): { status: RemapStatus; dest?: string; reason?: string } {
+  if (typeof dest !== 'string' || dest.trim() === '') return { status: 'no-match' };
+  const m = dest.match(TELEPORT_DEST_RE);
+  if (!m) return { status: 'no-match' };
+  const [, oldScene, oldRegion] = m;
+  const newScene = sceneIdMap[oldScene];
+  const newRegion = regionIdMap[oldRegion];
+  if (!newScene || !newRegion) return { status: 'unresolved', reason: dest };
+  const newDest = `Scene.${newScene}.Region.${newRegion}`;
+  return newDest === dest ? { status: 'unchanged', dest } : { status: 'rewritten', dest: newDest };
+}
+
 /**
  * Map a token's disposition to a number. Foundry stores it as a number already;
  * anything else falls back to neutral (0). The Node tool maps the number to a
@@ -380,6 +449,7 @@ export async function createScene(
     activate?: boolean;
     walls?: SidecarWall[];
     lights?: SidecarLight[];
+    regions?: Record<string, unknown>[];
     flags?: Record<string, unknown>;
     environment?: Record<string, unknown>;
     fog?: Record<string, unknown>;
@@ -441,10 +511,10 @@ export async function createScene(
     // v14: the renderable background lives on the scene's initial level — set it there.
     await applySceneBackground(scene, src);
 
-    // Import walls/lights from a map sidecar, if supplied. These are embedded
-    // documents, so the scene must already exist. Best-effort + isolated: a
-    // failure to place placeables never voids the created scene.
-    const placeables = await importScenePlaceables(scene, args.walls, args.lights);
+    // Import walls/lights/regions from a map sidecar or pack payload, if supplied.
+    // These are embedded documents, so the scene must already exist. Best-effort +
+    // per-kind isolated: a failure to place one kind never voids the scene or the others.
+    const placeables = await importScenePlaceables(scene, args.walls, args.lights, args.regions);
 
     if (args.activate && scene) await scene.activate();
 
@@ -685,14 +755,28 @@ async function probeImageSize(
 async function importScenePlaceables(
   scene: any,
   walls?: SidecarWall[],
-  lights?: SidecarLight[]
-): Promise<{ wallsCreated?: number; lightsCreated?: number; placeableErrors?: string[] }> {
+  lights?: SidecarLight[],
+  regions?: Record<string, unknown>[]
+): Promise<{
+  wallsCreated?: number;
+  lightsCreated?: number;
+  regionsCreated?: number;
+  regionIdMap?: Record<string, string>;
+  placeableErrors?: string[];
+}> {
   if (!scene) return {};
   const hasWalls = Array.isArray(walls) && walls.length > 0;
   const hasLights = Array.isArray(lights) && lights.length > 0;
-  if (!hasWalls && !hasLights) return {};
+  const hasRegions = Array.isArray(regions) && regions.length > 0;
+  if (!hasWalls && !hasLights && !hasRegions) return {};
 
-  const out: { wallsCreated?: number; lightsCreated?: number; placeableErrors?: string[] } = {};
+  const out: {
+    wallsCreated?: number;
+    lightsCreated?: number;
+    regionsCreated?: number;
+    regionIdMap?: Record<string, string>;
+    placeableErrors?: string[];
+  } = {};
   const errors: string[] = [];
 
   if (hasWalls) {
@@ -733,8 +817,118 @@ async function importScenePlaceables(
     }
   }
 
+  if (hasRegions) {
+    try {
+      // Keep source-id ↔ create-doc alignment through the (rare) null filter so the
+      // origRegionId → newRegionId zip below is correct even if a region drops out.
+      const prepared = (regions as Record<string, unknown>[])
+        .map(r => ({
+          sourceId: typeof r?._id === 'string' ? (r._id as string) : undefined,
+          doc: sidecarRegionToV14(r),
+        }))
+        .filter(
+          (p): p is { sourceId: string | undefined; doc: Record<string, unknown> } => p.doc !== null
+        );
+      const created =
+        (await scene.createEmbeddedDocuments(
+          'Region',
+          prepared.map(p => p.doc)
+        )) ?? [];
+      out.regionsCreated = created.length;
+      const map: Record<string, string> = {};
+      for (let i = 0; i < created.length; i++) {
+        const sid = prepared[i]?.sourceId;
+        if (sid && created[i]?.id) map[sid] = created[i].id;
+      }
+      if (Object.keys(map).length > 0) out.regionIdMap = map;
+    } catch (e) {
+      out.regionsCreated = 0;
+      errors.push(`regions: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   if (errors.length > 0) out.placeableErrors = errors;
   return out;
+}
+
+/**
+ * Rewrite cross-scene teleporter destinations after a scene-pack import (M3 pass 2).
+ * The import creates scenes + regions with FRESH ids, so each `teleportToken`
+ * behavior's `system.destination` (Scene.<old>.Region.<old>) is stale. This pass
+ * reconstructs origId→newId maps from the provenance flags both carry
+ * (flags[TOM_CARTOS_FLAG_SCOPE].{sourceModule,sourceId}), then updates every
+ * teleport destination via `region.updateEmbeddedDocuments('RegionBehavior', …)`.
+ * Idempotent (already-correct destinations are 'unchanged'); reports destinations
+ * that point outside the import ('unresolved') rather than swallowing them.
+ */
+export async function remapSceneTeleporters(args: { sourceModule: string }): Promise<{
+  success: boolean;
+  sourceModule: string;
+  scenesScanned: number;
+  behaviorsScanned: number;
+  rewritten: number;
+  unchanged: number;
+  unresolved: string[];
+}> {
+  if (!args?.sourceModule) throw new Error('sourceModule is required');
+  const scope = TOM_CARTOS_FLAG_SCOPE;
+  const flagOf = (doc: any, key: string): string | undefined => {
+    const v = doc?.flags?.[scope]?.[key] ?? doc?.getFlag?.(scope, key);
+    return typeof v === 'string' ? v : undefined;
+  };
+
+  const scenes: any[] = (game.scenes?.contents || []).filter(
+    (s: any) => flagOf(s, 'sourceModule') === args.sourceModule
+  );
+
+  // Pass 1 — reconstruct old→new id maps from world state (no agent id-shuttling).
+  const sceneIdMap: Record<string, string> = {};
+  const regionIdMap: Record<string, string> = {};
+  for (const s of scenes) {
+    const sid = flagOf(s, 'sourceId');
+    if (sid) sceneIdMap[sid] = s.id;
+    for (const region of s.regions ?? []) {
+      const rid = flagOf(region, 'sourceId');
+      if (rid) regionIdMap[rid] = region.id;
+    }
+  }
+
+  // Pass 2 — rewrite + persist each teleport destination.
+  let rewritten = 0;
+  let unchanged = 0;
+  const unresolved: string[] = [];
+  let behaviorsScanned = 0;
+  for (const s of scenes) {
+    for (const region of s.regions ?? []) {
+      const updates: Array<Record<string, unknown>> = [];
+      for (const behavior of region.behaviors ?? []) {
+        behaviorsScanned++;
+        const res = remapTeleportDestination(
+          behavior?.system?.destination,
+          sceneIdMap,
+          regionIdMap
+        );
+        if (res.status === 'rewritten')
+          updates.push({ _id: behavior.id, 'system.destination': res.dest });
+        else if (res.status === 'unchanged') unchanged++;
+        else if (res.status === 'unresolved') unresolved.push(`${s.name}: ${res.reason}`);
+      }
+      if (updates.length > 0) {
+        await region.updateEmbeddedDocuments('RegionBehavior', updates);
+        rewritten += updates.length;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    sourceModule: args.sourceModule,
+    scenesScanned: scenes.length,
+    behaviorsScanned,
+    rewritten,
+    unchanged,
+    unresolved,
+  };
 }
 
 /**

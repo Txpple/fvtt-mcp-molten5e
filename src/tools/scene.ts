@@ -134,6 +134,48 @@ const SidecarLightSchema = z
   })
   .passthrough();
 
+// A region placeable (v12+ RegionDocument) from a scene-pack payload, carried WHOLE (typed minimal
+// + .passthrough(), NOT z.any() — keeps the generated JSON schema useful). The page side strips the
+// source/cli ids, stamps the source `_id` as a provenance flag, and creates it; cross-scene
+// teleporter destinations are rewritten afterward by remap-teleporters (the ids are minted fresh).
+const RegionSidecarSchema = z
+  .object({
+    name: z.string().optional().describe('Region label.'),
+    color: z.string().optional().describe('Region tint hex.'),
+    shapes: z
+      .array(z.object({ type: z.string().optional() }).passthrough())
+      .optional()
+      .describe('Region shape definitions (polygon/rectangle/ellipse), carried whole.'),
+    elevation: z
+      .object({
+        bottom: z.number().nullable().optional(),
+        top: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .optional()
+      .describe('Region elevation band {bottom,top}.'),
+    visibility: z.number().optional().describe('Region visibility mode.'),
+    behaviors: z
+      .array(
+        z
+          .object({
+            type: z.string().optional(),
+            system: z.object({}).passthrough().optional(),
+          })
+          .passthrough()
+      )
+      .optional()
+      .describe(
+        'Region behaviors carried whole — incl. teleportToken whose system.destination ' +
+          '(Scene.<id>.Region.<id>) is rewritten post-import by remap-teleporters.'
+      ),
+    _id: z
+      .string()
+      .optional()
+      .describe('Source region id (stamped as a provenance flag for remap).'),
+  })
+  .passthrough();
+
 // Modern-pack scene MOOD objects, carried mostly-whole (typed minimal + .passthrough()) so a v12+
 // scene's full environment/fog and saved camera round-trip — not just the scalar knobs in
 // sceneCommonFields. Minimal typing (not z.any()) keeps the generated JSON schema useful.
@@ -173,14 +215,22 @@ const CreateSceneSchema = z.object({
     .array(SidecarLightSchema)
     .optional()
     .describe('Ambient lights to import from a map sidecar JSON (the `lights` array).'),
+  regions: z
+    .array(RegionSidecarSchema)
+    .optional()
+    .describe(
+      'Regions (v12+ RegionDocument incl. teleporters) to import from a scene-pack payload. Created ' +
+        'after the scene exists; each is stamped with its source id, and cross-scene teleporter ' +
+        'destinations are rewritten afterward by a single remap-teleporters call.'
+    ),
   placeablesPath: z
     .string()
     .optional()
     .describe(
-      'Server-local path to a JSON file of {walls,lights} to place (as written by read-pack for a ' +
-        'scene-pack import). Read SERVER-SIDE and merged with any inline walls/lights — this routes a ' +
-        "pack's hundreds of walls/lights tool→tool without passing them through the agent (the MCP " +
-        'response cap makes inline placeables infeasible at scene scale).'
+      'Server-local path to a JSON file of {walls,lights,regions} to place (as written by read-pack ' +
+        'for a scene-pack import). Read SERVER-SIDE and merged with any inline placeables — this routes ' +
+        "a pack's hundreds of walls/lights/regions tool→tool without passing them through the agent (the " +
+        'MCP response cap makes inline placeables infeasible at scene scale).'
     ),
   width: z
     .number()
@@ -262,6 +312,16 @@ const DeleteSceneSchema = z.object({
     .describe('Exact ids (preferred) or exact names of scenes to delete.'),
 });
 
+const RemapTeleportersSchema = z.object({
+  sourceModule: z
+    .string()
+    .min(1)
+    .describe(
+      'The module id stamped in flags["tom-cartos-import"].sourceModule on the imported scenes ' +
+        '(e.g. the read-pack module.id). All scenes carrying it are scanned together.'
+    ),
+});
+
 export class SceneTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -326,6 +386,18 @@ export class SceneTools {
           'resolution — no fuzzy/substring matching. GM-only.',
         inputSchema: toInputSchema(DeleteSceneSchema),
       },
+      {
+        name: 'remap-teleporters',
+        description:
+          'Second pass of a scene-pack import: rewrite cross-scene teleporter destinations after the ' +
+          'scenes + regions have been created. A pack teleporter points at Scene.<id>.Region.<id>, but ' +
+          'the import mints FRESH ids, so every destination is stale until remapped. Pass the import ' +
+          'sourceModule; this reconstructs the old→new scene/region id maps from the provenance flags ' +
+          'the scenes + regions carry and rewrites every teleportToken destination. Idempotent (safe to ' +
+          're-run), and reports destinations that point outside the import (e.g. a variant you skipped) ' +
+          'rather than dropping them silently. Call it ONCE after all chosen scenes are imported. GM-only.',
+        inputSchema: toInputSchema(RemapTeleportersSchema),
+      },
     ];
   }
 
@@ -346,6 +418,8 @@ export class SceneTools {
         callArgs.walls = [...(callArgs.walls ?? []), ...payload.walls];
       if (Array.isArray(payload?.lights))
         callArgs.lights = [...(callArgs.lights ?? []), ...payload.lights];
+      if (Array.isArray(payload?.regions))
+        callArgs.regions = [...(callArgs.regions ?? []), ...payload.regions];
       delete callArgs.placeablesPath; // page-side createScene doesn't know this field
     }
     const result = await this.foundry.call('createScene', callArgs);
@@ -357,7 +431,14 @@ export class SceneTools {
     if (typeof result?.wallsCreated === 'number') placeables.push(`${result.wallsCreated} wall(s)`);
     if (typeof result?.lightsCreated === 'number')
       placeables.push(`${result.lightsCreated} light(s)`);
+    if (typeof result?.regionsCreated === 'number')
+      placeables.push(`${result.regionsCreated} region(s)`);
     const placeableLine = placeables.length ? `\n  imported: ${placeables.join(', ')}` : '';
+    // Regions can hold cross-scene teleporters whose destinations need a post-import remap pass.
+    const teleportHint =
+      result?.regionsCreated > 0
+        ? '\n  ↪ regions imported — run remap-teleporters once after all scenes to link teleporters'
+        : '';
     const placeableErrs = Array.isArray(result?.placeableErrors)
       ? result.placeableErrors.map((e: string) => `\n  ⚠ ${e}`).join('')
       : '';
@@ -366,9 +447,30 @@ export class SceneTools {
       `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}` +
       dims +
       placeableLine +
+      teleportHint +
       placeableErrs +
       formatSceneSettings(result?.settings)
     );
+  }
+
+  async handleRemapTeleporters(args: any): Promise<string> {
+    const parsed = RemapTeleportersSchema.parse(args ?? {});
+    const result = await this.foundry.call('remapSceneTeleporters', parsed);
+    const unresolved: string[] = Array.isArray(result?.unresolved) ? result.unresolved : [];
+    const lines = [
+      `Teleporter remap for "${result?.sourceModule}":`,
+      `  scenes scanned: ${result?.scenesScanned ?? 0}`,
+      `  teleporters rewritten: ${result?.rewritten ?? 0}` +
+        (result?.unchanged ? ` (${result.unchanged} already correct)` : ''),
+    ];
+    if (unresolved.length > 0) {
+      lines.push(
+        `  ⚠ ${unresolved.length} destination(s) point outside this import (not rewritten):`
+      );
+      for (const u of unresolved.slice(0, 20)) lines.push(`      - ${u}`);
+      if (unresolved.length > 20) lines.push(`      …and ${unresolved.length - 20} more`);
+    }
+    return lines.join('\n');
   }
 
   async handleListScenes(args: any): Promise<string> {

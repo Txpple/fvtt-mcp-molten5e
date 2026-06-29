@@ -202,10 +202,29 @@ ReadPackSchema = z.object({
 //      journals:[{_id,name,pages:[{type,name,src?,content?,diskSrc?,rewriteHint?}]}] }
 ```
 
-### 6.2 `create-scenes` — batch + create-then-rewrite region remap (**TOOL** · correctness — LARGEST/RISKIEST tool, = M3)
-**Target:** `src/tools/scene.ts` + `src/page/scenes.ts`. Wraps N `createScene` calls; **adds region create AND region `updateEmbeddedDocuments` write-back** (the latter does not exist today); builds the `origScene→new`/`origRegion→new` maps across the run; rewrites `behaviors[].system.destination`. Optional `keepId` skip-path per DECISION D. Stamps `flags["tom-cartos-import"]`.
+### 6.2 region create + cross-scene teleporter remap (**TOOL** · correctness, = M3)
+
+> **AS BUILT (M3, 2026-06-29) — chose the composable two-tool path over a `create-scenes` mega-tool, and
+> flag-reconstruction over agent-shuttled id maps.** The draft proposed one batch `create-scenes` tool
+> that wraps N creates and owns the two-pass internally. Built instead: (1) the **existing, live-verified
+> `create-scene`** gains a `regions` param (read from the same `placeablesPath` payload as walls/lights),
+> creates them whole via `createEmbeddedDocuments('Region', …)`, and **stamps each region's source `_id`
+> into `flags["tom-cartos-import"].sourceId`**; (2) a small new **`remap-teleporters {sourceModule}`** tool
+> does pass 2. Rationale (kernel-grade bar): the draft's "skill accumulates `origId→newId` maps across N
+> calls and passes them to the remap" makes the **LLM agent transcribe 16-char random Foundry ids** out of
+> one tool's text and back into another's input — fragile (a wrong id silently breaks a teleporter) and it
+> misses scenes from a *prior* resumed run. Instead `remap-teleporters` **reconstructs the old→new scene +
+> region maps from world state** (scenes already carry `flags…sourceModule`/`sourceId` from M2; regions now
+> carry `sourceId`), so the skill just calls it ONCE with the module id — no id bookkeeping, idempotent, and
+> correct across resumes. Page-side write-back is `region.updateEmbeddedDocuments('RegionBehavior', [{_id,
+> 'system.destination': newDest}])` (verify the exact nested-embedded path at the e2e). Pure cores
+> `sidecarRegionToV14` + `remapTeleportDestination` are unit-tested. `keepId` skip-path (DECISION D) NOT
+> built — create-then-rewrite is the always-path, as planned.
+
+**Target:** `src/tools/scene.ts` + `src/page/scenes.ts`. The historical batch-tool sketch below is
+superseded by the AS-BUILT note; kept for the design trail.
 ```
-CreateScenesSchema = z.object({
+CreateScenesSchema = z.object({   // NOT BUILT — see AS BUILT above
   scenes: z.array(CreateSceneSchema.extend({
     keepId: z.string().optional(),          // original _id; honored only if DECISION D = yes
     regions: z.array(RegionSidecarSchema).optional(),
@@ -306,7 +325,7 @@ The loop stays in the **skill** for v1 (`upload-asset` per file; "tools do, skil
 - **M0 — RESOLVE THE THREE S1 DECISIONS FIRST.** Before any code: settle **DECISION A** (native `classic-level` vs `foundryvtt-cli` child-process vs require-pre-unpack), **DECISION B** (NeDB datastore lib — `@seald-io/nedb` or cli), and **DECISION D** (keepId-threading vs always-rewrite). Record A+B in `design.md` (native-dep / CLI architecture note) before adding any reader backend.
 - **M1 — single modern scene, no regions.** `read-pack` (descriptor + one scene's docs + rewriteHints) + `thumb` param (§6.3) + reuse existing `create-scene` walls/lights + flag-stamping. Ship: import one Temple-of-Night scene faithfully (dims/grid/bg/thumb/walls/lights). Proves extraction + upload + rewrite + whole-placeable passthrough. *Highest value, lowest risk — the sample is the test.*
 - **M2 — full modern pack + variants + journal.** Skill orchestration loop, variant gate + foldering, journal recreation (image pages) + `scene.journal` link. `environment`/`fog`/`initial` typed passthrough (§6.5). Flag-based dedup + **resume-by-skipping-already-imported** (checkpoint mechanism for huge packs — Ostenwold = 120 maps × hundreds of sequential bridge calls on a sleep/wake host). Ship: whole Temple-of-Night pack minus teleporters.
-- **M3 — regions/teleporters.** `RegionSidecarSchema` + region import (§6.4) + `create-scenes` **create-then-rewrite write-back** including the new `updateEmbeddedDocuments('Region', …)` page-side fn (§6.2). *Highest-risk milestone — gate behind golden-fixture round-trip tests; verify live by clicking a stair.*
+- **M3 — regions/teleporters. ✅ DONE (2026-06-29, offline-gated).** `RegionSidecarSchema` + region import on `create-scene` (§6.4) + the new **`remap-teleporters`** tool (88th) with the page-side `remapSceneTeleporters` write-back via `updateEmbeddedDocuments('RegionBehavior', …)` (§6.2 AS BUILT — chose composable two-tool + flag-reconstruction over a `create-scenes` mega-tool with agent-shuttled maps). Pure cores `sidecarRegionToV14`/`remapTeleportDestination` unit-tested; SKILL.md two-pass flow added. *Highest-risk milestone — the live click-a-stair verify happens at the final e2e (per the batch build approach).*
 - **M4 — legend→notes opt-in.** `create-scene-notes` (§6.6) + `scene.dimensions` read (§6.7) + the vision/cell pipeline. Ship: **draft** GM room-pins for review.
 - **M5 — cross-version (legacy/mid).** NeDB reader path (DECISION B lib) + exercise the `sense`/flat-light translation branches. Ship: a real v10-era Tom pack. *Defer until a legacy sample is on disk (DECISION NEEDED E).*
 - **M6 (optional)** — one-shot/captioned/player-visible image pages (§6.8), `update-note`/`delete-note`, `upload-asset-tree`, `relink-asset` prefix mode.

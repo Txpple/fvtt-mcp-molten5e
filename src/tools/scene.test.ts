@@ -35,6 +35,7 @@ describe('SceneTools.getToolDefinitions', () => {
         'get-current-scene',
         'get-world-info',
         'list-scenes',
+        'remap-teleporters',
         'update-scene',
       ].sort()
     );
@@ -414,6 +415,80 @@ describe('handleCreateScene', () => {
         placeablesPath: 'C:/no/such/file.json',
       })
     ).rejects.toThrow(/could not read placeablesPath/);
+  });
+
+  it('reads regions from placeablesPath server-side and forwards them to the bridge', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tc-scene-test-'));
+    const file = join(dir, 'p.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        walls: [],
+        lights: [],
+        regions: [{ _id: 'reg1', name: 'Stairs', shapes: [], behaviors: [] }],
+      })
+    );
+    const { tools, calls } = build({ sceneName: 'P', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({ name: 'P', backgroundPath: 'b', placeablesPath: file });
+    const sent = calls[0][1];
+    expect(sent.regions).toHaveLength(1);
+    expect(sent.regions[0]._id).toBe('reg1');
+    expect(sent).not.toHaveProperty('placeablesPath');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports imported region count and the teleporter-remap hint', async () => {
+    const { tools } = build({
+      sceneName: 'Iris',
+      sceneId: 'sc1',
+      background: 'b',
+      wallsCreated: 445,
+      lightsCreated: 88,
+      regionsCreated: 2,
+    });
+    const out = await tools.handleCreateScene({ name: 'Iris', backgroundPath: 'b' });
+    expect(out).toContain('imported: 445 wall(s), 88 light(s), 2 region(s)');
+    expect(out).toContain('remap-teleporters');
+  });
+});
+
+describe('handleRemapTeleporters', () => {
+  it('forwards sourceModule to the bridge and summarizes the rewrite', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sourceModule: 'tom-cartos-temple',
+      scenesScanned: 3,
+      behaviorsScanned: 6,
+      rewritten: 4,
+      unchanged: 0,
+      unresolved: [],
+    });
+    const out = await tools.handleRemapTeleporters({ sourceModule: 'tom-cartos-temple' });
+    expect(calls[0][0]).toBe('remapSceneTeleporters');
+    expect(calls[0][1]).toEqual({ sourceModule: 'tom-cartos-temple' });
+    expect(out).toContain('Teleporter remap for "tom-cartos-temple"');
+    expect(out).toContain('scenes scanned: 3');
+    expect(out).toContain('teleporters rewritten: 4');
+  });
+
+  it('notes already-correct destinations and lists unresolved ones', async () => {
+    const { tools } = build({
+      success: true,
+      sourceModule: 'm',
+      scenesScanned: 2,
+      rewritten: 1,
+      unchanged: 2,
+      unresolved: ['01 Iris: Scene.gone.Region.x'],
+    });
+    const out = await tools.handleRemapTeleporters({ sourceModule: 'm' });
+    expect(out).toContain('(2 already correct)');
+    expect(out).toContain('point outside this import');
+    expect(out).toContain('01 Iris: Scene.gone.Region.x');
+  });
+
+  it('rejects an empty sourceModule', async () => {
+    const { tools } = build();
+    await expect(tools.handleRemapTeleporters({ sourceModule: '' })).rejects.toThrow();
   });
 });
 

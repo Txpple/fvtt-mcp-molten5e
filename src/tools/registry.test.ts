@@ -45,11 +45,11 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 87 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 88 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    expect(names.length).toBe(87); // 86 + read-pack (tom-cartos-import M1)
+    expect(names.length).toBe(88); // 87 + remap-teleporters (tom-cartos-import M3)
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -62,6 +62,12 @@ describe('tool registry', () => {
     const { tools, handlers } = build();
     expect(tools.map(t => t.name)).toContain('read-pack');
     expect(typeof handlers['read-pack']).toBe('function');
+  });
+
+  it('registers remap-teleporters (the scene-pack teleporter remap pass, tom-cartos-import M3)', () => {
+    const { tools, handlers } = build();
+    expect(tools.map(t => t.name)).toContain('remap-teleporters');
+    expect(typeof handlers['remap-teleporters']).toBe('function');
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
