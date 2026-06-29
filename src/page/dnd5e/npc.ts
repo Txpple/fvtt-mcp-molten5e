@@ -12,6 +12,7 @@ import {
   CONDITION_TYPES,
   SKILL_ABILITY,
 } from './actor-fields.js';
+import { resolveCreatureIcon } from './icons.js';
 
 // CR helpers keep their npc-prefixed names for existing importers (npc.test.ts); the
 // implementations now live in the shared actor-fields module so create + update share them.
@@ -81,6 +82,7 @@ export interface NpcInput {
   sourceBook: string;
   sourcePage: string;
   sourceRules: string;
+  img?: string;
 }
 
 /**
@@ -134,10 +136,17 @@ export function buildNpcActorData(data: NpcInput): {
   const acBlock =
     data.acMode === 'flat' ? { calc: 'flat', flat: data.acValue } : { calc: 'default' };
 
+  // Rule 8 — a hand-authored NPC gets a real, creatureType-appropriate portrait + token icon, not the
+  // mystery-man placeholder. The caller may override via img; a compendium-copied creature keeps its
+  // own art (this path is create-from-scratch only).
+  const portrait = data.img ?? resolveCreatureIcon(data.creatureType);
+
   // Build full actor data
   const actorData: any = {
     name: data.name,
     type: 'npc',
+    img: portrait,
+    prototypeToken: { texture: { src: portrait } },
     system: {
       abilities,
       attributes: {

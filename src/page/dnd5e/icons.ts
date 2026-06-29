@@ -103,3 +103,31 @@ export function resolveAuthoredIcon(
   if (AUTHORED_ICONS[k]) return AUTHORED_ICONS[k];
   return FALLBACK_ICON;
 }
+
+// dnd5e creatureType → a verified-real core icon for an AUTHORED-FROM-SCRATCH NPC's portrait + token
+// (rule 8 — author-npc would otherwise default to the mystery-man placeholder). A compendium-copied
+// creature keeps its own real art; this is only the floor for the hand-authored path. Every path was
+// HTTP-confirmed against the live Foundry static server (scripts/verify-icons.mjs harvest run).
+const DEFAULT_CREATURE_ICON = 'icons/environment/people/commoner.webp';
+const CREATURE_ICONS: Record<string, string> = {
+  aberration: 'icons/creatures/tentacles/tentacle-eyes-yellow-pink.webp',
+  beast: 'icons/creatures/mammals/deer-antlers-glowing-blue.webp',
+  celestial: 'icons/magic/holy/angel-wings-gray.webp',
+  construct: 'icons/creatures/magical/construct-stone-earth-gray.webp',
+  dragon: 'icons/creatures/reptiles/dragon-horned-blue.webp',
+  elemental: 'icons/magic/fire/elemental-fire-humanoid.webp',
+  fey: 'icons/creatures/magical/fae-fairy-winged-glowing-green.webp',
+  fiend: 'icons/magic/unholy/strike-hand-glow-pink.webp',
+  giant: 'icons/creatures/magical/humanoid-giant-forest-blue.webp',
+  humanoid: DEFAULT_CREATURE_ICON,
+  monstrosity: 'icons/creatures/eyes/lizard-single-slit-pink.webp',
+  ooze: 'icons/creatures/slimes/slime-movement-pseudopods-green.webp',
+  plant: 'icons/magic/nature/plant-vines-skull-green.webp',
+  undead: 'icons/magic/death/skull-horned-worn-fire-blue.webp',
+};
+
+/** Resolve a real, non-placeholder portrait/token icon for an authored NPC of the given creatureType.
+ * TOTAL (unknown types → a neutral humanoid floor) and pure — unit-tested. */
+export function resolveCreatureIcon(creatureType: string): string {
+  return CREATURE_ICONS[String(creatureType ?? '').toLowerCase()] ?? DEFAULT_CREATURE_ICON;
+}

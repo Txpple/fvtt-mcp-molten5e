@@ -110,6 +110,24 @@ describe('buildNpcActorData', () => {
     expect(actorData.system.abilities.str.proficient).toBe(0);
   });
 
+  it('defaults the portrait + token to a real creatureType icon (rule 8 — no mystery-man)', () => {
+    const undead = buildNpcActorData(baseNpc({ creatureType: 'undead' })).actorData;
+    expect(undead.img).toMatch(/^icons\/.+\.webp$/);
+    expect(undead.img).not.toMatch(/icons\/svg\//);
+    expect(undead.prototypeToken.texture.src).toBe(undead.img);
+    // distinct types get distinct icons
+    const dragon = buildNpcActorData(baseNpc({ creatureType: 'dragon' })).actorData;
+    expect(dragon.img).not.toBe(undead.img);
+  });
+
+  it('respects an explicit img override for the portrait + token', () => {
+    const { actorData } = buildNpcActorData(
+      baseNpc({ img: 'icons/creatures/abilities/dragon-fire-breath-orange.webp' })
+    );
+    expect(actorData.img).toBe('icons/creatures/abilities/dragon-fire-breath-orange.webp');
+    expect(actorData.prototypeToken.texture.src).toBe(actorData.img);
+  });
+
   it('uses a flat AC block only in "flat" mode', () => {
     expect(buildNpcActorData(baseNpc()).actorData.system.attributes.ac).toEqual({
       calc: 'default',

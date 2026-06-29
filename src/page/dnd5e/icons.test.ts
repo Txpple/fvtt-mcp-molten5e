@@ -6,7 +6,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { resolveAuthoredIcon, isPlaceholderIcon, PLACEHOLDER_ICON_PATTERN } from './icons.js';
+import {
+  resolveAuthoredIcon,
+  resolveCreatureIcon,
+  isPlaceholderIcon,
+  PLACEHOLDER_ICON_PATTERN,
+} from './icons.js';
 
 // Every authored kind a builder asks the resolver for (must each map to a real, specific icon).
 const ITEM_KINDS = [
@@ -126,5 +131,42 @@ describe('resolveAuthoredIcon', () => {
     expect(resolveAuthoredIcon('Wondrous', { subtype: 'RING' })).toBe(
       resolveAuthoredIcon('wondrous', { subtype: 'ring' })
     );
+  });
+});
+
+describe('resolveCreatureIcon', () => {
+  const TYPES = [
+    'aberration',
+    'beast',
+    'celestial',
+    'construct',
+    'dragon',
+    'elemental',
+    'fey',
+    'fiend',
+    'giant',
+    'humanoid',
+    'monstrosity',
+    'ooze',
+    'plant',
+    'undead',
+  ];
+
+  it('returns a real, non-placeholder core icon for every dnd5e creatureType', () => {
+    for (const type of TYPES) {
+      const icon = resolveCreatureIcon(type);
+      expect(isPlaceholderIcon(icon), `${type} → ${icon}`).toBe(false);
+      expect(icon).toMatch(/^icons\/.+\.webp$/);
+    }
+  });
+
+  it('a dragon and an undead get distinct, themed icons', () => {
+    expect(resolveCreatureIcon('dragon')).not.toBe(resolveCreatureIcon('undead'));
+  });
+
+  it('is total + case-insensitive — an unknown type falls back to a real humanoid floor', () => {
+    const fallback = resolveCreatureIcon('not-a-real-type');
+    expect(isPlaceholderIcon(fallback)).toBe(false);
+    expect(resolveCreatureIcon('UNDEAD')).toBe(resolveCreatureIcon('undead'));
   });
 });
