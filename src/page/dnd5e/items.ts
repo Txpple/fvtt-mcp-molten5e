@@ -21,7 +21,8 @@ import {
 } from '../_shared.js';
 import { buildActivity } from './activities.js';
 import { createWorldItems } from '../items.js';
-import { resolveAuthoredIcon } from './icons.js';
+import { searchCompendiumFaceted } from '../compendium-facets.js';
+import { resolveAuthoredIcon, isPlaceholderIcon } from './icons.js';
 
 /** The finer kind used to pick a default icon: equipmentType for wondrous, consumableType for a
  * consumable, lootType for loot. Other item types have no sub-kind icon (resolver uses the bare key). */
@@ -274,6 +275,72 @@ function findContainer(items: any, identifier: string): any {
   return matches[0];
 }
 
+// Words that don't help match an item to a compendium icon — articles/prepositions + a "+N" prefix is
+// dropped by the alphabetic-only check below.
+const ICON_STOPWORDS = new Set(['the', 'a', 'an', 'of', 'and', 'or', 'with', 'for']);
+
+/** The leading NOUN of an item name — the first ≥3-letter, non-stopword, alphabetic token. So
+ * "Mace of the Long Dark" → "Mace", "+1 Longsword" → "Longsword", "The Cloak of Stars" → "Cloak".
+ * PURE — unit-tested. Used to find an approximating compendium icon by name. */
+export function firstSignificantWord(name: string): string | undefined {
+  for (const tok of String(name ?? '').split(/[\s,]+/)) {
+    const w = tok.replace(/[^a-zA-Z]/g, '');
+    if (w.length >= 3 && !ICON_STOPWORDS.has(w.toLowerCase())) return w;
+  }
+  return undefined;
+}
+
+/** Map an add-item itemType to the documentType facet the compendium search understands. PURE. */
+export function itemTypeToDocumentType(
+  itemType: string
+): 'weapon' | 'armor' | 'consumable' | 'gear' {
+  switch (itemType) {
+    case 'weapon':
+      return 'weapon';
+    case 'armor':
+    case 'shield':
+      return 'armor';
+    case 'consumable':
+      return 'consumable';
+    default:
+      return 'gear';
+  }
+}
+
+/**
+ * Tier-2 icon resolution (rule 8 polish): find a REAL same-kind compendium item's art by name, so an
+ * authored "Mace of the Long Dark" gets a real mace icon instead of the generic Tier-1 weapon floor.
+ * Searches the premium books by the explicit baseItem first, then the name's leading noun, and takes
+ * the first hit with non-placeholder art. Returns null (→ caller falls back to Tier-1) on no match or a
+ * search error. Impure (live index read) — kept out of the pure buildPhysicalItemData per the
+ * kernel-grade rule that the Tier-1 map is the only icon logic in the pure builder.
+ */
+async function findApproxIcon(data: any): Promise<string | null> {
+  const documentType = itemTypeToDocumentType(data.itemType);
+  const terms: string[] = [];
+  if (typeof data.baseItem === 'string' && data.baseItem.trim()) terms.push(data.baseItem.trim());
+  const noun = firstSignificantWord(data.name);
+  if (noun && !terms.some(t => t.toLowerCase() === noun.toLowerCase())) terms.push(noun);
+
+  for (const term of terms) {
+    try {
+      const hits = await searchCompendiumFaceted({ documentType, name: term, limit: 10 });
+      const real = (Array.isArray(hits) ? hits : []).filter(
+        (h: any) => h?.img && !isPlaceholderIcon(h.img)
+      );
+      if (real.length === 0) continue;
+      // Prefer a hit whose ART path reflects the search term (e.g. "mace" → icons/weapons/maces/…),
+      // so the approximation actually looks right; else fall back to the top-ranked real-art hit.
+      const t = term.toLowerCase();
+      const themed = real.find((h: any) => String(h.img).toLowerCase().includes(t));
+      return (themed ?? real[0]).img;
+    } catch {
+      /* a search failure just falls through to the next term / the Tier-1 floor */
+    }
+  }
+  return null;
+}
+
 // Default folder for the world-Item "loot twin" a magic item gets when placed on an actor (rule 9).
 const DEFAULT_LOOT_FOLDER = 'Loot';
 
@@ -357,10 +424,15 @@ export async function addItem(data: any): Promise<unknown> {
         : { value: data.rangeFt ?? null, long: data.longRangeFt ?? null, units: 'ft' };
   }
 
+  // Rule 8 — when no img is given, try a live same-kind compendium match (Tier 2) before the Tier-1
+  // floor inside buildPhysicalItemData. data.img wins; `??` short-circuits so the search only runs
+  // when no img was supplied. The loot twin rebuilds from baseOpts, so it inherits the same icon.
+  const resolvedImg = data.img ?? (await findApproxIcon(data)) ?? undefined;
+
   const baseOpts: PhysicalItemOpts = {
     itemType: data.itemType,
     name: data.name,
-    img: data.img,
+    img: resolvedImg,
     description: data.description,
     quantity: data.quantity,
     price: data.price,

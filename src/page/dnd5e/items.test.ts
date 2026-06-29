@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildPhysicalItemData, isMagicItemDoc, wantsLootCopy } from './items.js';
+import {
+  buildPhysicalItemData,
+  isMagicItemDoc,
+  wantsLootCopy,
+  firstSignificantWord,
+  itemTypeToDocumentType,
+} from './items.js';
 import { isPlaceholderIcon, resolveAuthoredIcon } from './icons.js';
 
 describe('buildPhysicalItemData — cross-cutting fields', () => {
@@ -321,5 +327,34 @@ describe('wantsLootCopy', () => {
   it('auto (undefined) follows the magic flag', () => {
     expect(wantsLootCopy(undefined, true)).toBe(true);
     expect(wantsLootCopy(undefined, false)).toBe(false);
+  });
+});
+
+// Tier-2 icon approximation (rule 8 polish) — the pure pieces that drive the live compendium lookup.
+describe('firstSignificantWord', () => {
+  it('returns the leading noun, skipping articles and a +N prefix', () => {
+    expect(firstSignificantWord('Mace of the Long Dark')).toBe('Mace');
+    expect(firstSignificantWord('+1 Longsword')).toBe('Longsword');
+    expect(firstSignificantWord('The Cloak of Stars')).toBe('Cloak');
+    expect(firstSignificantWord('a Ring of Protection')).toBe('Ring');
+  });
+
+  it('is undefined when there is no usable token', () => {
+    expect(firstSignificantWord('')).toBeUndefined();
+    expect(firstSignificantWord('+1')).toBeUndefined();
+    expect(firstSignificantWord('of the')).toBeUndefined();
+  });
+});
+
+describe('itemTypeToDocumentType', () => {
+  it('maps each item kind to the search facet', () => {
+    expect(itemTypeToDocumentType('weapon')).toBe('weapon');
+    expect(itemTypeToDocumentType('armor')).toBe('armor');
+    expect(itemTypeToDocumentType('shield')).toBe('armor');
+    expect(itemTypeToDocumentType('consumable')).toBe('consumable');
+    expect(itemTypeToDocumentType('wondrous')).toBe('gear');
+    expect(itemTypeToDocumentType('tool')).toBe('gear');
+    expect(itemTypeToDocumentType('loot')).toBe('gear');
+    expect(itemTypeToDocumentType('container')).toBe('gear');
   });
 });
