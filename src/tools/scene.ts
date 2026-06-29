@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
@@ -172,6 +173,15 @@ const CreateSceneSchema = z.object({
     .array(SidecarLightSchema)
     .optional()
     .describe('Ambient lights to import from a map sidecar JSON (the `lights` array).'),
+  placeablesPath: z
+    .string()
+    .optional()
+    .describe(
+      'Server-local path to a JSON file of {walls,lights} to place (as written by read-pack for a ' +
+        'scene-pack import). Read SERVER-SIDE and merged with any inline walls/lights — this routes a ' +
+        "pack's hundreds of walls/lights tool→tool without passing them through the agent (the MCP " +
+        'response cap makes inline placeables infeasible at scene scale).'
+    ),
   width: z
     .number()
     .int()
@@ -321,7 +331,24 @@ export class SceneTools {
 
   async handleCreateScene(args: any): Promise<string> {
     const parsed = CreateSceneSchema.parse(args ?? {});
-    const result = await this.foundry.call('createScene', parsed);
+    const callArgs: any = { ...parsed };
+    // Pull walls/lights from a read-pack payload file SERVER-SIDE (they never transit the agent).
+    if (callArgs.placeablesPath) {
+      let payload: any;
+      try {
+        payload = JSON.parse(readFileSync(callArgs.placeablesPath, 'utf8'));
+      } catch (err) {
+        throw new Error(
+          `create-scene: could not read placeablesPath "${callArgs.placeablesPath}": ${(err as Error).message}`
+        );
+      }
+      if (Array.isArray(payload?.walls))
+        callArgs.walls = [...(callArgs.walls ?? []), ...payload.walls];
+      if (Array.isArray(payload?.lights))
+        callArgs.lights = [...(callArgs.lights ?? []), ...payload.lights];
+      delete callArgs.placeablesPath; // page-side createScene doesn't know this field
+    }
+    const result = await this.foundry.call('createScene', callArgs);
     const dims =
       result?.width && result?.height
         ? `\n  dimensions: ${result.width}×${result.height}px${result.autoSized ? ' (auto from image)' : ''}`

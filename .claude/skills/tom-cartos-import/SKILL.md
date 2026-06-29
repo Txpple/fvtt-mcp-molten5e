@@ -115,14 +115,18 @@ create-scene {
   padding: <scene.padding>,
   thumb: <scene.thumb.dataPath>,
   environment: <scene.environment>, fog: <scene.fog>, initial: <scene.initial>,
-  walls: <scene.walls>, lights: <scene.lights>,
+  placeablesPath: <scene.placeablesPath>,
   journal: "<the journal entry from Step 5>",
   flags: { "tom-cartos-import": { sourceModule: <module.id>, sourceId: <scene.sourceId> } }
 }
 ```
 
-- Pass `walls`/`lights` **straight from `read-pack`** — they're already whole. Never cherry-pick fields.
-  `create-scene` reports the counts placed and ⚠-warns if any wall lost its `sight`.
+- **Placeables go via `placeablesPath`, never inline.** `read-pack` wrote each scene's hundreds of
+  walls/lights to a payload file and gave you the path; `create-scene` reads it server-side. Passing
+  the arrays inline is infeasible — a single scene's walls overflow the tool-response cap, and they'd
+  bloat the agent context. The walls/lights in that file are already whole (threshold/animation/config
+  preserved); never reconstruct them. `create-scene` reports the counts placed and ⚠-warns on dropped
+  `sight`.
 - **Do NOT pass `regions`** in v1 — there is no region param yet, and the cross-scene teleporter remap
   is the next milestone. **Tell the user** the stairs/teleporters between levels were not imported.
 

@@ -5,7 +5,7 @@
  * shells out to the foundryvtt-cli child process, so it is skipped where the pack/cli aren't there).
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   computeAssetRewrite,
@@ -155,11 +155,17 @@ const logger: any = { child: () => ({ info() {}, debug() {}, warn() {}, error() 
     expect(iris.background.dataPath).not.toContain('%20');
     expect(iris.thumb.dataPath).toContain('assets/scenes/');
 
+    // Placeables are NOT inline (response-cap fix) — they live in a payload file create-scene reads.
+    expect(iris).not.toHaveProperty('walls');
+    expect(typeof iris.placeablesPath).toBe('string');
+    const placeables = JSON.parse(readFileSync(iris.placeablesPath, 'utf8'));
+    expect(placeables.walls.length).toBe(445);
+    expect(placeables.lights.length).toBe(88);
     // a wall came through WHOLE (threshold present) with the cli _key stripped
-    expect(iris.walls[0]).not.toHaveProperty('_key');
-    expect(iris.walls[0]).toHaveProperty('threshold');
+    expect(placeables.walls[0]).not.toHaveProperty('_key');
+    expect(placeables.walls[0]).toHaveProperty('threshold');
     // a light kept its full config
-    expect(iris.lights[0].config).toHaveProperty('luminosity');
+    expect(placeables.lights[0].config).toHaveProperty('luminosity');
 
     // journal pack: the 4 image legend keys
     expect(res.journals.length).toBe(1);

@@ -8,6 +8,9 @@
  *      the user roll-ups for world info.
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { SceneTools } from './scene.js';
 import { makeLogger, makeFoundry } from './test-helpers.js';
@@ -365,6 +368,52 @@ describe('handleCreateScene', () => {
     expect(out).toContain('darkness 0.5');
     expect(out).toContain('weather fog');
     expect(out).not.toContain('global light on');
+  });
+
+  it('reads walls/lights from placeablesPath server-side and strips the path before the bridge call', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tc-scene-test-'));
+    const file = join(dir, 'p.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        walls: [{ c: [0, 0, 5, 5], sight: 20 }],
+        lights: [{ x: 1, y: 2, config: { dim: 30 } }],
+      })
+    );
+    const { tools, calls } = build({ sceneName: 'P', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({ name: 'P', backgroundPath: 'b', placeablesPath: file });
+    const sent = calls[0][1];
+    expect(sent.walls).toHaveLength(1);
+    expect(sent.walls[0].c).toEqual([0, 0, 5, 5]);
+    expect(sent.lights).toHaveLength(1);
+    expect(sent).not.toHaveProperty('placeablesPath'); // page-side createScene never sees it
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('merges placeablesPath walls/lights after any inline ones', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tc-scene-test-'));
+    const file = join(dir, 'p.json');
+    writeFileSync(file, JSON.stringify({ walls: [{ c: [9, 9, 9, 9], sight: 10 }], lights: [] }));
+    const { tools, calls } = build({ sceneName: 'P', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({
+      name: 'P',
+      backgroundPath: 'b',
+      walls: [{ c: [0, 0, 1, 1], sight: 20 }],
+      placeablesPath: file,
+    });
+    expect(calls[0][1].walls).toHaveLength(2); // inline + file
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throws a clear error when placeablesPath cannot be read', async () => {
+    const { tools } = build({ sceneName: 'P', sceneId: 'sc1', background: 'b' });
+    await expect(
+      tools.handleCreateScene({
+        name: 'P',
+        backgroundPath: 'b',
+        placeablesPath: 'C:/no/such/file.json',
+      })
+    ).rejects.toThrow(/could not read placeablesPath/);
   });
 });
 

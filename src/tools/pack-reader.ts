@@ -1,5 +1,13 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -225,9 +233,12 @@ const READ_PACK_DESCRIPTION =
   'v10/NeDB vs newer v13/LevelDB), extracts each Scene (dimensions, grid, background, thumbnail, ' +
   'walls, lights, regions/teleporters) and JournalEntry (pages), strips cli pack artifacts, and — ' +
   'when given the destination root the skill chose — emits per-asset path REWRITE HINTS (the ' +
-  'module-relative %-encoded src → a clean Data-relative path). The skill then uploads the assets, ' +
-  'recreates the scenes/journals, and (modern packs) remaps the cross-scene teleporters. Requires ' +
-  'the `@foundryvtt/foundryvtt-cli` dependency (the LevelDB/NeDB reader, run in a child process).';
+  'module-relative %-encoded src → a clean Data-relative path). The heavy per-scene ' +
+  'walls/lights/regions are written to PAYLOAD FILES and referenced by `placeablesPath` (NOT inline — ' +
+  'the response cap truncates them at scene scale); pass that path to create-scene, which reads it ' +
+  'server-side. The skill then uploads the assets, recreates the scenes/journals, and (modern packs) ' +
+  'remaps the cross-scene teleporters. Requires the `@foundryvtt/foundryvtt-cli` dependency (the ' +
+  'LevelDB/NeDB reader, run in a child process).';
 
 export interface PackReaderToolsOptions {
   logger: Logger;
@@ -298,6 +309,12 @@ export class PackReaderTools {
       return assets.get(src);
     };
 
+    // Heavy placeable arrays (hundreds of walls/lights per scene) are written to per-scene payload
+    // FILES here and referenced by `placeablesPath`, NOT returned inline — the MCP tool-response cap
+    // truncates them at scene scale, and routing them through the agent doesn't scale. create-scene
+    // reads the file server-side (both tools share this process's filesystem).
+    const payloadDir = mkdtempSync(join(tmpdir(), 'tc-scene-payloads-'));
+
     // --- scenes ---
     let descriptor: PackEraDescriptor | undefined;
     const scenes: any[] = [];
@@ -315,6 +332,15 @@ export class PackReaderTools {
         if (typeof sceneLimit === 'number' && scenes.length >= sceneLimit) break;
         const bgSrc = d.background?.src ?? (typeof d.img === 'string' ? d.img : undefined);
         const thumbSrc = typeof d.thumb === 'string' ? d.thumb : undefined;
+        const placeablesPath = join(payloadDir, `${d._id}.json`);
+        writeFileSync(
+          placeablesPath,
+          JSON.stringify({
+            walls: Array.isArray(d.walls) ? d.walls : [],
+            lights: Array.isArray(d.lights) ? d.lights : [],
+            regions: Array.isArray(d.regions) ? d.regions : [],
+          })
+        );
         scenes.push({
           sourceId: d._id,
           name: d.name,
@@ -327,12 +353,11 @@ export class PackReaderTools {
           padding: d.padding,
           background: noteAsset(bgSrc) ?? { docSrc: bgSrc },
           thumb: thumbSrc ? noteAsset(thumbSrc) : null,
-          walls: Array.isArray(d.walls) ? d.walls : [],
-          lights: Array.isArray(d.lights) ? d.lights : [],
-          regions: Array.isArray(d.regions) ? d.regions : [],
           environment: d.environment,
           fog: d.fog,
           initial: d.initial,
+          // Walls/lights/regions live in this file (see payloadDir note) — pass it to create-scene.
+          placeablesPath,
           counts: {
             walls: d.walls?.length ?? 0,
             lights: d.lights?.length ?? 0,
@@ -372,6 +397,7 @@ export class PackReaderTools {
       scenes,
       journals,
       assets: [...assets.values()],
+      payloadDir, // temp dir holding the per-scene {walls,lights,regions} files; safe to delete after import
     };
   }
 }
