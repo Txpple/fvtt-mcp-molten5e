@@ -6,6 +6,13 @@ driven by **Claude Code**. It lets an AI GM assistant read and edit a live Found
 items, journals, scenes, compendia, roll tables, cards…) and manage a Molten-hosted server's
 static files.
 
+Paired with its bundled **skills**, it goes well beyond CRUD: it can author a **complete, table-ready
+adventure end to end** — scene, monsters, NPCs, a pregen PC or party, treasure, linked journals, and
+roll tables — scaled to however much the DM provides. Hand it **only a map image** and Claude reads the
+map and builds the whole module; hand it **your own finished module** and it faithfully recreates every
+stat block, item, and handout in the VTT. It can also import a player's character straight from a
+**publicly shared D&D Beyond** sheet.
+
 ---
 
 > 📐 **Design north star — [`design.md`](design.md).** The mission, scope, the *skills decide, tools
@@ -56,14 +63,17 @@ automated.
 
 ## Scope
 
-**In scope:** actors, items, journals, scenes (as _documents_), playlists, roll tables, cards,
+**In scope:** actors — both **NPCs** and full leveled **PCs** (including import from a publicly shared
+**D&D Beyond** character) — items, journals, scenes (as _documents_), playlists, roll tables, cards,
 compendium manipulation — especially **pulling** content out ("make an actor from the MM owlbear") —
-and asset upload. Authoring prefers the **2024** dnd5e data model, sourced from **PHB / DMG / MM**; if
-the requested content isn't in those packs the tool says so rather than inventing it.
+and asset upload. With the bundled skills these compose into **end-to-end adventures**, including
+**reading a provided map image** to drive the scene and everything in it. Authoring prefers the
+**2024** dnd5e data model, sourced from **PHB / DMG / MM**; if the requested content isn't in those
+packs the tool says so rather than inventing it.
 
 **Out of scope:** non-5e game systems; maps & active-scene / placeable manipulation (walls, lights,
-ambient sounds, placing/moving tokens) and live "running" of play; AI map generation; scripting the
-Molten management panel.
+ambient sounds, placing/moving tokens) and live "running" of play; AI **map-image** generation (Claude
+reads a *provided* map, it does not draw one); scripting the Molten management panel.
 
 ---
 
@@ -146,12 +156,13 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**76 tools total: 67 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
+**85 tools total: 76 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes, roll tables, cards, ownership, folders/organization, 5e-specific helpers
-(NPC creation, feature/spell granting, structured inventory/loot authoring), **plus the
-asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the asset file library.
+(NPC creation, **PC building & leveling**, **D&D Beyond import**, feature/spell granting, structured
+inventory/loot authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten
+WebDAV) is the asset file library.
 
 **Plane B — Molten file tools (WebDAV):**
 

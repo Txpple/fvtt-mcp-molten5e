@@ -22,6 +22,18 @@ There are two halves to that mission, in priority order:
 We are building **half 1** now. Every choice we make in half 1 must leave the door open for half 2,
 but we do not build half 2 yet.
 
+**Where half 1 stands today.** The content-creation building blocks are built — and, crucially, they
+*compose*. The same skills that make one scene or one NPC now assemble a **complete, table-ready
+adventure end to end**, scaled to however much the DM brings:
+
+- **As little as a map.** Hand Claude only a battlemap image and it reads the map, invents a fitting
+  plot, and builds the scene, the monsters and NPCs, a pregen PC (or a whole party), the treasure, the
+  linked journals (plot, GM notes, read-aloud boxed text, handouts), and the roll tables to match.
+- **As much as a finished module.** Hand Claude your own adventure and it faithfully recreates it in
+  the VTT — every stat block, magic item, handout, and map placed as written, sourced from the books.
+- **Anywhere in between** is the normal case — and a player's own character can be imported straight
+  from a **publicly shared D&D Beyond** sheet (§7).
+
 ---
 
 ## 2. Guiding principles (binding)
@@ -106,9 +118,11 @@ This is the architectural backbone that makes principle #1 real.
 
 | Area | Sub-area | Phase | Status |
 | --- | --- | --- | --- |
-| **Content creation** | Scenes | 1 (now) | ✅ working |
-| | Actors → **NPCs** | 1 (now) | ✅ aligned (§6 ladder structural; `stat-block-builder`) |
-| | Actors → PCs | 1 (later) | 🧭 designed-for, not built |
+| **Content creation** | Scenes | 1 | ✅ working |
+| | Actors → **NPCs** | 1 | ✅ done (§6 ladder; `stat-block-builder`) |
+| | Actors → **PCs** | 1 | ✅ done (`pc-builder`; `create-pc` / `level-up-pc` / `create-pc-from-prefab`, advancement-native `@scale`) |
+| | Actors → PCs → **D&D Beyond import** | 1 | ✅ done (`ddb-import` + `parse-ddb-character`) |
+| | **Adventures** (end-to-end assembly) | 1 | ✅ emergent — the blocks compose (§1, §5) |
 | | Journals (handouts, lore, quests, notes) | 1 | ✅ done (`journal-builder`; prose de-leaked) |
 | | Tables (roll tables) | 1 | ✅ done (`table-builder`; v14 results + `@UUID` loot + import) |
 | | Playable cards | 1 | ✅ done (`cards-builder`; face text + preset import) |
@@ -125,17 +139,23 @@ focus · ⛔ not started.
 exception is that Phase-1 work must not architecturally block Phase-2 (e.g. keep chat/transcript
 plumbing clean).
 
+**Phase 1 is now feature-complete.** Every content building block above is built, and they compose
+into **end-to-end adventures** (§1, §5) — from "here's a map, make me a module" to "here's my module,
+put it in the VTT." Remaining Phase-1 work is hardening; the next frontier is Phase 2.
+
 ---
 
 ## 5. Content creation — the current phase
 
 The DM's adventure is assembled from these building blocks. Each gets its own skill(s) for judgment
-and its own deterministic tools for correctness.
+and its own deterministic tools for correctness — and the blocks **compose end to end**: a single
+request can assemble all of them into a finished, table-ready adventure, with the DM supplying as much
+or as little as they like (§1).
 
 - **Scenes** *(working)* — turn a map image into a ready-to-play scene: auto-size to the image, set
   mood/lighting/weather/fog, attach playlists and journals.
-- **Actors** *(active)* — the creatures and characters. Split hard into **NPCs** (§6, current) and
-  **PCs** (§7, later). This split is the most important structural decision in the content phase.
+- **Actors** — the creatures and characters. Split hard into **NPCs** (§6) and **PCs** (§7) — both
+  built. This split is the most important structural decision in the content phase.
 - **Journals** — the written layer of an adventure: handouts, lore/gazetteer entries, read-aloud
   (boxed) text, quest logs, and the GM's own notes. Includes quest journals and linking quests to the
   NPCs that give them. This is also the **landing zone for Phase-2 session summaries & logs** (§8) — we
@@ -216,10 +236,11 @@ These are correctness truths the tools must honor (carried from prior dogfooding
 
 ---
 
-## 7. PC authoring *(future — designed-for, not yet built)*
+## 7. PC authoring *(built — current phase)*
 
-PCs are a **different product** and get their **own skill + tool architecture**. We are not building
-this now, but nothing we do for NPCs may make it harder.
+PCs are a **different product** with their **own skill + tool architecture** — the `pc-builder` skill
+over `create-pc` / `inspect-pc-advancement` / `level-up-pc` / `create-pc-from-prefab`. They are
+**built**; nothing in the NPC path may regress them.
 
 - PCs are **`type: character`**, not `npc`. They are assembled from embedded **class, subclass,
   species, and background** items, plus **advancement**.
@@ -230,7 +251,7 @@ this now, but nothing we do for NPCs may make it harder.
   pick options at each level), not a flat stat-block transcription. Keep this in mind so the NPC tools
   and the actor-authoring surface don't bake in npc-only assumptions.
 
-### Importing a D&D Beyond character *(in scope — content creation)*
+### Importing a D&D Beyond character *(built — content creation)*
 
 Players often build their PC on **D&D Beyond**; importing it is a PC content-creation capability (a
 faster front-end for the same leveling pipeline above, *not* a new product). It follows §2 + §3
@@ -288,7 +309,8 @@ This is *how* the contract in §3 is realized today. (Mechanism, not mission —
   via `src/utils/schema.ts` — never hand-written JSON schema.
 - **Skills ship in-repo.** `.claude/skills/**` is a tracked deliverable, committed alongside the
   tools. Current skills: `start-session`, `scene-builder`, `stat-block-builder`,
-  `physical-item-builder`, `chat-and-narration`.
+  `physical-item-builder`, `pc-builder`, `ddb-import`, `journal-builder`, `table-builder`,
+  `cards-builder`, `playlist-builder`, `chat-and-narration`.
 - **Target stack.** Foundry v14, dnd5e 5.3.3, Molten Hosting. D&D-5e-only by design.
 - **Quality gate.** biome · `tsc --noEmit` · vitest · build · knip, all green before any commit. No
   pre-commit hook — run `biome check --write .` manually.
