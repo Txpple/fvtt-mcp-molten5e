@@ -747,6 +747,7 @@ export async function createSceneNotes(args: {
   sceneName?: string;
   notFound?: string;
   created: number;
+  notes?: Array<{ id: string; journal: string; label?: string }>;
   errors?: string[];
 }> {
   if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
@@ -757,6 +758,9 @@ export async function createSceneNotes(args: {
   if (!scene) return { success: true, created: 0, notFound: args.sceneIdentifier };
 
   const data: Array<Record<string, unknown>> = [];
+  // Parallel to `data`: the source journal + label, so created note ids can be reported back
+  // (the pin-nudge loop targets them later with update-note/delete-note).
+  const meta: Array<{ journal: string; label?: string }> = [];
   const errors: string[] = [];
   for (let i = 0; i < args.notes.length; i++) {
     const n = args.notes[i];
@@ -770,16 +774,27 @@ export async function createSceneNotes(args: {
       if (typeof n.icon === 'string' && n.icon.trim() !== '')
         doc.texture = { src: normalizeAssetPath(n.icon) };
       data.push(doc);
+      meta.push(n.label?.trim() ? { journal: n.journal, label: n.label } : { journal: n.journal });
     } catch (e) {
       errors.push(`note ${i} (${n.journal}): ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   let created = 0;
+  const notes: Array<{ id: string; journal: string; label?: string }> = [];
   if (data.length > 0) {
     try {
       const made = await scene.createEmbeddedDocuments('Note', data);
       created = made?.length ?? 0;
+      (made ?? []).forEach((doc: any, k: number) => {
+        // Foundry resolves an un-overridden note's `text` to the linked entry name — report that.
+        const label = doc?.text ?? meta[k]?.label;
+        notes.push({
+          id: doc?.id ?? '',
+          journal: meta[k]?.journal ?? '',
+          ...(label ? { label } : {}),
+        });
+      });
     } catch (e) {
       errors.push(`notes: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -790,7 +805,109 @@ export async function createSceneNotes(args: {
     sceneId: scene.id,
     sceneName: scene.name,
     created,
+    ...(notes.length > 0 ? { notes } : {}),
     ...(errors.length > 0 ? { errors } : {}),
+  };
+}
+
+interface SceneNoteUpdateInput {
+  sceneIdentifier: string;
+  noteId: string;
+  x?: number;
+  y?: number;
+  label?: string;
+  iconSize?: number;
+  global?: boolean;
+  icon?: string;
+  journal?: string; // re-point the linked entry (strict resolve); clears the page unless `page` given
+  page?: string; // page within the (new) journal — only honored alongside `journal`
+}
+
+/**
+ * Update one existing map-note pin (the legend→pins review/nudge loop). Targets the note by id on the
+ * named scene; patches only the fields supplied (move x/y, relabel, resize/restyle the icon, toggle
+ * fog `global`, or re-point the linked journal/page). Re-pointing resolves the journal/page STRICT
+ * (id → exact name; ambiguity throws), mirroring create. Returns `updated:false` + `notFound` when the
+ * scene or note id doesn't resolve.
+ */
+export async function updateSceneNote(args: SceneNoteUpdateInput): Promise<{
+  success: boolean;
+  updated: boolean;
+  notFound?: string;
+  sceneId?: string;
+  sceneName?: string;
+  noteId?: string;
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!args?.noteId) throw new Error('noteId is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, updated: false, notFound: args.sceneIdentifier };
+  const note = scene.notes?.get?.(args.noteId);
+  if (!note) return { success: true, updated: false, notFound: args.noteId };
+
+  const patch: Record<string, unknown> = {};
+  if (typeof args.x === 'number') patch.x = args.x;
+  if (typeof args.y === 'number') patch.y = args.y;
+  if (typeof args.label === 'string') patch.text = args.label;
+  if (typeof args.iconSize === 'number') patch.iconSize = args.iconSize;
+  if (typeof args.global === 'boolean') patch.global = args.global;
+  if (typeof args.icon === 'string' && args.icon.trim() !== '')
+    patch['texture.src'] = normalizeAssetPath(args.icon);
+  if (typeof args.journal === 'string' && args.journal.trim() !== '') {
+    const { entryId, pageId } = resolveNoteTarget(args.journal, args.page);
+    patch.entryId = entryId;
+    patch.pageId = pageId ?? null; // re-pointing to an entry with no page clears the old page link
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new Error(
+      'Provide at least one field to update (x, y, label, iconSize, global, icon, or journal).'
+    );
+  }
+  await note.update(patch);
+  return {
+    success: true,
+    updated: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    noteId: note.id,
+  };
+}
+
+/**
+ * Delete one or more map-note pins from a scene by note id. STRICT resolution on the scene; missing
+ * note ids are reported in `notFoundIds`, never fatal. Returns the deleted count.
+ */
+export async function deleteSceneNotes(args: {
+  sceneIdentifier: string;
+  noteIds: string[];
+}): Promise<{
+  success: boolean;
+  deleted: number;
+  notFound?: string;
+  notFoundIds?: string[];
+  sceneId?: string;
+  sceneName?: string;
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!Array.isArray(args.noteIds) || args.noteIds.length === 0) {
+    throw new Error('noteIds array is required and must contain at least one entry');
+  }
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, deleted: 0, notFound: args.sceneIdentifier };
+
+  const present = args.noteIds.filter(id => scene.notes?.get?.(id));
+  const notFoundIds = args.noteIds.filter(id => !scene.notes?.get?.(id));
+  let deleted = 0;
+  if (present.length > 0) {
+    const made = await scene.deleteEmbeddedDocuments('Note', present);
+    deleted = made?.length ?? present.length;
+  }
+  return {
+    success: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    deleted,
+    ...(notFoundIds.length > 0 ? { notFoundIds } : {}),
   };
 }
 

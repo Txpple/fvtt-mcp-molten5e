@@ -32,12 +32,14 @@ describe('SceneTools.getToolDefinitions', () => {
       [
         'create-scene',
         'create-scene-notes',
+        'delete-note',
         'delete-scene',
         'get-current-scene',
         'get-scene-dimensions',
         'get-world-info',
         'list-scenes',
         'remap-teleporters',
+        'update-note',
         'update-scene',
       ].sort()
     );
@@ -546,6 +548,22 @@ describe('handleCreateSceneNotes', () => {
     expect(out).toContain('Placed 2 map-note pin(s) on "Iris" (sc1)');
   });
 
+  it('surfaces the returned note ids (for the update/delete-note loop)', async () => {
+    const { tools } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      created: 1,
+      notes: [{ id: 'note9', journal: 'Temple Keys', label: '1 — Entry' }],
+    });
+    const out = await tools.handleCreateSceneNotes({
+      sceneIdentifier: 'Iris',
+      notes: [{ journal: 'Temple Keys', x: 1, y: 2, label: '1 — Entry' }],
+    });
+    expect(out).toContain('note9');
+    expect(out).toContain('1 — Entry');
+  });
+
   it('surfaces per-note errors and the not-found scene branch', async () => {
     const { tools } = build({
       success: true,
@@ -573,6 +591,83 @@ describe('handleCreateSceneNotes', () => {
     const { tools } = build();
     await expect(
       tools.handleCreateSceneNotes({ sceneIdentifier: 'Iris', notes: [] })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleUpdateNote', () => {
+  it('forwards the patch and confirms the update', async () => {
+    const { tools, calls } = build({
+      success: true,
+      updated: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      noteId: 'note9',
+    });
+    const out = await tools.handleUpdateNote({
+      sceneIdentifier: 'Iris',
+      noteId: 'note9',
+      x: 150,
+      label: '1 — Antechamber',
+    });
+    expect(calls[0][0]).toBe('updateSceneNote');
+    expect(calls[0][1]).toMatchObject({ noteId: 'note9', x: 150, label: '1 — Antechamber' });
+    expect(out).toContain('Updated note note9 on "Iris" (sc1)');
+  });
+
+  it('reports not-found when the note id does not resolve', async () => {
+    const { tools } = build({ success: true, updated: false, notFound: 'note9' });
+    const out = await tools.handleUpdateNote({ sceneIdentifier: 'Iris', noteId: 'note9', x: 1 });
+    expect(out).toBe('Note not found: "note9". Nothing changed.');
+  });
+
+  it('rejects when no updatable field is supplied (refine)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateNote({ sceneIdentifier: 'Iris', noteId: 'note9' })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleDeleteNote', () => {
+  it('forwards the ids and reports the deleted count', async () => {
+    const { tools, calls } = build({
+      success: true,
+      deleted: 2,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+    });
+    const out = await tools.handleDeleteNote({ sceneIdentifier: 'Iris', noteIds: ['a', 'b'] });
+    expect(calls[0][0]).toBe('deleteSceneNotes');
+    expect(calls[0][1]).toEqual({ sceneIdentifier: 'Iris', noteIds: ['a', 'b'] });
+    expect(out).toContain('Deleted 2 note(s) from "Iris" (sc1)');
+  });
+
+  it('reports note ids that were not found', async () => {
+    const { tools } = build({
+      success: true,
+      deleted: 1,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      notFoundIds: ['ghost'],
+    });
+    const out = await tools.handleDeleteNote({
+      sceneIdentifier: 'Iris',
+      noteIds: ['a', 'ghost'],
+    });
+    expect(out).toContain('1 id(s) not found: ghost');
+  });
+
+  it('reports a missing scene', async () => {
+    const { tools } = build({ notFound: 'Ghost' });
+    const out = await tools.handleDeleteNote({ sceneIdentifier: 'Ghost', noteIds: ['a'] });
+    expect(out).toBe('Scene not found: "Ghost". Nothing deleted.');
+  });
+
+  it('rejects an empty noteIds array', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleDeleteNote({ sceneIdentifier: 'Iris', noteIds: [] })
     ).rejects.toThrow();
   });
 });

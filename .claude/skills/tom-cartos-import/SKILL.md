@@ -228,11 +228,12 @@ If yes, per scene that has a key:
    Add one text page per room named `"NN — Room Name"` with the key's blurb (follow `journal-builder`).
 4. **Place the pins (TOOL).** `create-scene-notes { sceneIdentifier, notes:[{ journal, page:"NN — Name",
    x, y, label:"NN — Name" }, …] }`. The `label` carries number + name so a misplaced pin is
-   self-identifying on review. (GM secrecy is the journal's ownership — do **not** rely on `global`, which
-   only controls fog occlusion.)
-5. **Report + hand off the nudge (SKILL).** List each pin's room + the cell you computed, and tell the GM
-   to drag any that look off (v1 has no update-note — moving a pin is a manual in-app drag). Don't claim
-   pixel accuracy.
+   self-identifying on review. It returns each created **note id** — keep them for the nudge loop. (GM
+   secrecy is the journal's ownership — do **not** rely on `global`, which only controls fog occlusion.)
+5. **Report + run the nudge loop (SKILL + TOOLS).** List each pin's room + the cell you computed, and ask
+   the GM which look off. To correct one, `update-note { sceneIdentifier, noteId, x?, y?, label? }` (move
+   or relabel); to drop one, `delete-note { sceneIdentifier, noteIds:[…] }`. The GM can also drag pins
+   in-app. Don't claim pixel accuracy — this review pass is the norm.
 
 ## The split — what this skill decides vs what the tools do
 

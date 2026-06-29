@@ -363,6 +363,51 @@ const CreateSceneNotesSchema = z.object({
     .describe('The map-note pins to create.'),
 });
 
+const UpdateNoteSchema = z
+  .object({
+    sceneIdentifier: z.string().min(1).describe('Scene id or exact name holding the pin.'),
+    noteId: z.string().min(1).describe('The Note id to update (from create-scene-notes).'),
+    x: z.number().optional().describe('New pin X in absolute canvas pixels.'),
+    y: z.number().optional().describe('New pin Y in absolute canvas pixels.'),
+    label: z.string().optional().describe('New text shown on the pin.'),
+    iconSize: z.number().int().positive().optional().describe('New icon size in px (min 32).'),
+    global: z
+      .boolean()
+      .optional()
+      .describe('Render the pin through fog/vision occlusion (NOT a permission control).'),
+    icon: z.string().optional().describe('New Data-relative icon image src.'),
+    journal: z
+      .string()
+      .optional()
+      .describe('Re-point the pin to a different JournalEntry (id or exact name, strict resolve).'),
+    page: z
+      .string()
+      .optional()
+      .describe('Page id or exact name within the (re-pointed) journal; only used with `journal`.'),
+  })
+  .refine(
+    v =>
+      v.x !== undefined ||
+      v.y !== undefined ||
+      v.label !== undefined ||
+      v.iconSize !== undefined ||
+      v.global !== undefined ||
+      v.icon !== undefined ||
+      v.journal !== undefined,
+    {
+      message:
+        'Provide at least one field to update (x, y, label, iconSize, global, icon, or journal).',
+    }
+  );
+
+const DeleteNoteSchema = z.object({
+  sceneIdentifier: z.string().min(1).describe('Scene id or exact name holding the pins.'),
+  noteIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe('Note ids to delete (from create-scene-notes).'),
+});
+
 export class SceneTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -457,8 +502,25 @@ export class SceneTools {
           'pixel x/y (see get-scene-dimensions for the padding-aware math), an optional label/icon/size, ' +
           'and the journal id|name. Per-note error isolation: a pin whose journal does not resolve is ' +
           "reported and skipped, not fatal. GM-only secrecy is the linked journal's ownership, not the " +
-          'pin; `global` only controls fog occlusion. GM-only.',
+          'pin; `global` only controls fog occlusion. Returns each created note id (for update-note/' +
+          'delete-note). GM-only.',
         inputSchema: toInputSchema(CreateSceneNotesSchema),
+      },
+      {
+        name: 'update-note',
+        description:
+          'Nudge ONE existing map-note pin by id (the legend→pins review loop): move it (x/y), ' +
+          'relabel it, resize/restyle its icon, toggle fog `global`, or re-point it to a different ' +
+          'journal/page. Patches only the fields you pass; at least one is required. Strict scene + ' +
+          'note-id resolution. GM-only.',
+        inputSchema: toInputSchema(UpdateNoteSchema),
+      },
+      {
+        name: 'delete-note',
+        description:
+          'Remove one or more map-note pins from a scene by note id (from create-scene-notes). ' +
+          'Missing ids are reported, never fatal. GM-only.',
+        inputSchema: toInputSchema(DeleteNoteSchema),
       },
     ];
   }
@@ -553,10 +615,37 @@ export class SceneTools {
     const errs = Array.isArray(result?.errors)
       ? result.errors.map((e: string) => `\n  ⚠ ${e}`).join('')
       : '';
+    // Surface each created note id so the GM (or a follow-up call) can nudge/remove pins.
+    const noteLines = Array.isArray(result?.notes)
+      ? result.notes.map((n: any) => `\n  • ${n.id}${n.label ? ` — ${n.label}` : ''}`).join('')
+      : '';
     return (
       `Placed ${result?.created ?? 0} map-note pin(s) on "${result?.sceneName}" (${result?.sceneId})` +
+      noteLines +
       errs
     );
+  }
+
+  async handleUpdateNote(args: any): Promise<string> {
+    const parsed = UpdateNoteSchema.parse(args ?? {});
+    const result = await this.foundry.call('updateSceneNote', parsed);
+    if (result?.updated === false) {
+      return `Note not found: "${result?.notFound ?? parsed.noteId}". Nothing changed.`;
+    }
+    return `Updated note ${result?.noteId} on "${result?.sceneName}" (${result?.sceneId}).`;
+  }
+
+  async handleDeleteNote(args: any): Promise<string> {
+    const parsed = DeleteNoteSchema.parse(args ?? {});
+    const result = await this.foundry.call('deleteSceneNotes', parsed);
+    if (result?.notFound) {
+      return `Scene not found: "${result.notFound}". Nothing deleted.`;
+    }
+    const missing =
+      Array.isArray(result?.notFoundIds) && result.notFoundIds.length > 0
+        ? ` (${result.notFoundIds.length} id(s) not found: ${result.notFoundIds.join(', ')})`
+        : '';
+    return `Deleted ${result?.deleted ?? 0} note(s) from "${result?.sceneName}" (${result?.sceneId})${missing}.`;
   }
 
   async handleListScenes(args: any): Promise<string> {

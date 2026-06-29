@@ -45,12 +45,13 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 90 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 92 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
     // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
-    expect(names.length).toBe(90);
+    // + update-note + delete-note (M6 pin-nudge loop)
+    expect(names.length).toBe(92);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -78,6 +79,15 @@ describe('tool registry', () => {
     expect(names.has('create-scene-notes')).toBe(true);
     expect(typeof handlers['get-scene-dimensions']).toBe('function');
     expect(typeof handlers['create-scene-notes']).toBe('function');
+  });
+
+  it('registers the map-note pin-nudge tools (update-note + delete-note, tom-cartos-import M6)', () => {
+    const { tools, handlers } = build();
+    const names = new Set(tools.map(t => t.name));
+    expect(names.has('update-note')).toBe(true);
+    expect(names.has('delete-note')).toBe(true);
+    expect(typeof handlers['update-note']).toBe('function');
+    expect(typeof handlers['delete-note']).toBe('function');
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {
