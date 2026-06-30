@@ -63,6 +63,25 @@ describe('handleCreatePlaylist', () => {
     expect(out).toContain('- crowd.ogg  (snd/crowd.ogg)');
   });
 
+  it('surfaces page-side warnings about a track that 404s', async () => {
+    const { tools } = build({
+      playlistName: 'Tavern',
+      playlistId: 'pl1',
+      mode: 'sequential',
+      soundCount: 1,
+      sounds: [{ name: 'nope.mp3', path: 'snd/nope.mp3' }],
+      warnings: [
+        'Supplied track "snd/nope.mp3" was not found on the server — the document was created',
+      ],
+    });
+    const out = await tools.handleCreatePlaylist({
+      name: 'Tavern',
+      soundPaths: ['snd/nope.mp3'],
+    });
+    expect(out).toContain('not found on the server');
+    expect(out).toContain('1 warning(s)');
+  });
+
   it('rejects an empty name', async () => {
     const { tools } = build();
     await expect(tools.handleCreatePlaylist({ name: '', soundPaths: ['s'] })).rejects.toThrow();

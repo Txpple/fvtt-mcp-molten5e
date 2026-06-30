@@ -13,6 +13,8 @@
 // always GM, so the permission checks in the oracle are no-ops here.
 
 import { normalizeAssetPath, basename, resolveJournalStrict } from './_shared.js';
+import { imgResolves, badAssetWarning } from './img-resolve.js';
+import { resolveCreatureIcon } from './dnd5e/icons.js';
 
 /**
  * Group C — find every document that references the given asset path(s).
@@ -128,7 +130,14 @@ export async function setActorArt(data: {
   }
 
   const applyToToken = data.applyToToken !== false;
-  const img = normalizeAssetPath(data.imagePath);
+  const warnings: string[] = [];
+  let img = normalizeAssetPath(data.imagePath);
+  // SUBSTITUTE: a typo'd portrait/token path 404s; swap in a real creatureType floor icon.
+  if (img && !(await imgResolves(img))) {
+    warnings.push(badAssetWarning('imagePath', img, true));
+    const ct = actor.type === 'npc' ? actor.system?.details?.type?.value || 'humanoid' : 'humanoid';
+    img = resolveCreatureIcon(ct);
+  }
   const update: any = { img };
   if (applyToToken) update['prototypeToken.texture.src'] = img;
   await actor.update(update);
@@ -139,6 +148,7 @@ export async function setActorArt(data: {
     actorName: actor.name,
     img,
     appliedToToken: applyToToken,
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
@@ -162,6 +172,12 @@ export async function addJournalImage(data: {
   }
 
   const src = normalizeAssetPath(data.imagePath);
+  const warnings: string[] = [];
+  // KEEP+WARN: a content image has nothing to swap to — create the page with the original src,
+  // but warn if the path 404s so the user knows it will render broken until uploaded/fixed.
+  if (src && !(await imgResolves(src))) {
+    warnings.push(badAssetWarning('imagePath', src, false));
+  }
   const pageData: any = {
     type: 'image',
     name: data.pageName || basename(src),
@@ -180,6 +196,7 @@ export async function addJournalImage(data: {
     pageId: page?.id,
     pageName: page?.name,
     src,
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

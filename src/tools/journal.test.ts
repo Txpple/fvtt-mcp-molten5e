@@ -476,6 +476,24 @@ describe('handleCreateJournal', () => {
     expect(calls[0][1].pages[0]).toEqual({ name: 'P', content: 'x', sort: 200 });
   });
 
+  it('surfaces page-side asset warnings (a non-resolving image src is kept, not substituted)', async () => {
+    const { tools } = build({
+      id: 'j4',
+      name: 'Keys',
+      pageCount: 1,
+      pages: [{ id: 'p1' }],
+      warnings: [
+        'Supplied src "x/nope.webp" was not found on the server — the document was created.',
+      ],
+    });
+    const out = await tools.handleCreateJournal({
+      name: 'Keys',
+      pages: [{ name: 'Bad', kind: 'image', src: 'x/nope.webp' }],
+    });
+    expect(out.message).toContain('not found on the server');
+    expect(out.message).toContain('⚠️ 1 warning(s):');
+  });
+
   it('rejects an image page with no src (refine)', async () => {
     const { tools } = build();
     await expect(

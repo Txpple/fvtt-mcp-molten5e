@@ -600,6 +600,7 @@ export class SceneTools {
     const placeableErrs = Array.isArray(result?.placeableErrors)
       ? result.placeableErrors.map((e: string) => `\n  ⚠ ${e}`).join('')
       : '';
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     return (
       `Created scene "${result?.sceneName}" (${result?.sceneId})` +
       `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}` +
@@ -607,7 +608,10 @@ export class SceneTools {
       placeableLine +
       teleportHint +
       placeableErrs +
-      formatSceneSettings(result?.settings)
+      formatSceneSettings(result?.settings) +
+      (warns.length
+        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        : '')
     );
   }
 
@@ -653,20 +657,32 @@ export class SceneTools {
     const noteLines = Array.isArray(result?.notes)
       ? result.notes.map((n: any) => `\n  • ${n.id}${n.label ? ` — ${n.label}` : ''}`).join('')
       : '';
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     return (
       `Placed ${result?.created ?? 0} map-note pin(s) on "${result?.sceneName}" (${result?.sceneId})` +
       noteLines +
-      errs
+      errs +
+      (warns.length
+        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        : '')
     );
   }
 
   async handleUpdateNote(args: any): Promise<string> {
     const parsed = UpdateNoteSchema.parse(args ?? {});
     const result = await this.foundry.call('updateSceneNote', parsed);
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    const warnLine = warns.length
+      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      : '';
     if (result?.updated === false) {
+      // A dropped-only bad icon resolves the note but changes nothing — report the warning, not "not found".
+      if (warns.length && !result?.notFound) {
+        return `No changes applied to note ${result?.noteId} on "${result?.sceneName}" (${result?.sceneId}).${warnLine}`;
+      }
       return `Note not found: "${result?.notFound ?? parsed.noteId}". Nothing changed.`;
     }
-    return `Updated note ${result?.noteId} on "${result?.sceneName}" (${result?.sceneId}).`;
+    return `Updated note ${result?.noteId} on "${result?.sceneName}" (${result?.sceneId}).${warnLine}`;
   }
 
   async handleDeleteNote(args: any): Promise<string> {
@@ -730,9 +746,13 @@ export class SceneTools {
     if (result?.updated === false) {
       return `Scene not found: "${result?.notFound ?? parsed.sceneIdentifier}". Nothing changed.`;
     }
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     return (
       `Updated scene "${result?.sceneName}" (${result?.sceneId})\n  background: ${result?.background}` +
-      formatSceneSettings(result?.settings)
+      formatSceneSettings(result?.settings) +
+      (warns.length
+        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        : '')
     );
   }
 

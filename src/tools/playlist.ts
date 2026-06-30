@@ -105,10 +105,14 @@ export class PlaylistTools {
     const result = await this.foundry.call('createPlaylist', parsed);
     const sounds = result?.sounds ?? [];
     const lines = sounds.map((s: any) => `    - ${s.name}  (${s.path})`);
-    return (
+    let out =
       `Created playlist "${result?.playlistName}" (${result?.playlistId}) — mode ${result?.mode}, ` +
-      `${result?.soundCount} track(s):\n${lines.join('\n')}`
-    );
+      `${result?.soundCount} track(s):\n${lines.join('\n')}`;
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    if (warns.length) {
+      out += `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`;
+    }
+    return out;
   }
 
   async handleListPlaylists(_args: any): Promise<string> {

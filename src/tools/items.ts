@@ -135,6 +135,19 @@ const AddToActorSchema = z.object({
   items: AddToActorItemsSchema,
 });
 
+/**
+ * Surface page-side asset warnings (e.g. a bad img path that was substituted with a real floor icon)
+ * onto the tool result. Leaves the result untouched when there are none, so the common path keeps its
+ * exact shape; otherwise appends a human-readable block to a `message` field for the caller to see.
+ */
+function surfaceWarnings(result: any): any {
+  const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+  if (warns.length === 0) return result;
+  const warnSection =
+    '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n');
+  return { ...result, message: (result?.message ?? '') + warnSection };
+}
+
 export interface ItemToolsOptions {
   foundry: FoundryBridge;
   logger: Logger;
@@ -245,7 +258,7 @@ export class ItemTools {
         created: result.created?.length ?? 0,
       });
 
-      return result;
+      return surfaceWarnings(result);
     } catch (error) {
       this.logger.error('Failed to create world items', error);
       throw new Error(
@@ -320,7 +333,7 @@ export class ItemTools {
 
       this.logger.debug('Successfully updated world items', { count: result.updated?.length ?? 0 });
 
-      return result;
+      return surfaceWarnings(result);
     } catch (error) {
       this.logger.error('Failed to update world items', error);
       throw new Error(

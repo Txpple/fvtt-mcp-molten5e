@@ -133,6 +133,24 @@ describe('handleAddItem', () => {
     expect(res.warnings.some((w: string) => w.includes('manage-effect'))).toBe(true);
   });
 
+  it('surfaces a page-side icon-substitution warning (a 404 img → auto-resolved, rule 8)', async () => {
+    const { tool } = makeTool({
+      warnings: [
+        'Supplied img "icons/commodities/gems/pearl-white.webp" was not found on the server — substituted an auto-resolved icon (rule 8).',
+      ],
+    });
+    const res = await tool.handleAddItem({
+      itemType: 'loot',
+      name: 'Tribute Pearl',
+      lootType: 'gem',
+      img: 'icons/commodities/gems/pearl-white.webp',
+    });
+    expect(res.success).toBe(true);
+    expect(res.warnings.some((w: string) => w.includes('not found on the server'))).toBe(true);
+    // and it reaches the human-readable message too
+    expect(res.message).toContain('not found on the server');
+  });
+
   it('rejects a missing name', async () => {
     const { tool } = makeTool();
     await expect(tool.handleAddItem({ itemType: 'loot' })).rejects.toThrow();

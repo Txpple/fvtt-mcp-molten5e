@@ -9,6 +9,8 @@
 // consuming Node tools (src/tools/items.ts) and their tests stay green.
 
 import { toSource, sanitizeDocData as sanitizeData } from './_shared.js';
+import { imgResolves, badAssetWarning } from './img-resolve.js';
+import { GENERIC_ICON } from './dnd5e/icons.js';
 
 // Foundry document classes (Item, Folder) live in the page global scope but are
 // not declared in foundry-globals.d.ts; reach them off globalThis (loosely typed).
@@ -168,6 +170,7 @@ export async function updateWorldItems(args: UpdateWorldItemsArgs): Promise<unkn
   };
 
   const payload: Array<Record<string, any>> = [];
+  const warnings: string[] = [];
 
   for (let idx = 0; idx < updates.length; idx++) {
     const upd = updates[idx];
@@ -188,6 +191,13 @@ export async function updateWorldItems(args: UpdateWorldItemsArgs): Promise<unkn
       patch.folder = await resolveFolderId(upd.folder.trim());
     }
 
+    // Rule 8 — a non-empty img must resolve on the static server, else it ships as a 404. Substitute
+    // a real floor icon and warn. An EMPTY string is an intentional "clear the icon" — leave it alone.
+    if (typeof patch.img === 'string' && patch.img.length > 0 && !(await imgResolves(patch.img))) {
+      warnings.push(badAssetWarning('img', patch.img, true));
+      patch.img = GENERIC_ICON;
+    }
+
     payload.push(patch);
   }
 
@@ -199,6 +209,7 @@ export async function updateWorldItems(args: UpdateWorldItemsArgs): Promise<unkn
       name: doc.name,
       type: doc.type,
     })),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
@@ -253,6 +264,17 @@ export async function createWorldItems(args: CreateWorldItemsArgs): Promise<unkn
     return doc;
   });
 
+  // Rule 8 — a non-empty img must resolve on the static server, else it ships as a 404. For each item
+  // with a supplied path, substitute a real floor icon on a miss and warn. (doc.img is only set above
+  // when it.img was non-empty, so the "clear the icon" '' case never reaches here.)
+  const warnings: string[] = [];
+  for (const doc of payload) {
+    if (typeof doc.img === 'string' && doc.img.length > 0 && !(await imgResolves(doc.img))) {
+      warnings.push(badAssetWarning('img', doc.img, true));
+      doc.img = GENERIC_ICON;
+    }
+  }
+
   // Resolve or create the target folder.
   let folderDoc: any = null;
   if (folder && folder.trim().length > 0) {
@@ -285,6 +307,7 @@ export async function createWorldItems(args: CreateWorldItemsArgs): Promise<unkn
       name: doc.name,
       type: doc.type,
     })),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

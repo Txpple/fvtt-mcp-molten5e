@@ -182,6 +182,25 @@ describe('handleSetActorArt', () => {
     expect(out).toBe('Actor not found: "Ghost". Nothing changed.');
   });
 
+  it('surfaces a bad-asset warning from the page result', async () => {
+    const { tools } = build({
+      updated: true,
+      actorName: 'Goblin',
+      actorId: 'a1',
+      img: 'icons/environment/people/commoner.webp',
+      appliedToToken: true,
+      warnings: [
+        'Supplied imagePath "x/nope.webp" was not found on the server — substituted a real icon (rule 8).',
+      ],
+    });
+    const out = await tools.handleSetActorArt({
+      actorIdentifier: 'Goblin',
+      imagePath: 'x/nope.webp',
+    });
+    expect(out).toContain('not found on the server');
+    expect(out).toContain('⚠️ 1 warning(s):');
+  });
+
   it('rejects an empty actorIdentifier', async () => {
     const { tools } = build();
     await expect(
@@ -256,6 +275,26 @@ describe('handleAddJournalImage', () => {
       imagePath: 'i.webp',
     });
     expect(out).toBe('Journal not found: "Ghost". Nothing changed.');
+  });
+
+  it('surfaces a bad-asset warning from the page result (kept broken)', async () => {
+    const { tools } = build({
+      updated: true,
+      pageName: 'Map',
+      pageId: 'pg1',
+      journalName: 'Lore',
+      journalId: 'j1',
+      src: 'x/nope.webp',
+      warnings: [
+        'Supplied imagePath "x/nope.webp" was not found on the server — the document was created, but this asset will render broken until you upload it.',
+      ],
+    });
+    const out = await tools.handleAddJournalImage({
+      journalIdentifier: 'Lore',
+      imagePath: 'x/nope.webp',
+    });
+    expect(out).toContain('not found on the server');
+    expect(out).toContain('⚠️ 1 warning(s):');
   });
 
   it('rejects an empty journalIdentifier', async () => {

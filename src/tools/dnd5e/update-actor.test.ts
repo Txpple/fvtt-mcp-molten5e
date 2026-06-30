@@ -121,6 +121,23 @@ describe('handleUpdateActor', () => {
     expect(res.message).toContain('NPC-only');
   });
 
+  it('surfaces a bad-img (404) warning from the page layer', async () => {
+    const { tool } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Goblin', type: 'npc' },
+      applied: ['img'],
+      warnings: [
+        'Supplied img "x/nope.webp" was not found on the server — substituted a real icon.',
+      ],
+    });
+    const res = await tool.handleUpdateActor({
+      actorIdentifier: 'Goblin',
+      img: 'x/nope.webp',
+    });
+    expect(res.warnings).toHaveLength(1);
+    expect(res.message).toContain('not found on the server');
+  });
+
   it('rejects a missing actorIdentifier', async () => {
     const { tool } = makeTool();
     await expect(tool.handleUpdateActor({ cr: 5 })).rejects.toThrow();

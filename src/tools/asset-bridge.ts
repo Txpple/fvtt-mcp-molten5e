@@ -146,9 +146,14 @@ export class AssetBridgeTools {
     if (result?.updated === false) {
       return `Actor not found: "${result?.notFound ?? parsed.actorIdentifier}". Nothing changed.`;
     }
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    const warnSection = warns.length
+      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      : '';
     return (
       `Set art for actor "${result?.actorName}" (${result?.actorId}) → ${result?.img}` +
-      `${result?.appliedToToken ? ' (portrait + prototype token)' : ' (portrait only)'}.`
+      `${result?.appliedToToken ? ' (portrait + prototype token)' : ' (portrait only)'}.` +
+      warnSection
     );
   }
 
@@ -158,9 +163,14 @@ export class AssetBridgeTools {
     if (result?.updated === false) {
       return `Journal not found: "${result?.notFound ?? parsed.journalIdentifier}". Nothing changed.`;
     }
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    const warnSection = warns.length
+      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      : '';
     return (
       `Added image page "${result?.pageName}" (${result?.pageId}) to journal ` +
-      `"${result?.journalName}" (${result?.journalId}) → ${result?.src}.`
+      `"${result?.journalName}" (${result?.journalId}) → ${result?.src}.` +
+      warnSection
     );
   }
 }

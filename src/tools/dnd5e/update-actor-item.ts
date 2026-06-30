@@ -103,19 +103,25 @@ export class DnD5eUpdateActorItemTool {
 
   private formatResponse(result: any): any {
     const keys: string[] = result?.appliedKeys ?? [];
+    // Surface any bad-asset (broken-img) warnings the page layer reported (rule 8).
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     const summary = `✅ Updated "${result?.item?.name}" on "${result?.actor?.name}" (${keys.length} change${keys.length === 1 ? '' : 's'})`;
     const details = [
       `**Actor:** ${result?.actor?.name} (id: \`${result?.actor?.id}\`)`,
       `**Item:** ${result?.item?.name} (id: \`${result?.item?.id}\`, type: ${result?.item?.type})`,
       `**Changed:** ${keys.join(', ') || '(none)'}`,
     ].join('\n');
+    const warningSection = warns.length
+      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      : '';
     return {
       summary,
       success: true,
       actor: result?.actor,
       item: result?.item,
       appliedKeys: keys,
-      message: `${summary}\n\n${details}`,
+      ...(warns.length ? { warnings: warns } : {}),
+      message: `${summary}\n\n${details}${warningSection}`,
     };
   }
 }

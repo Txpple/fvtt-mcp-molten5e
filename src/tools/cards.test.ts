@@ -81,6 +81,24 @@ describe('handleCreateCards', () => {
     await expect(tools.handleCreateCards({ type: 'deck' })).rejects.toThrow();
   });
 
+  it('surfaces page-side warnings about a card face img that 404s', async () => {
+    const { tools } = build({
+      type: 'deck',
+      cardsName: 'Tarokka',
+      cardsId: 'c1',
+      cardCount: 1,
+      warnings: [
+        'Supplied img "art/nope.webp" was not found on the server — the document was created',
+      ],
+    });
+    const out = await tools.handleCreateCards({
+      name: 'Tarokka',
+      cards: [{ name: 'The Sun', img: 'art/nope.webp' }],
+    });
+    expect(out).toContain('not found on the server');
+    expect(out).toContain('1 warning(s)');
+  });
+
   it('rejects an invalid stack type', async () => {
     const { tools } = build();
     await expect(tools.handleCreateCards({ name: 'X', type: 'spread' })).rejects.toThrow();

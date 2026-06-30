@@ -22,6 +22,7 @@
 //  - playlist / journal are top-level ForeignDocumentField id strings.
 
 import { normalizeAssetPath } from './_shared.js';
+import { imgResolves, badAssetWarning } from './img-resolve.js';
 
 // Foundry document class (Scene) and CONST live in the page global scope but are
 // not declared in foundry-globals.d.ts; reach them off globalThis (loosely typed).
@@ -521,6 +522,16 @@ export async function createScene(
 
   try {
     const src = normalizeAssetPath(args.backgroundPath);
+    // KEEP+WARN: a map/thumbnail has no sensible substitute — keep the path but warn on a 404 so the
+    // caller knows it will render broken until the asset is uploaded / the path is corrected.
+    const warnings: string[] = [];
+    if (src && !(await imgResolves(src)))
+      warnings.push(badAssetWarning('backgroundPath', src, false));
+    if (typeof args.thumb === 'string' && args.thumb.trim() !== '') {
+      const thumbSrc = normalizeAssetPath(args.thumb);
+      if (thumbSrc && !(await imgResolves(thumbSrc)))
+        warnings.push(badAssetWarning('thumb', thumbSrc, false));
+    }
     const sceneData: any = {
       name: args.name,
       grid: {
@@ -588,6 +599,7 @@ export async function createScene(
       autoSized,
       settings: summarizeSceneSettings(scene),
       ...placeables,
+      ...(warnings.length ? { warnings } : {}),
     };
   } catch (error) {
     throw new Error(
@@ -653,9 +665,19 @@ export async function updateScene(
   }
 
   try {
+    // KEEP+WARN: a map/thumbnail has no sensible substitute — apply the path but warn on a 404.
+    const warnings: string[] = [];
     if (hasDocUpdate) await scene.update(update);
     if (hasBackground) {
-      await applySceneBackground(scene, normalizeAssetPath(args.backgroundPath!));
+      const bg = normalizeAssetPath(args.backgroundPath!);
+      if (bg && !(await imgResolves(bg)))
+        warnings.push(badAssetWarning('backgroundPath', bg, false));
+      await applySceneBackground(scene, bg);
+    }
+    if (typeof args.thumb === 'string' && args.thumb.trim() !== '') {
+      const thumbSrc = normalizeAssetPath(args.thumb);
+      if (thumbSrc && !(await imgResolves(thumbSrc)))
+        warnings.push(badAssetWarning('thumb', thumbSrc, false));
     }
 
     return {
@@ -665,6 +687,7 @@ export async function updateScene(
       sceneName: scene.name,
       background: readSceneBackground(scene),
       settings: summarizeSceneSettings(scene),
+      ...(warnings.length ? { warnings } : {}),
     };
   } catch (error) {
     throw new Error(
@@ -749,6 +772,7 @@ export async function createSceneNotes(args: {
   created: number;
   notes?: Array<{ id: string; journal: string; label?: string }>;
   errors?: string[];
+  warnings?: string[];
 }> {
   if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
   if (!Array.isArray(args.notes) || args.notes.length === 0) {
@@ -762,6 +786,8 @@ export async function createSceneNotes(args: {
   // (the pin-nudge loop targets them later with update-note/delete-note).
   const meta: Array<{ journal: string; label?: string }> = [];
   const errors: string[] = [];
+  // Aggregated across all notes: one warning per dropped (404) icon (substituted by the default pin).
+  const warnings: string[] = [];
   for (let i = 0; i < args.notes.length; i++) {
     const n = args.notes[i];
     try {
@@ -771,8 +797,14 @@ export async function createSceneNotes(args: {
       if (typeof n.label === 'string' && n.label.trim() !== '') doc.text = n.label;
       if (typeof n.iconSize === 'number') doc.iconSize = n.iconSize;
       if (typeof n.global === 'boolean') doc.global = n.global;
-      if (typeof n.icon === 'string' && n.icon.trim() !== '')
-        doc.texture = { src: normalizeAssetPath(n.icon) };
+      if (typeof n.icon === 'string' && n.icon.trim() !== '') {
+        const iconSrc = normalizeAssetPath(n.icon);
+        // SUBSTITUTE-BY-DROP: a 404 icon has a sensible fallback (Foundry's default note pin) — omit
+        // the texture entirely so the default is used, and warn that we dropped the bad path.
+        if (iconSrc && !(await imgResolves(iconSrc)))
+          warnings.push(badAssetWarning('icon', iconSrc, true));
+        else doc.texture = { src: iconSrc };
+      }
       data.push(doc);
       meta.push(n.label?.trim() ? { journal: n.journal, label: n.label } : { journal: n.journal });
     } catch (e) {
@@ -807,6 +839,7 @@ export async function createSceneNotes(args: {
     created,
     ...(notes.length > 0 ? { notes } : {}),
     ...(errors.length > 0 ? { errors } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -837,6 +870,7 @@ export async function updateSceneNote(args: SceneNoteUpdateInput): Promise<{
   sceneId?: string;
   sceneName?: string;
   noteId?: string;
+  warnings?: string[];
 }> {
   if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
   if (!args?.noteId) throw new Error('noteId is required');
@@ -846,19 +880,36 @@ export async function updateSceneNote(args: SceneNoteUpdateInput): Promise<{
   if (!note) return { success: true, updated: false, notFound: args.noteId };
 
   const patch: Record<string, unknown> = {};
+  const warnings: string[] = [];
   if (typeof args.x === 'number') patch.x = args.x;
   if (typeof args.y === 'number') patch.y = args.y;
   if (typeof args.label === 'string') patch.text = args.label;
   if (typeof args.iconSize === 'number') patch.iconSize = args.iconSize;
   if (typeof args.global === 'boolean') patch.global = args.global;
-  if (typeof args.icon === 'string' && args.icon.trim() !== '')
-    patch['texture.src'] = normalizeAssetPath(args.icon);
+  if (typeof args.icon === 'string' && args.icon.trim() !== '') {
+    const iconSrc = normalizeAssetPath(args.icon);
+    // SUBSTITUTE-BY-DROP: a 404 icon falls back to Foundry's default pin — omit texture.src + warn.
+    if (iconSrc && !(await imgResolves(iconSrc)))
+      warnings.push(badAssetWarning('icon', iconSrc, true));
+    else patch['texture.src'] = iconSrc;
+  }
   if (typeof args.journal === 'string' && args.journal.trim() !== '') {
     const { entryId, pageId } = resolveNoteTarget(args.journal, args.page);
     patch.entryId = entryId;
     patch.pageId = pageId ?? null; // re-pointing to an entry with no page clears the old page link
   }
   if (Object.keys(patch).length === 0) {
+    // Nothing left to patch. If the only field was a dropped bad icon, surface that rather than error.
+    if (warnings.length > 0) {
+      return {
+        success: true,
+        updated: false,
+        sceneId: scene.id,
+        sceneName: scene.name,
+        noteId: note.id,
+        warnings,
+      };
+    }
     throw new Error(
       'Provide at least one field to update (x, y, label, iconSize, global, icon, or journal).'
     );
@@ -870,6 +921,7 @@ export async function updateSceneNote(args: SceneNoteUpdateInput): Promise<{
     sceneId: scene.id,
     sceneName: scene.name,
     noteId: note.id,
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

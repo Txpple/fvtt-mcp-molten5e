@@ -76,7 +76,14 @@ const AddItemSchema = z.object({
 
   // ── Identity ──────────────────────────────────────────────────────
   name: z.string().min(1, 'name cannot be empty').describe('Item name.'),
-  img: z.string().optional().describe('Icon path (e.g. "icons/weapons/swords/sword-runed.webp").'),
+  img: z
+    .string()
+    .optional()
+    .describe(
+      'Icon path (e.g. "icons/weapons/swords/sword-runed.webp"). A path that does NOT resolve on the ' +
+        'server is auto-replaced with a real icon (rule 8) and reported as a warning — omit img to ' +
+        'auto-fill, or copy a verified path from a compendium item rather than guessing.'
+    ),
   description: z.string().default('').describe('HTML description.'),
 
   // ── Cross-cutting physical fields (PhysicalItemTemplate) ──────────
@@ -465,6 +472,11 @@ export class DnD5eAddItemTool {
   }
 
   private formatResponse(result: any, params: any, warnings: string[]): any {
+    // Merge tool-side soft-validation warnings with any the page raised (e.g. a 404 img substitution).
+    const mergedWarnings = [
+      ...warnings,
+      ...(Array.isArray(result?.warnings) ? result.warnings : []),
+    ];
     const target =
       result?.target?.type === 'actor'
         ? `actor "${result.target.name}"`
@@ -493,8 +505,8 @@ export class DnD5eAddItemTool {
       .filter(Boolean)
       .join('\n');
     const warningSection =
-      warnings.length > 0
-        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
+      mergedWarnings.length > 0
+        ? `\n\n⚠️ **Warnings (${mergedWarnings.length}):**\n${mergedWarnings.map(w => `- ${w}`).join('\n')}`
         : '';
     return {
       summary,
@@ -502,7 +514,7 @@ export class DnD5eAddItemTool {
       item,
       target: result?.target,
       ...(loot ? { lootCopy: loot } : {}),
-      warnings,
+      warnings: mergedWarnings,
       message: `${summary}\n\n${details}${warningSection}`,
     };
   }

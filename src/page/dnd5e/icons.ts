@@ -34,6 +34,11 @@ export function isPlaceholderIcon(img: string | null | undefined): boolean {
 // The neutral global floor — a real, non-placeholder core icon used when nothing more specific matches.
 const FALLBACK_ICON = 'icons/magic/light/orbs-hand-gray.webp';
 
+// Re-export of the neutral floor for the asset-validation sites that have no kind context (a generic
+// item icon, a card face, a map-note pin) and just need a guaranteed-real substitute. Single-sourced
+// here so the "verified-real core icon" guarantee lives in one place.
+export const GENERIC_ICON = FALLBACK_ICON;
+
 // Authored-kind → verified-real Foundry CORE icon. Keys are either a bare `kind` or a `kind:subtype`
 // compound (most-specific wins). EVERY value was observed this session as the live `img` of a real
 // premium-compendium document (so it is a real, renderable file) AND is a core `icons/...` path (so it

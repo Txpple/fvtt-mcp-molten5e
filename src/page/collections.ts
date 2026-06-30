@@ -12,6 +12,7 @@ import {
   importFromCompendium,
   normalizeAssetPath,
 } from './_shared.js';
+import { badAssetWarning, imgResolves } from './img-resolve.js';
 
 // Foundry document classes (Playlist, RollTable, Cards) and CONST live in the page
 // global scope but are not declared in foundry-globals.d.ts; reach them off globalThis (loosely
@@ -186,12 +187,17 @@ export async function createPlaylist(args: {
   const volume = typeof args.defaultVolume === 'number' ? args.defaultVolume : 0.5;
   const repeat = args.repeat === true;
 
-  const sounds = soundPaths.map((p: string) => ({
-    name: basename(normalizeAssetPath(p)),
-    path: normalizeAssetPath(p),
-    volume,
-    repeat,
-  }));
+  // KEEP+WARN: an audio track has nothing to swap to — build the sound with the original path,
+  // but warn if it 404s so the user knows it will render broken until uploaded/fixed.
+  const warnings: string[] = [];
+  const sounds: any[] = [];
+  for (const p of soundPaths) {
+    const path = normalizeAssetPath(p);
+    if (path && !(await imgResolves(path))) {
+      warnings.push(badAssetWarning('track', path, false));
+    }
+    sounds.push({ name: basename(path), path, volume, repeat });
+  }
   const playlistData: any = { name: args.name, mode, sounds };
   if (typeof args.fade === 'number') playlistData.fade = args.fade;
 
@@ -207,6 +213,7 @@ export async function createPlaylist(args: {
       name: s.name,
       path: s.path,
     })),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
@@ -537,25 +544,34 @@ export async function createCards(args: {
       : ['deck', 'hand', 'pile'];
   const type = args.type && validTypes.includes(args.type) ? args.type : 'deck';
 
-  const cards = Array.isArray(args.cards)
-    ? args.cards.map((c, idx) => {
-        if (!c || typeof c.name !== 'string' || c.name.trim().length === 0) {
-          throw new Error(`cards[${idx}]: "name" is required and must be a non-empty string`);
+  // KEEP+WARN: a card face is content art with nothing to swap to — write the original img, but
+  // warn if it 404s so the user knows it will render broken until uploaded/fixed.
+  const warnings: string[] = [];
+  const cards: any[] = [];
+  if (Array.isArray(args.cards)) {
+    for (let idx = 0; idx < args.cards.length; idx++) {
+      const c = args.cards[idx];
+      if (!c || typeof c.name !== 'string' || c.name.trim().length === 0) {
+        throw new Error(`cards[${idx}]: "name" is required and must be a non-empty string`);
+      }
+      const card: any = { name: c.name, type: 'base' };
+      if (typeof c.description === 'string') card.description = c.description;
+      const hasImg = typeof c.img === 'string' && c.img.length > 0;
+      const hasText = typeof c.text === 'string' && c.text.trim().length > 0;
+      if (hasImg || hasText) {
+        const face: any = { name: c.name };
+        if (hasImg) {
+          const img = normalizeAssetPath(c.img as string);
+          if (img && !(await imgResolves(img))) warnings.push(badAssetWarning('img', img, false));
+          face.img = img;
         }
-        const card: any = { name: c.name, type: 'base' };
-        if (typeof c.description === 'string') card.description = c.description;
-        const hasImg = typeof c.img === 'string' && c.img.length > 0;
-        const hasText = typeof c.text === 'string' && c.text.trim().length > 0;
-        if (hasImg || hasText) {
-          const face: any = { name: c.name };
-          if (hasImg) face.img = normalizeAssetPath(c.img as string);
-          if (hasText) face.text = c.text;
-          card.faces = [face];
-          card.face = 0;
-        }
-        return card;
-      })
-    : [];
+        if (hasText) face.text = c.text;
+        card.faces = [face];
+        card.face = 0;
+      }
+      cards.push(card);
+    }
+  }
 
   const cardsData: any = { name: args.name, type, description: args.description ?? '' };
   if (cards.length > 0) cardsData.cards = cards;
@@ -570,6 +586,7 @@ export async function createCards(args: {
     cardsName: doc?.name,
     type: doc?.type ?? type,
     cardCount: doc?.cards?.size ?? cards.length,
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

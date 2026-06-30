@@ -59,7 +59,11 @@ export class UserTools {
     try {
       const parsed = SetUserAvatarSchema.parse(args ?? {});
       const r = await this.foundry.call('setUserAvatar', parsed);
-      return `Set ${r?.name}'s avatar to ${r?.avatar}.`;
+      const warns = Array.isArray(r?.warnings) ? r.warnings : [];
+      const warnSection = warns.length
+        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        : '';
+      return `Set ${r?.name}'s avatar to ${r?.avatar}.` + warnSection;
     } catch (error) {
       if (error instanceof FormattedToolError) throw error;
       this.errorHandler.handleToolError(error, 'set-user-avatar', 'setting avatar');

@@ -455,6 +455,20 @@ describe('handleCreateScene', () => {
     expect(out).toContain('imported: 445 wall(s), 88 light(s), 2 region(s)');
     expect(out).toContain('remap-teleporters');
   });
+
+  it('surfaces a bad-backgroundPath warning from the page result', async () => {
+    const { tools } = build({
+      sceneName: 'Cavern',
+      sceneId: 'sc1',
+      background: 'x/nope.webp',
+      warnings: [
+        'Supplied backgroundPath "x/nope.webp" was not found on the server — the document …',
+      ],
+    });
+    const out = await tools.handleCreateScene({ name: 'Cavern', backgroundPath: 'x/nope.webp' });
+    expect(out).toContain('warning(s):');
+    expect(out).toContain('not found on the server');
+  });
 });
 
 describe('handleRemapTeleporters', () => {
@@ -593,6 +607,24 @@ describe('handleCreateSceneNotes', () => {
     await expect(
       tools.handleCreateSceneNotes({ sceneIdentifier: 'Iris', notes: [] })
     ).rejects.toThrow();
+  });
+
+  it('surfaces a dropped-icon warning from the page result', async () => {
+    const { tools } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Iris',
+      created: 1,
+      warnings: [
+        'Supplied icon "x/nope.webp" was not found on the server — substituted a real icon …',
+      ],
+    });
+    const out = await tools.handleCreateSceneNotes({
+      sceneIdentifier: 'Iris',
+      notes: [{ journal: 'Temple Keys', x: 1, y: 2, icon: 'x/nope.webp' }],
+    });
+    expect(out).toContain('warning(s):');
+    expect(out).toContain('not found on the server');
   });
 });
 

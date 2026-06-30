@@ -23,6 +23,7 @@ import { buildActivity } from './activities.js';
 import { createWorldItems } from '../items.js';
 import { searchCompendiumFaceted } from '../compendium-facets.js';
 import { resolveAuthoredIcon, isPlaceholderIcon } from './icons.js';
+import { imgResolves, badAssetWarning } from '../img-resolve.js';
 
 /** The finer kind used to pick a default icon: equipmentType for wondrous, consumableType for a
  * consumable, lootType for loot. Other item types have no sub-kind icon (resolver uses the bare key). */
@@ -424,10 +425,20 @@ export async function addItem(data: any): Promise<unknown> {
         : { value: data.rangeFt ?? null, long: data.longRangeFt ?? null, units: 'ft' };
   }
 
-  // Rule 8 — when no img is given, try a live same-kind compendium match (Tier 2) before the Tier-1
-  // floor inside buildPhysicalItemData. data.img wins; `??` short-circuits so the search only runs
-  // when no img was supplied. The loot twin rebuilds from baseOpts, so it inherits the same icon.
-  const resolvedImg = data.img ?? (await findApproxIcon(data)) ?? undefined;
+  // Rule 8 — never ship a broken (404) icon. A caller-supplied img is honored ONLY if it actually
+  // resolves on the static server: a non-blank but non-existent path (a guessed `icons/...`) looks
+  // "real" to isPlaceholderIcon and would otherwise pass straight through to a 404 placeholder. A bad
+  // path is dropped (with a warning) so we fall through to the Tier-2 compendium match → Tier-1 floor,
+  // exactly as if no img were given. The loot twin rebuilds from baseOpts, so it inherits the same icon.
+  const warnings: string[] = [];
+  let suppliedImg = data.img; // inferred `any` (data is any) — keeps PhysicalItemOpts.img assignable
+  if (suppliedImg && !(await imgResolves(suppliedImg))) {
+    // Drop the bad path and fall through to the Tier-2 compendium match → Tier-1 floor (a richer
+    // fallback than a fixed icon), exactly as if no img were given.
+    warnings.push(badAssetWarning('img', suppliedImg, true));
+    suppliedImg = undefined;
+  }
+  const resolvedImg = suppliedImg ?? (await findApproxIcon(data)) ?? undefined;
 
   const baseOpts: PhysicalItemOpts = {
     itemType: data.itemType,
@@ -503,6 +514,7 @@ export async function addItem(data: any): Promise<unknown> {
       success: true,
       target: { type: 'actor', id: actor.id, name: actor.name },
       item: { id: created.id, name: created.name, type: created.type },
+      ...(warnings.length ? { warnings } : {}),
     };
 
     // Rule 9 — a magic item on an NPC is ALSO loot. Mint a matching world Item (same stats + icon, but
@@ -542,6 +554,7 @@ export async function addItem(data: any): Promise<unknown> {
     success: true,
     target: { type: 'world', folderId: res.folderId, folderName: res.folderName },
     item: created,
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

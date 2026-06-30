@@ -30,6 +30,8 @@ import {
   normalizeSkill,
   SKILL_ABILITY,
 } from './dnd5e/actor-fields.js';
+import { imgResolves, badAssetWarning } from './img-resolve.js';
+import { resolveCreatureIcon, GENERIC_ICON } from './dnd5e/icons.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
 // declared in foundry-globals.d.ts; reach it off globalThis (loosely typed).
@@ -1340,7 +1342,16 @@ export async function updateActor(params: any): Promise<unknown> {
     applied.push('name');
   }
   if (typeof params.img === 'string' && params.img.trim()) {
-    update.img = params.img.trim();
+    // Rule 8 — never write a broken (404) portrait. A supplied path is honored only if it resolves on
+    // the static server; otherwise warn and substitute a real creatureType-keyed floor icon.
+    let img = params.img.trim();
+    if (!(await imgResolves(img))) {
+      warnings.push(badAssetWarning('img', img, true));
+      const ct =
+        actor.type === 'npc' ? actor.system?.details?.type?.value || 'humanoid' : 'humanoid';
+      img = resolveCreatureIcon(ct);
+    }
+    update.img = img;
     applied.push('img');
   }
 
@@ -1678,9 +1689,19 @@ export async function updateActorItem(params: {
     throw new Error(`Item "${itemIdentifier}" not found on actor "${actor.name}"`);
   }
 
+  const warnings: string[] = [];
   const update: Record<string, any> = { _id: item.id };
   if (typeof params.name === 'string' && params.name.trim()) update.name = params.name.trim();
-  if (typeof params.img === 'string' && params.img.trim()) update.img = params.img.trim();
+  if (typeof params.img === 'string' && params.img.trim()) {
+    // Rule 8 — never write a broken (404) item icon. Honor a supplied path only if it resolves on the
+    // static server; otherwise warn and substitute the neutral real floor icon.
+    let img = params.img.trim();
+    if (!(await imgResolves(img))) {
+      warnings.push(badAssetWarning('img', img, true));
+      img = GENERIC_ICON;
+    }
+    update.img = img;
+  }
   if (params.patch && typeof params.patch === 'object') {
     for (const [k, v] of Object.entries(params.patch)) update[k] = v;
   }
@@ -1703,5 +1724,6 @@ export async function updateActorItem(params: {
     actor: { id: actor.id, name: actor.name },
     item: { id: updated.id, name: updated.name, type: updated.type },
     appliedKeys,
+    ...(warnings.length ? { warnings } : {}),
   };
 }

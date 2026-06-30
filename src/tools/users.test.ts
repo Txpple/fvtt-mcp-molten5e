@@ -28,4 +28,17 @@ describe('set-user-avatar', () => {
     const { tools } = build();
     await expect(tools.handleSetUserAvatar({ avatar: '' })).rejects.toThrow();
   });
+
+  it('surfaces page warnings when the avatar 404s and is substituted', async () => {
+    const { tools } = build({
+      name: 'MCP-Claude',
+      avatar: 'icons/environment/people/commoner.webp',
+      warnings: [
+        'Supplied avatar "x/nope.webp" was not found on the server — substituted a real icon (rule 8).',
+      ],
+    });
+    const out = await tools.handleSetUserAvatar({ avatar: 'x/nope.webp' });
+    expect(out).toContain('not found on the server');
+    expect(out).toContain('⚠️ 1 warning(s):');
+  });
 });

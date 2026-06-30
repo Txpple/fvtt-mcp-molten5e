@@ -641,13 +641,24 @@ export class JournalTools {
         throw new Error(result?.error || 'Failed to create journal');
       }
 
+      // Surface any page-side asset warnings (e.g. an image page src that 404s — KEEP+WARN).
+      const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+      let message = `Journal "${result.name}" created with ${result.pageCount} page(s)`;
+      if (warns.length) {
+        message +=
+          '\n\n⚠️ ' +
+          warns.length +
+          ' warning(s):\n' +
+          warns.map((w: string) => '- ' + w).join('\n');
+      }
+
       return {
         success: true,
         journalId: result.id,
         journalName: result.name,
         pageCount: result.pageCount,
         pages: result.pages,
-        message: `Journal "${result.name}" created with ${result.pageCount} page(s)`,
+        message,
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'create-journal', 'journal creation');

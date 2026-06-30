@@ -116,10 +116,14 @@ export class CardsTools {
   async handleCreateCards(args: any): Promise<string> {
     const parsed = CreateCardsSchema.parse(args ?? {});
     const result = await this.foundry.call('createCards', parsed);
-    return (
+    let out =
       `Created ${result?.type} "${result?.cardsName}" (${result?.cardsId}) with ` +
-      `${result?.cardCount} card(s).`
-    );
+      `${result?.cardCount} card(s).`;
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    if (warns.length) {
+      out += `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`;
+    }
+    return out;
   }
 
   async handleImportCards(args: any): Promise<string> {

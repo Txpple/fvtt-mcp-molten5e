@@ -43,6 +43,25 @@ describe('update-actor-item tool', () => {
     expect(res.message).toContain('Claws');
   });
 
+  it('surfaces a bad-img (404) warning from the page layer', async () => {
+    const { tool } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Devil' },
+      item: { id: 'i1', name: 'Claws', type: 'weapon' },
+      appliedKeys: ['img'],
+      warnings: [
+        'Supplied img "x/nope.webp" was not found on the server — substituted a real icon.',
+      ],
+    });
+    const res = await tool.handleUpdateActorItem({
+      actorIdentifier: 'Devil',
+      itemIdentifier: 'Claws',
+      img: 'x/nope.webp',
+    });
+    expect(res.warnings).toHaveLength(1);
+    expect(res.message).toContain('not found on the server');
+  });
+
   it('rejects a call with nothing to change', async () => {
     const { tool } = makeTool();
     await expect(

@@ -168,6 +168,22 @@ describe('handleCreateWorldItems', () => {
     const { tools } = build();
     await expect(tools.handleCreateWorldItems({ items: [{ name: 'X' }] })).rejects.toThrow();
   });
+
+  it('surfaces page-side img warnings (bad path substituted)', async () => {
+    const { tools } = build({
+      createWorldItems: {
+        folderId: 'f1',
+        created: [{ id: 'n1' }],
+        warnings: [
+          'Supplied img "x/nope.webp" was not found on the server — substituted a real icon.',
+        ],
+      },
+    });
+    const out = await tools.handleCreateWorldItems({
+      items: [{ name: 'Sword', type: 'weapon', img: 'x/nope.webp' }],
+    });
+    expect(out.message).toContain('not found on the server');
+  });
 });
 
 describe('handleManageWorldItems (dispatch)', () => {

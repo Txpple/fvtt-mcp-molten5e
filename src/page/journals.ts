@@ -10,6 +10,7 @@
 // src/tools/quest-creation.ts + its tests expect.
 
 import { resolveJournalStrict, getOrCreateFolder, normalizeAssetPath } from './_shared.js';
+import { imgResolves, badAssetWarning } from './img-resolve.js';
 
 // Foundry document class (JournalEntry) lives in the page global scope but is
 // not declared in foundry-globals.d.ts; reach it off globalThis.
@@ -236,6 +237,7 @@ export async function createJournal(params: {
   name: string;
   pageCount: number;
   pages: Array<{ id: string; name: string }>;
+  warnings?: string[];
 }> {
   if (!params?.name || params.name.trim().length === 0) {
     throw new Error('name is required and must be a non-empty string');
@@ -244,40 +246,48 @@ export async function createJournal(params: {
     throw new Error('pages array is required and must contain at least one page');
   }
 
-  const pages = params.pages.map((p, idx) => {
-    if (!p || typeof p.name !== 'string' || p.name.trim().length === 0) {
-      throw new Error(`pages[${idx}]: "name" is required and must be a non-empty string`);
-    }
-    // An explicit sort lets the caller interleave/order pages; otherwise creation (array) order
-    // stands. Per-page ownership (JournalEntryPage carries its own in v10+) is omitted to inherit GM-only.
-    const sortField = typeof p.sort === 'number' ? { sort: p.sort } : {};
-    const ownershipField = p.ownership ? { ownership: p.ownership } : {};
-
-    // Image page (e.g. a map legend key): a picture page with no HTML body. Mirrors addJournalImage.
-    if (p.kind === 'image') {
-      const src = normalizeAssetPath(p.src ?? '');
-      if (!src) {
-        throw new Error(`pages[${idx}]: an image page requires a non-empty "src"`);
+  // KEEP+WARN: a handout image has no sensible substitute, so a non-resolving image src is kept and a
+  // warning is collected (validated AFTER normalizeAssetPath) — the page renders broken until fixed.
+  const warnings: string[] = [];
+  const pages = await Promise.all(
+    params.pages.map(async (p, idx) => {
+      if (!p || typeof p.name !== 'string' || p.name.trim().length === 0) {
+        throw new Error(`pages[${idx}]: "name" is required and must be a non-empty string`);
       }
+      // An explicit sort lets the caller interleave/order pages; otherwise creation (array) order
+      // stands. Per-page ownership (JournalEntryPage carries its own in v10+) is omitted to inherit GM-only.
+      const sortField = typeof p.sort === 'number' ? { sort: p.sort } : {};
+      const ownershipField = p.ownership ? { ownership: p.ownership } : {};
+
+      // Image page (e.g. a map legend key): a picture page with no HTML body. Mirrors addJournalImage.
+      if (p.kind === 'image') {
+        const src = normalizeAssetPath(p.src ?? '');
+        if (!src) {
+          throw new Error(`pages[${idx}]: an image page requires a non-empty "src"`);
+        }
+        if (!(await imgResolves(src))) {
+          warnings.push(badAssetWarning('src', src, false));
+        }
+        return {
+          type: 'image',
+          name: p.name,
+          src,
+          ...(p.caption ? { image: { caption: p.caption } } : {}),
+          ...sortField,
+          ...ownershipField,
+        };
+      }
+
+      // Text page (default): HTML content body.
       return {
-        type: 'image',
+        type: 'text',
         name: p.name,
-        src,
-        ...(p.caption ? { image: { caption: p.caption } } : {}),
+        text: { content: typeof p.content === 'string' ? p.content : '' },
         ...sortField,
         ...ownershipField,
       };
-    }
-
-    // Text page (default): HTML content body.
-    return {
-      type: 'text',
-      name: p.name,
-      text: { content: typeof p.content === 'string' ? p.content : '' },
-      ...sortField,
-      ...ownershipField,
-    };
-  });
+    })
+  );
 
   const journalData: any = {
     name: params.name,
@@ -298,6 +308,7 @@ export async function createJournal(params: {
     name: journal.name || params.name,
     pageCount: journal.pages?.size ?? pages.length,
     pages: (journal.pages?.contents ?? []).map((pg: any) => ({ id: pg.id, name: pg.name })),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
