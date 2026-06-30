@@ -1,5 +1,12 @@
 # Architecture & design-alignment review
 
+> **⚠️ SUPERSEDED SNAPSHOT (2026-06-24).** This is a historical point-in-time review, kept for its
+> rationale and roadmap — not a description of current state. The codebase has since advanced (95
+> tools, ~970 unit tests) and several gaps flagged below have landed: the typed+runtime-guarded
+> `foundry.call` seam (G3), the derive-from-`handlers` registry, the 2024 `sourceRules` default (G4),
+> the `unresolvedScale` @scale affordance (G5), and the `journal-builder` skill (G6). Read findings as
+> of the date/commit noted below, and verify against current code before acting on any of them.
+
 > Point-in-time review of the tool + skill surface against [`design.md`](../design.md), with a
 > long-term-architecture roadmap. Produced 2026-06-24 by a multi-agent pass (5 code-review
 > dimensions + 2 Foundry/dnd5e API-research streams → lead-architect synthesis → adversarial

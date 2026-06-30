@@ -46,6 +46,122 @@ const damagePart = z.object({
     .describe('Damage type (e.g. "fire", "slashing", "cold")'),
 });
 
+// Canonical enum value sets — single-sourced so the umbrella schema (advertised) and the per-mode
+// enforcement schemas reference the SAME literals and cannot drift apart (see the CAVEAT below).
+const ABILITY_ENUM = ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const;
+const ACTIVATION_ENUM = ['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'] as const;
+const WEAPON_CLASS_ENUM = ['natural', 'simpleM', 'martialM', 'simpleR', 'martialR'] as const;
+const ATTACK_TYPE_ENUM = ['melee', 'ranged'] as const;
+const AREA_SHAPE_ENUM = [
+  'cone',
+  'cube',
+  'cylinder',
+  'emanation',
+  'line',
+  'radius',
+  'sphere',
+] as const;
+const AFFECTS_ENUM = ['creature', 'object', 'space', ''] as const;
+const AREA_UNITS_ENUM = ['ft', 'm'] as const;
+const SOURCE_RULES_ENUM = ['2014', '2024'] as const;
+const SAVE_ON_SAVE_ENUM = ['half', 'none'] as const;
+const SPELLCASTING_CLASS_ENUM = [
+  'artificer',
+  'bard',
+  'cleric',
+  'druid',
+  'paladin',
+  'ranger',
+  'sorcerer',
+  'warlock',
+  'wizard',
+] as const;
+const SPELL_SCHOOL_ENUM = ['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs'] as const;
+const SPELL_METHOD_ENUM = ['atwill', 'innate', 'ritual', 'pact', 'spell'] as const;
+const SPELL_COMPONENT_ENUM = ['vocal', 'somatic', 'material', 'concentration', 'ritual'] as const;
+const SPELL_RANGE_UNITS_ENUM = ['ft', 'mi', 'touch', 'self', 'spec', 'any'] as const;
+const SPELL_ACTIVITY_ENUM = ['attack', 'save', 'damage', 'heal', 'utility'] as const;
+const HEAL_TYPE_ENUM = ['healing', 'temphp'] as const;
+
+// Shared per-mode field fragments (reused zod instances — safe across multiple z.object() parents).
+const featureHeaderFields = {
+  actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
+  featureName: z.string().min(1, 'featureName cannot be empty'),
+  description: z.string().default(''),
+  img: z.string().optional(),
+};
+const activationField = z.enum(ACTIVATION_ENUM).default('action');
+const damagePartsRequired = z.array(damagePart).min(1, 'at least one damage part is required');
+const sourceMetaFields = {
+  sourceRules: z.enum(SOURCE_RULES_ENUM).default('2024'),
+  sourceBook: z.string().default(''),
+  sourcePage: z.string().default(''),
+};
+// Attack mechanics shared verbatim by the `attack` and `attack-with-save` modes.
+const attackCoreFields = {
+  attackType: z.enum(ATTACK_TYPE_ENUM),
+  weaponClass: z.enum(WEAPON_CLASS_ENUM).default('natural'),
+  abilityModifier: z.enum(ABILITY_ENUM).optional(),
+  attackBonus: z.number().int().min(0).max(10).default(0),
+  proficient: z.boolean().default(true),
+  equipped: z.boolean().default(true),
+  reachFt: z.number().int().min(5).default(5),
+  rangeFt: z.number().int().min(1).optional(),
+  longRangeFt: z.number().int().min(1).optional(),
+  damageParts: damagePartsRequired,
+  properties: z.array(z.string()).default([]),
+};
+
+// The ranged-attack cross-field rules, shared by `attack` and `attack-with-save`.
+function refineRangedAttack(
+  data: { attackType?: string; rangeFt?: number | undefined; longRangeFt?: number | undefined },
+  ctx: z.RefinementCtx
+): void {
+  if (data.attackType === 'ranged' && data.rangeFt === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rangeFt'],
+      message: 'rangeFt is required when attackType is "ranged"',
+    });
+  }
+  if (
+    data.longRangeFt !== undefined &&
+    data.rangeFt !== undefined &&
+    data.longRangeFt <= data.rangeFt
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['longRangeFt'],
+      message: `longRangeFt (${data.longRangeFt}) must be greater than rangeFt (${data.rangeFt})`,
+    });
+  }
+}
+
+// ── Formatting helpers (pure) — collapse the per-mode response boilerplate. ──
+type DamageDie = { number: number; denomination: number; type: string };
+const damageList = (parts: ReadonlyArray<DamageDie>): string =>
+  parts.map(p => `${p.number}d${p.denomination} ${p.type}`).join(' + ');
+const warningBlock = (warnings: ReadonlyArray<string>): string =>
+  warnings.length > 0
+    ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
+    : '';
+
+// Collect (deduped) "unknown damage type" warnings, optionally logging each as it is found.
+function unknownDamageWarnings(
+  parts: ReadonlyArray<{ type: string }>,
+  log?: (msg: string, meta?: unknown) => void
+): string[] {
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!DAMAGE_CANONICAL.has(part.type)) {
+      const msg = `Unknown damage type "${part.type}" — verify it matches dnd5e system values`;
+      if (!out.includes(msg)) out.push(msg);
+      log?.(msg, { value: part.type });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Advertised input contract (single source of truth)
 //
@@ -54,11 +170,14 @@ const damagePart = z.object({
 // advertised surface — every parameter any mode accepts, all optional except the two universal
 // keys — and getToolDefinitions() generates its inputSchema from it via toInputSchema().
 //
-// CAVEAT: the umbrella's field types/enums are hand-MAINTAINED in parallel with the per-mode
-// enforcement schemas (a true discriminated union doesn't fit MCP's flat-args model), so they CAN
-// drift. The drift is fail-safe — the umbrella only ever advertises looser constraints than the mode
-// enforces (e.g. a missing .int()), so a bad value passes the advertised schema and is then rejected
-// by the per-mode .parse() with a clear ZodError, never silently mis-applied. Keep them in sync.
+// CAVEAT: the umbrella's field SET and per-field wrappers (.optional()/.default()) are still
+// hand-MAINTAINED in parallel with the per-mode enforcement schemas (a true discriminated union
+// doesn't fit MCP's flat-args model). The enum VALUE sets are now single-sourced (the *_ENUM consts
+// above) and the shared field fragments (featureHeaderFields / attackCoreFields / sourceMetaFields /
+// activationField / damagePartsRequired) are reused by both sides, so those can no longer drift. What
+// remains is fail-safe — the umbrella only ever advertises looser constraints than the mode enforces
+// (e.g. a missing .int()), so a bad value passes the advertised schema and is then rejected by the
+// per-mode .parse() with a clear ZodError, never silently mis-applied.
 // ---------------------------------------------------------------------------
 
 export const AddFeatureSchema = z.object({
@@ -107,7 +226,7 @@ export const AddFeatureSchema = z.object({
         'attack-with-save, aura, homebrew-spell.'
     ),
   activationType: z
-    .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
+    .enum(ACTIVATION_ENUM)
     .default('action')
     .describe(
       'Action economy type. Used by: save, attack, attack-with-save, aura. Default: "action".'
@@ -128,7 +247,7 @@ export const AddFeatureSchema = z.object({
 
   // ── Save parameters ───────────────────────────────────────────────
   saveAbility: z
-    .enum(['str', 'dex', 'con', 'int', 'wis', 'cha'])
+    .enum(ABILITY_ENUM)
     .optional()
     .describe('Ability used for the saving throw. Required for: save, attack-with-save.'),
   saveDC: z
@@ -152,7 +271,7 @@ export const AddFeatureSchema = z.object({
         'Required for: attack-with-save.'
     ),
   saveOnSave: z
-    .enum(['half', 'none'])
+    .enum(SAVE_ON_SAVE_ENUM)
     .default('none')
     .describe(
       '"none" — no damage on a successful save (default). ' +
@@ -161,7 +280,7 @@ export const AddFeatureSchema = z.object({
 
   // ── Area parameters ───────────────────────────────────────────────
   areaType: z
-    .enum(['cone', 'cube', 'cylinder', 'emanation', 'line', 'radius', 'sphere', ''])
+    .enum([...AREA_SHAPE_ENUM, ''])
     .default('')
     .describe(
       'Area-of-effect template shape. ' +
@@ -177,31 +296,31 @@ export const AddFeatureSchema = z.object({
         'Required for: aura. Required for save when areaType is set.'
     ),
   areaUnits: z
-    .enum(['ft', 'm'])
+    .enum(AREA_UNITS_ENUM)
     .default('ft')
     .describe('Units for areaSize. Used by: save, aura. Default: "ft".'),
   affectsType: z
-    .enum(['creature', 'object', 'space', ''])
+    .enum(AFFECTS_ENUM)
     .default('creature')
     .describe('What the area targets. Used by: save, aura. Default: "creature".'),
 
   // ── Attack parameters ─────────────────────────────────────────────
   attackType: z
-    .enum(['melee', 'ranged'])
+    .enum(ATTACK_TYPE_ENUM)
     .optional()
     .describe(
       '"melee" for reach-based attacks; "ranged" for bow/thrown attacks. ' +
         'Required for: attack, attack-with-save.'
     ),
   weaponClass: z
-    .enum(['natural', 'simpleM', 'martialM', 'simpleR', 'martialR'])
+    .enum(WEAPON_CLASS_ENUM)
     .default('natural')
     .describe(
       'Weapon category. Use "natural" for monster attacks (claws, bite, touch). ' +
         'Used by: attack, attack-with-save. Default: "natural".'
     ),
   abilityModifier: z
-    .enum(['str', 'dex', 'con', 'int', 'wis', 'cha'])
+    .enum(ABILITY_ENUM)
     .optional()
     .describe(
       'Ability used for to-hit and damage rolls. ' +
@@ -263,17 +382,7 @@ export const AddFeatureSchema = z.object({
 
   // ── Spellcasting parameters ───────────────────────────────────────
   spellcastingClass: z
-    .enum([
-      'artificer',
-      'bard',
-      'cleric',
-      'druid',
-      'paladin',
-      'ranger',
-      'sorcerer',
-      'warlock',
-      'wizard',
-    ])
+    .enum(SPELLCASTING_CLASS_ENUM)
     .optional()
     .describe(
       'The spellcasting class — determines slot table and default casting ability. ' +
@@ -288,7 +397,7 @@ export const AddFeatureSchema = z.object({
       'Class level (1–20). Determines how many slots the actor receives. Required for: spellcasting.'
     ),
   spellcastingAbility: z
-    .enum(['str', 'dex', 'con', 'int', 'wis', 'cha'])
+    .enum(ABILITY_ENUM)
     .optional()
     .describe(
       'Override the casting ability. Omit to use the class default. ' + 'Used by: spellcasting.'
@@ -335,11 +444,11 @@ export const AddFeatureSchema = z.object({
     .optional()
     .describe('Spell level 0–9 (0 = cantrip). Required for: homebrew-spell.'),
   spellSchool: z
-    .enum(['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs'])
+    .enum(SPELL_SCHOOL_ENUM)
     .optional()
     .describe('School: abj/con/div/enc/evo/ill/nec/trs. Used by: homebrew-spell.'),
   spellMethod: z
-    .enum(['atwill', 'innate', 'ritual', 'pact', 'spell'])
+    .enum(SPELL_METHOD_ENUM)
     .default('spell')
     .describe(
       'Casting method. "innate"/"atwill" for monster innate casting; "spell" for prepared/known. ' +
@@ -355,7 +464,7 @@ export const AddFeatureSchema = z.object({
       'Preparation state: 0 unprepared, 1 prepared, 2 always prepared. Used by: homebrew-spell.'
     ),
   spellComponents: z
-    .array(z.enum(['vocal', 'somatic', 'material', 'concentration', 'ritual']))
+    .array(z.enum(SPELL_COMPONENT_ENUM))
     .default([])
     .describe('Components/properties. Used by: homebrew-spell.'),
   spellMaterials: z
@@ -369,7 +478,7 @@ export const AddFeatureSchema = z.object({
     .optional()
     .describe('Numeric range (with spellRangeUnits). Used by: homebrew-spell.'),
   spellRangeUnits: z
-    .enum(['ft', 'mi', 'touch', 'self', 'spec', 'any'])
+    .enum(SPELL_RANGE_UNITS_ENUM)
     .optional()
     .describe('Range units. Use "self"/"touch" without spellRange. Used by: homebrew-spell.'),
   spellDuration: z
@@ -381,7 +490,7 @@ export const AddFeatureSchema = z.object({
     .optional()
     .describe('Duration units (e.g. "inst", "minute", "hour", "round"). Used by: homebrew-spell.'),
   spellActivity: z
-    .enum(['attack', 'save', 'damage', 'heal', 'utility'])
+    .enum(SPELL_ACTIVITY_ENUM)
     .optional()
     .describe(
       'Optional single activity giving the spell mechanics. Pair with damageParts (attack/damage/save), ' +
@@ -391,14 +500,14 @@ export const AddFeatureSchema = z.object({
     .object({
       number: z.number().int().min(1),
       denomination: z.literal([4, 6, 8, 10, 12, 20, 100]),
-      type: z.enum(['healing', 'temphp']).optional(),
+      type: z.enum(HEAL_TYPE_ENUM).optional(),
     })
     .optional()
     .describe('Healing dice for a heal activity. Used by: homebrew-spell (spellActivity "heal").'),
 
   // ── Source metadata ───────────────────────────────────────────────
   sourceRules: z
-    .enum(['2014', '2024'])
+    .enum(SOURCE_RULES_ENUM)
     .default('2024')
     .describe(
       'Rules edition. Used by: passive, attack, attack-with-save, aura, spellcasting, homebrew-spell. Default: "2024" (pass "2014" for legacy content).'
@@ -539,15 +648,10 @@ export class DnD5eAddFeatureTool {
   private async handlePassive(args: any): Promise<any> {
     const schema = z.object({
       featureType: z.literal('passive'),
-      actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-      featureName: z.string().min(1, 'featureName cannot be empty'),
-      description: z.string().default(''),
-      img: z.string().optional(),
+      ...featureHeaderFields,
       featType: z.string().optional(),
       requirements: z.string().optional(),
-      sourceRules: z.enum(['2014', '2024']).default('2024'),
-      sourceBook: z.string().default(''),
-      sourcePage: z.string().default(''),
+      ...sourceMetaFields,
     });
 
     const parsed = schema.parse(args);
@@ -598,23 +702,16 @@ export class DnD5eAddFeatureTool {
     const schema = z
       .object({
         featureType: z.literal('save'),
-        actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-        featureName: z.string().min(1, 'featureName cannot be empty'),
-        description: z.string().default(''),
-        img: z.string().optional(),
-        activationType: z
-          .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
-          .default('action'),
-        saveAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']),
+        ...featureHeaderFields,
+        activationType: activationField,
+        saveAbility: z.enum(ABILITY_ENUM),
         saveDC: z.number().int().min(1).max(30),
-        damageParts: z.array(damagePart).min(1, 'at least one damage part is required'),
+        damageParts: damagePartsRequired,
         halfOnSave: z.boolean().default(true),
-        areaType: z
-          .enum(['cone', 'cube', 'cylinder', 'emanation', 'line', 'radius', 'sphere', ''])
-          .default(''),
+        areaType: z.enum([...AREA_SHAPE_ENUM, '']).default(''),
         areaSize: z.number().positive().optional(),
-        areaUnits: z.enum(['ft', 'm']).default('ft'),
-        affectsType: z.enum(['creature', 'object', 'space', '']).default('creature'),
+        areaUnits: z.enum(AREA_UNITS_ENUM).default('ft'),
+        affectsType: z.enum(AFFECTS_ENUM).default('creature'),
       })
       .superRefine((data, ctx) => {
         if (data.areaType !== '' && data.areaSize === undefined) {
@@ -653,9 +750,7 @@ export class DnD5eAddFeatureTool {
   }
 
   private formatSaveResponse(result: any, params: any): any {
-    const damageDesc = (params.damageParts as any[])
-      .map(p => `${p.number}d${p.denomination} ${p.type}`)
-      .join(' + ');
+    const damageDesc = damageList(params.damageParts);
     const areaDesc = params.areaType
       ? `, ${params.areaSize}${params.areaUnits} ${params.areaType}`
       : '';
@@ -686,63 +781,20 @@ export class DnD5eAddFeatureTool {
     const schema = z
       .object({
         featureType: z.literal('attack'),
-        actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-        featureName: z.string().min(1, 'featureName cannot be empty'),
-        description: z.string().default(''),
-        img: z.string().optional(),
-        activationType: z
-          .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
-          .default('action'),
-        attackType: z.enum(['melee', 'ranged']),
-        weaponClass: z
-          .enum(['natural', 'simpleM', 'martialM', 'simpleR', 'martialR'])
-          .default('natural'),
-        abilityModifier: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
-        attackBonus: z.number().int().min(0).max(10).default(0),
-        proficient: z.boolean().default(true),
-        equipped: z.boolean().default(true),
-        reachFt: z.number().int().min(5).default(5),
-        rangeFt: z.number().int().min(1).optional(),
-        longRangeFt: z.number().int().min(1).optional(),
-        damageParts: z.array(damagePart).min(1, 'at least one damage part is required'),
-        properties: z.array(z.string()).default([]),
-        sourceRules: z.enum(['2014', '2024']).default('2024'),
-        sourceBook: z.string().default(''),
-        sourcePage: z.string().default(''),
+        ...featureHeaderFields,
+        activationType: activationField,
+        ...attackCoreFields,
+        ...sourceMetaFields,
       })
-      .superRefine((data, ctx) => {
-        if (data.attackType === 'ranged' && data.rangeFt === undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['rangeFt'],
-            message: 'rangeFt is required when attackType is "ranged"',
-          });
-        }
-        if (
-          data.longRangeFt !== undefined &&
-          data.rangeFt !== undefined &&
-          data.longRangeFt <= data.rangeFt
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['longRangeFt'],
-            message: `longRangeFt (${data.longRangeFt}) must be greater than rangeFt (${data.rangeFt})`,
-          });
-        }
-      });
+      .superRefine(refineRangedAttack);
 
     const parsed = schema.parse(args);
     const effectiveAbility: string =
       parsed.abilityModifier ?? (parsed.attackType === 'melee' ? 'str' : 'dex');
 
-    const warnings: string[] = [];
-    for (const part of parsed.damageParts) {
-      if (!DAMAGE_CANONICAL.has(part.type)) {
-        const msg = `Unknown damage type "${part.type}" — verify it matches dnd5e system values`;
-        warnings.push(msg);
-        this.logger.warn(msg, { value: part.type });
-      }
-    }
+    const warnings: string[] = unknownDamageWarnings(parsed.damageParts, (m, meta) =>
+      this.logger.warn(m, meta)
+    );
     for (const prop of parsed.properties) {
       if (!ATTACK_PROPERTY_CANONICAL.has(prop)) {
         const msg = `Unknown weapon property "${prop}" — verify it matches dnd5e system values`;
@@ -780,9 +832,7 @@ export class DnD5eAddFeatureTool {
 
   private formatAttackResponse(result: any, params: any, warnings: string[]): any {
     const bonusStr = params.attackBonus > 0 ? ` +${params.attackBonus} to hit` : '';
-    const damageDesc = (params.damageParts as any[])
-      .map(p => `${p.number}d${p.denomination} ${p.type}`)
-      .join(' + ');
+    const damageDesc = damageList(params.damageParts);
     const rangeDesc =
       params.attackType === 'melee'
         ? `reach ${params.reachFt ?? 5} ft.`
@@ -796,10 +846,7 @@ export class DnD5eAddFeatureTool {
       `**Range/Reach:** ${rangeDesc}`,
       `**Weapon class:** ${params.weaponClass}`,
     ].join('\n');
-    const warningSection =
-      warnings.length > 0
-        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
-        : '';
+    const warningSection = warningBlock(warnings);
     return {
       summary,
       success: true,
@@ -818,67 +865,25 @@ export class DnD5eAddFeatureTool {
     const schema = z
       .object({
         featureType: z.literal('attack-with-save'),
-        actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-        featureName: z.string().min(1, 'featureName cannot be empty'),
-        description: z.string().default(''),
-        img: z.string().optional(),
-        activationType: z
-          .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
-          .default('action'),
-        attackType: z.enum(['melee', 'ranged']),
-        weaponClass: z
-          .enum(['natural', 'simpleM', 'martialM', 'simpleR', 'martialR'])
-          .default('natural'),
-        abilityModifier: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
-        attackBonus: z.number().int().min(0).max(10).default(0),
-        proficient: z.boolean().default(true),
-        equipped: z.boolean().default(true),
-        reachFt: z.number().int().min(5).default(5),
-        rangeFt: z.number().int().min(1).optional(),
-        longRangeFt: z.number().int().min(1).optional(),
-        damageParts: z.array(damagePart).min(1, 'at least one damage part is required'),
-        properties: z.array(z.string()).default([]),
-        saveAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']),
+        ...featureHeaderFields,
+        activationType: activationField,
+        ...attackCoreFields,
+        saveAbility: z.enum(ABILITY_ENUM),
         saveDC: z.number().int().min(1).max(30),
         saveDamageParts: z.array(damagePart).min(1, 'at least one save damage part is required'),
-        saveOnSave: z.enum(['half', 'none']).default('none'),
-        sourceRules: z.enum(['2014', '2024']).default('2024'),
-        sourceBook: z.string().default(''),
-        sourcePage: z.string().default(''),
+        saveOnSave: z.enum(SAVE_ON_SAVE_ENUM).default('none'),
+        ...sourceMetaFields,
       })
-      .superRefine((data, ctx) => {
-        if (data.attackType === 'ranged' && data.rangeFt === undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['rangeFt'],
-            message: 'rangeFt is required when attackType is "ranged"',
-          });
-        }
-        if (
-          data.longRangeFt !== undefined &&
-          data.rangeFt !== undefined &&
-          data.longRangeFt <= data.rangeFt
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['longRangeFt'],
-            message: `longRangeFt (${data.longRangeFt}) must be greater than rangeFt (${data.rangeFt})`,
-          });
-        }
-      });
+      .superRefine(refineRangedAttack);
 
     const parsed = schema.parse(args);
     const effectiveAbility: string =
       parsed.abilityModifier ?? (parsed.attackType === 'melee' ? 'str' : 'dex');
 
-    const warnings: string[] = [];
-    for (const part of [...parsed.damageParts, ...parsed.saveDamageParts]) {
-      if (!DAMAGE_CANONICAL.has(part.type)) {
-        const msg = `Unknown damage type "${part.type}" — verify it matches dnd5e system values`;
-        if (!warnings.includes(msg)) warnings.push(msg);
-        this.logger.warn(msg, { value: part.type });
-      }
-    }
+    const warnings: string[] = unknownDamageWarnings(
+      [...parsed.damageParts, ...parsed.saveDamageParts],
+      (m, meta) => this.logger.warn(m, meta)
+    );
 
     this.logger.info('Adding attack+save feature to D&D 5e actor', {
       actorIdentifier: parsed.actorIdentifier,
@@ -910,12 +915,8 @@ export class DnD5eAddFeatureTool {
 
   private formatAttackWithSaveResponse(result: any, params: any, warnings: string[]): any {
     const bonusStr = params.attackBonus > 0 ? ` +${params.attackBonus} to hit` : '';
-    const attackDamageDesc = (params.damageParts as any[])
-      .map(p => `${p.number}d${p.denomination} ${p.type}`)
-      .join(' + ');
-    const saveDamageDesc = (params.saveDamageParts as any[])
-      .map(p => `${p.number}d${p.denomination} ${p.type}`)
-      .join(' + ');
+    const attackDamageDesc = damageList(params.damageParts);
+    const saveDamageDesc = damageList(params.saveDamageParts);
     const rangeDesc =
       params.attackType === 'melee'
         ? `reach ${params.reachFt ?? 5} ft.`
@@ -928,10 +929,7 @@ export class DnD5eAddFeatureTool {
       `**Attack damage:** ${attackDamageDesc}`,
       `**Save:** DC ${params.saveDC} ${String(params.saveAbility).toUpperCase()} — ${saveDamageDesc} (${params.saveOnSave === 'half' ? 'half on save' : 'no damage on save'})`,
     ].join('\n');
-    const warningSection =
-      warnings.length > 0
-        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
-        : '';
+    const warningSection = warningBlock(warnings);
     return {
       summary,
       success: true,
@@ -949,33 +947,21 @@ export class DnD5eAddFeatureTool {
   private async handleAura(args: any): Promise<any> {
     const schema = z.object({
       featureType: z.literal('aura'),
-      actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-      featureName: z.string().min(1, 'featureName cannot be empty'),
-      description: z.string().default(''),
-      img: z.string().optional(),
-      activationType: z
-        .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
-        .default('action'),
-      damageParts: z.array(damagePart).min(1, 'at least one damage part is required'),
-      areaType: z.enum(['cone', 'cube', 'cylinder', 'emanation', 'line', 'radius', 'sphere']),
+      ...featureHeaderFields,
+      activationType: activationField,
+      damageParts: damagePartsRequired,
+      areaType: z.enum(AREA_SHAPE_ENUM),
       areaSize: z.number().positive('areaSize must be greater than 0'),
-      areaUnits: z.enum(['ft', 'm']).default('ft'),
-      affectsType: z.enum(['creature', 'object', 'space', '']).default('creature'),
-      sourceRules: z.enum(['2014', '2024']).default('2024'),
-      sourceBook: z.string().default(''),
-      sourcePage: z.string().default(''),
+      areaUnits: z.enum(AREA_UNITS_ENUM).default('ft'),
+      affectsType: z.enum(AFFECTS_ENUM).default('creature'),
+      ...sourceMetaFields,
     });
 
     const parsed = schema.parse(args);
 
-    const warnings: string[] = [];
-    for (const part of parsed.damageParts) {
-      if (!DAMAGE_CANONICAL.has(part.type)) {
-        const msg = `Unknown damage type "${part.type}" — verify it matches dnd5e system values`;
-        warnings.push(msg);
-        this.logger.warn(msg, { value: part.type });
-      }
-    }
+    const warnings: string[] = unknownDamageWarnings(parsed.damageParts, (m, meta) =>
+      this.logger.warn(m, meta)
+    );
 
     this.logger.info('Adding aura feature to D&D 5e actor', {
       actorIdentifier: parsed.actorIdentifier,
@@ -1002,9 +988,7 @@ export class DnD5eAddFeatureTool {
   }
 
   private formatAuraResponse(result: any, params: any, warnings: string[]): any {
-    const damageDesc = (params.damageParts as any[])
-      .map(p => `${p.number}d${p.denomination} ${p.type}`)
-      .join(' + ');
+    const damageDesc = damageList(params.damageParts);
     const areaDesc = `${params.areaSize}${params.areaUnits} ${params.areaType}`;
     const summary = `✅ Aura "${result.item.name}" added to "${result.actor.name}"`;
     const details = [
@@ -1014,10 +998,7 @@ export class DnD5eAddFeatureTool {
       `**Area:** ${areaDesc}, affects: ${params.affectsType || 'any'}`,
       `**Activation:** ${params.activationType}`,
     ].join('\n');
-    const warningSection =
-      warnings.length > 0
-        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
-        : '';
+    const warningSection = warningBlock(warnings);
     return {
       summary,
       success: true,
@@ -1036,20 +1017,10 @@ export class DnD5eAddFeatureTool {
     const schema = z.object({
       featureType: z.literal('spellcasting'),
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-      spellcastingClass: z.enum([
-        'artificer',
-        'bard',
-        'cleric',
-        'druid',
-        'paladin',
-        'ranger',
-        'sorcerer',
-        'warlock',
-        'wizard',
-      ]),
+      spellcastingClass: z.enum(SPELLCASTING_CLASS_ENUM),
       spellcastingLevel: z.number().int().min(1).max(20),
-      spellcastingAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
-      sourceRules: z.enum(['2014', '2024']).default('2024'),
+      spellcastingAbility: z.enum(ABILITY_ENUM).optional(),
+      sourceRules: z.enum(SOURCE_RULES_ENUM).default('2024'),
     });
 
     const parsed = schema.parse(args);
@@ -1156,40 +1127,33 @@ export class DnD5eAddFeatureTool {
     const schema = z
       .object({
         featureType: z.literal('homebrew-spell'),
-        actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
-        featureName: z.string().min(1, 'featureName cannot be empty'),
-        description: z.string().default(''),
-        img: z.string().optional(),
+        ...featureHeaderFields,
         spellLevel: z.number().int().min(0).max(9),
-        spellSchool: z.enum(['abj', 'con', 'div', 'enc', 'evo', 'ill', 'nec', 'trs']).optional(),
-        spellMethod: z.enum(['atwill', 'innate', 'ritual', 'pact', 'spell']).default('spell'),
+        spellSchool: z.enum(SPELL_SCHOOL_ENUM).optional(),
+        spellMethod: z.enum(SPELL_METHOD_ENUM).default('spell'),
         spellPrepared: z.number().int().min(0).max(2).default(0),
-        spellComponents: z
-          .array(z.enum(['vocal', 'somatic', 'material', 'concentration', 'ritual']))
-          .default([]),
+        spellComponents: z.array(z.enum(SPELL_COMPONENT_ENUM)).default([]),
         spellMaterials: z.string().optional(),
         spellRange: z.number().optional(),
-        spellRangeUnits: z.enum(['ft', 'mi', 'touch', 'self', 'spec', 'any']).optional(),
+        spellRangeUnits: z.enum(SPELL_RANGE_UNITS_ENUM).optional(),
         spellDuration: z.number().optional(),
         spellDurationUnits: z.string().optional(),
-        activationType: z
-          .enum(['action', 'bonus', 'reaction', 'legendary', 'lair', 'special'])
-          .default('action'),
+        activationType: activationField,
         // optional single activity
-        spellActivity: z.enum(['attack', 'save', 'damage', 'heal', 'utility']).optional(),
+        spellActivity: z.enum(SPELL_ACTIVITY_ENUM).optional(),
         damageParts: z.array(damagePart).optional(),
-        attackType: z.enum(['melee', 'ranged']).optional(),
-        saveAbility: z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']).optional(),
+        attackType: z.enum(ATTACK_TYPE_ENUM).optional(),
+        saveAbility: z.enum(ABILITY_ENUM).optional(),
         saveDC: z.number().int().min(1).max(30).optional(),
-        saveOnSave: z.enum(['half', 'none']).default('none'),
+        saveOnSave: z.enum(SAVE_ON_SAVE_ENUM).default('none'),
         healAmount: z
           .object({
             number: z.number().int().min(1),
             denomination: z.literal([4, 6, 8, 10, 12, 20, 100]),
-            type: z.enum(['healing', 'temphp']).optional(),
+            type: z.enum(HEAL_TYPE_ENUM).optional(),
           })
           .optional(),
-        sourceRules: z.enum(['2014', '2024']).default('2024'),
+        sourceRules: z.enum(SOURCE_RULES_ENUM).default('2024'),
       })
       .superRefine((data, ctx) => {
         if (
@@ -1225,11 +1189,7 @@ export class DnD5eAddFeatureTool {
     if (parsed.spellSchool === undefined) {
       warnings.push('No spellSchool set — the spell will have an empty school.');
     }
-    for (const part of parsed.damageParts ?? []) {
-      if (!DAMAGE_CANONICAL.has(part.type)) {
-        warnings.push(`Unknown damage type "${part.type}" — verify it matches dnd5e system values`);
-      }
-    }
+    warnings.push(...unknownDamageWarnings(parsed.damageParts ?? []));
 
     // Build the optional activity opts the page builder consumes.
     let activity: Record<string, any> | undefined;
@@ -1293,10 +1253,7 @@ export class DnD5eAddFeatureTool {
       `**Components:** ${(params.spellComponents ?? []).join(', ') || '(none)'}`,
       ...(result.activityType ? [`**Activity:** ${result.activityType}`] : []),
     ].join('\n');
-    const warningSection =
-      warnings.length > 0
-        ? `\n\n⚠️ **Warnings (${warnings.length}):**\n${warnings.map(w => `- ${w}`).join('\n')}`
-        : '';
+    const warningSection = warningBlock(warnings);
     return {
       summary,
       success: true,

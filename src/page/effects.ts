@@ -11,41 +11,7 @@
 //  - `transfer` (item effects) makes the effect apply to the owning actor; default true for items.
 
 import { resolveActorFuzzy, resolveActorItem, resolveWorldItem } from './_shared.js';
-
-/** Legacy numeric ActiveEffect mode → v14 string type (CONST.ACTIVE_EFFECT_MODES). */
-const MODE_NUM_TO_TYPE: Record<number, string> = {
-  0: 'custom',
-  1: 'multiply',
-  2: 'add',
-  3: 'downgrade',
-  4: 'upgrade',
-  5: 'override',
-};
-
-/** Normalize an authored change to the v14 { key, value(string), type, phase } shape. */
-function normalizeChange(c: any): Record<string, unknown> {
-  const type =
-    typeof c?.type === 'string'
-      ? c.type
-      : typeof c?.mode === 'number'
-        ? (MODE_NUM_TO_TYPE[c.mode] ?? 'add')
-        : 'add';
-  return {
-    key: String(c?.key ?? ''),
-    value: c?.value === undefined || c?.value === null ? '' : String(c.value),
-    type,
-    phase: typeof c?.phase === 'string' ? c.phase : 'initial',
-  };
-}
-
-/** Summarize an effect's changes for list/read output (surfacing type from legacy mode if needed). */
-function summarizeChanges(changes: any[]): Array<Record<string, unknown>> {
-  return (changes ?? []).map((c: any) => ({
-    key: c?.key,
-    value: c?.value,
-    type: typeof c?.type === 'string' ? c.type : (MODE_NUM_TO_TYPE[c?.mode] ?? undefined),
-  }));
-}
+import { normalizeChange, summarizeChanges } from './effect-changes.js';
 
 export async function manageEffect(params: {
   action: 'create' | 'edit' | 'delete' | 'list';

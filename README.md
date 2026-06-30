@@ -94,13 +94,14 @@ scene-pack module — just not manipulated live.)
 
 ```
 src/
-  index.ts          MCP server entry (stdio) — registers the tools, dispatches to foundry.call()
+  index.ts          MCP server entry (stdio) — serves the registry's tools over JSON-RPC
+  registry.ts       single source of truth: tool name → handler (advertised list derived from it)
   foundry.ts        THE Playwright seam: launch headless Chromium → wake → join → inject → call()
   config.ts         env/config loader (reads .env from the repo root)
   tools/            MCP tool classes — Plane A world tools + molten/ (Plane B WebDAV file tools)
   page/             page-side domain library, bundled into dist/page.bundle.js and injected
 scripts/            dev/maintenance scripts (verify-*.mjs live acceptance, spike-headless)
-tests/              vitest unit tests + gated live integration suites
+tests/              gated live integration suites (offline unit tests live beside the code in src/**)
 ```
 
 ## Requirements
@@ -169,7 +170,7 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**85 tools total: 76 over the headless bridge (Plane A) + 9 Molten WebDAV file tools (Plane B).**
+**95 tools total: 85 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes, roll tables, cards, ownership, folders/organization, 5e-specific helpers
@@ -185,6 +186,7 @@ WebDAV) is the asset file library.
 | `asset-info`          | Existence + size/type/mtime/public URL for one path under `Data/`                |
 | `download-asset`      | Download a file from under `Data/` to a local path                               |
 | `upload-asset`        | Upload a local file under `Data/` (auto-creates parents; refuses world-DB paths) |
+| `upload-asset-tree`   | Recursively upload a local directory tree under `Data/` (preserves layout)        |
 | `create-asset-folder` | Create a folder (and missing parents) under `Data/` (idempotent)                 |
 | `delete-asset`        | Delete a file (reference-aware; refuses if still used unless `force`)            |
 | `move-asset`          | Move/rename a file (refuses or relinks references; `relink`/`force`)             |
@@ -234,16 +236,19 @@ The project is one package: a Node-side MCP server (`src/`) that drives a headle
 through the `foundry.call(name, args)` seam, plus a page-side library (`src/page/**`, bundled into
 `dist/page.bundle.js` and injected as `window.__fvtt`). Adding a tool touches both halves:
 
-1. **MCP tool class** (`src/tools/<category>.ts`) — add to `getToolDefinitions()` (JSON-Schema
-   `inputSchema`) + a `handleX(args)` that `zod.parse`es and calls `foundry.call('<op>', data)`.
-2. **Dispatch** (`src/index.ts`) — instantiate the class, spread its definitions into `allTools`, and
-   add a `case` in `dispatch()`. (`src/tools/registry.test.ts` guards that every advertised tool has a
-   dispatch case.)
+1. **MCP tool class** (`src/tools/<category>.ts`) — declare the input contract **once** as a hoisted
+   zod schema; `getToolDefinitions()` returns `{ name, description, inputSchema: toInputSchema(schema) }`
+   (the advertised JSON Schema is **generated** from that zod via `src/utils/schema.ts` — never
+   hand-written), plus a `handleX(args)` that `schema.parse`es and calls `foundry.call('<op>', data)`.
+2. **Register it** (`src/registry.ts`) — instantiate the class, add its `getToolDefinitions()` to the
+   collected definitions, and add a `'<tool-name>': args => tool.handleX(args)` entry to the `handlers`
+   map. The advertised tool list is **derived** from `handlers`, so a handler with no matching
+   definition fails loudly at startup (`src/tools/registry.test.ts` guards the surface).
 3. **Page-side op** (`src/page/<domain>.ts`) — implement `<op>(args)` and register it in
    `src/page/index.ts`. This runs **inside** the live Foundry page (the actual `Document.create` /
    `update` / `delete`): import only browser + Foundry globals here, never Node/Playwright.
-4. **Build + verify** — `npm run build`, then `npm test`, then biome (`npm run check`). For live
-   changes, `npm run test:integration` against a real world.
+4. **Build + verify** — `npm run build`, then `npm test`, `npm run typecheck`, `npm run knip`, and
+   biome (`npm run check`). For live changes, `npm run test:integration` against a real world.
 
 ---
 
