@@ -13,6 +13,12 @@ import {
   SKILL_ABILITY,
 } from './actor-fields.js';
 import { resolveCreatureIcon } from './icons.js';
+import {
+  type DispositionKey,
+  resolveDisposition,
+  TOKEN_DISPOSITION,
+  tokenDefaults,
+} from './token-defaults.js';
 
 // CR helpers keep their npc-prefixed names for existing importers (npc.test.ts); the
 // implementations now live in the shared actor-fields module so create + update share them.
@@ -83,6 +89,9 @@ export interface NpcInput {
   sourcePage: string;
   sourceRules: string;
   img?: string;
+  /** Token disposition — the SKILL decides friend vs foe; defaults to hostile (most authored NPCs
+   *  are enemies). Set 'friendly' for allies/townsfolk (e.g. a captive), 'neutral' for bystanders. */
+  disposition?: DispositionKey;
 }
 
 /**
@@ -146,9 +155,17 @@ export function buildNpcActorData(data: NpcInput): {
     name: data.name,
     type: 'npc',
     img: portrait,
-    // Name the prototype token for the actor — otherwise a token dragged onto the canvas (and its
-    // combat-tracker entry) reads blank instead of the creature's name.
-    prototypeToken: { name: data.name, texture: { src: portrait } },
+    // Name the prototype token for the actor (else a dragged token reads blank), and apply the shared
+    // table-ready defaults: name + HP bar shown to everyone, vision on and matching the sheet's
+    // darkvision, and a disposition (default hostile — an authored NPC is usually an enemy).
+    prototypeToken: {
+      name: data.name,
+      texture: { src: portrait },
+      ...tokenDefaults({
+        disposition: resolveDisposition(data.disposition, TOKEN_DISPOSITION.hostile),
+        darkvision: data.darkvision,
+      }),
+    },
     system: {
       abilities,
       attributes: {

@@ -45,6 +45,13 @@ const UpdateActorSchema = z.object({
   // identity
   name: z.string().min(1).optional().describe('Rename the actor.'),
   img: z.string().optional().describe('Portrait image path or URL.'),
+  disposition: z
+    .enum(['hostile', 'neutral', 'friendly', 'secret'])
+    .optional()
+    .describe(
+      "Prototype-token disposition (friend vs foe). Set 'friendly' to mark an NPC an ally (e.g. a " +
+        "freed captive), 'hostile' for an enemy, 'neutral' for a bystander."
+    ),
 
   // details (most NPC-only)
   size: z
@@ -252,7 +259,7 @@ export class DnD5eUpdateActorTool {
         name: 'update-actor',
         description:
           "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
-          '• identity — name, img\n' +
+          '• identity — name, img, disposition (token friend/foe)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
           '• vitals — hp, ac, initiative\n' +

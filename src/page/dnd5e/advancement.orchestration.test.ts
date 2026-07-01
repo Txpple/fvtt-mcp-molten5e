@@ -83,6 +83,11 @@ describe('createPcActor orchestration', () => {
     // The build happens on a temp `__mcp_pc_build_Aria` actor whose prototypeToken inherits that
     // scratch name; persist must reset it to the real name or every placed token shows the prefix.
     expect(persisted?.prototypeToken?.name).toBe('Aria');
+    // …and the PC gets the shared table-ready token defaults: friendly, name+bars shown to all, vision on.
+    expect(persisted?.prototypeToken?.displayName).toBe(50);
+    expect(persisted?.prototypeToken?.displayBars).toBe(50);
+    expect(persisted?.prototypeToken?.disposition).toBe(1); // a PC is friendly
+    expect(persisted?.prototypeToken?.sight?.enabled).toBe(true);
   });
 
   it('does NOT persist and returns success:false + errors when a forced advancement throws', async () => {

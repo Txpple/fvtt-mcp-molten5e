@@ -32,6 +32,12 @@ import {
 } from './dnd5e/actor-fields.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
 import { resolveCreatureIcon, GENERIC_ICON } from './dnd5e/icons.js';
+import {
+  readDarkvision,
+  resolveDisposition,
+  TOKEN_DISPOSITION,
+  tokenDefaults,
+} from './dnd5e/token-defaults.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
 // declared in foundry-globals.d.ts; reach it off globalThis (loosely typed).
@@ -998,9 +1004,22 @@ export async function createActorFromCompendium(request: {
 
       // The prototype token inherits the SOURCE creature's name (a "Worg" copied as "Gravewidow"
       // keeps "Worg"), so re-point it to the custom name — otherwise every token dragged from the
-      // copy, and its combat-tracker entry, reads the source name instead of the rename.
+      // copy, and its combat-tracker entry, reads the source name instead of the rename. Then apply
+      // the shared table-ready defaults: name + HP bar shown to everyone, vision on and matching the
+      // copied sheet's darkvision, and a disposition (a copied PC pregen is friendly, a copied monster
+      // is hostile — the GM flips an allied NPC via update-actor).
       actorData.prototypeToken = actorData.prototypeToken ?? {};
       actorData.prototypeToken.name = customName;
+      Object.assign(
+        actorData.prototypeToken,
+        tokenDefaults({
+          disposition:
+            sourceData.type === 'character'
+              ? TOKEN_DISPOSITION.friendly
+              : TOKEN_DISPOSITION.hostile,
+          darkvision: readDarkvision(sourceData.system?.attributes?.senses),
+        })
+      );
 
       // File created actors under the auto-managed creatures folder.
       const folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
@@ -1362,6 +1381,15 @@ export async function updateActor(params: any): Promise<unknown> {
     }
     update.img = img;
     applied.push('img');
+  }
+  if (params.disposition !== undefined && params.disposition !== null) {
+    // Flip friend/foe on the prototype token — e.g. mark a captured or turned NPC friendly. Combat and
+    // targeting read disposition, so this is a real state change, not cosmetic.
+    update['prototypeToken.disposition'] = resolveDisposition(
+      params.disposition,
+      TOKEN_DISPOSITION.hostile
+    );
+    applied.push('disposition');
   }
 
   // --- details ---

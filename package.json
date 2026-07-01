@@ -1,6 +1,6 @@
 {
   "name": "fvtt-mcp-molten5e",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "D&D 5e–only, Molten-Hosting–optimized Foundry VTT MCP server, driven by Claude Code.",
   "private": true,
   "type": "module",

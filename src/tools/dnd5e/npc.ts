@@ -163,6 +163,9 @@ const AuthorNpcSchema = z
     sourceBook: z.string().default(''),
     sourcePage: z.string().default(''),
     sourceRules: z.enum(['2014', '2024']).default('2024'),
+    // Token disposition — YOU (the skill) decide friend vs foe. Defaults to hostile (an authored NPC
+    // is usually an enemy); set 'friendly' for allies/townsfolk/captives, 'neutral' for bystanders.
+    disposition: z.enum(['hostile', 'neutral', 'friendly', 'secret']).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.acMode === 'flat' && data.acValue === undefined) {
@@ -185,7 +188,8 @@ const AUTHOR_NPC_DESCRIPTION =
   "'5d8+10'), acMode ('default'|'flat'; acValue required if 'flat'). Optional: alignment, " +
   'savingThrows[], skills[{skill,proficiency}], walk/fly/swim/climb/burrowSpeed, ' +
   'darkvision/blindsight/tremorsense/truesight, damage immunities/resistances/vulnerabilities[], ' +
-  'conditionImmunities[], languages[], biography, sourceBook/sourcePage/sourceRules. Add features, ' +
+  'conditionImmunities[], languages[], biography, sourceBook/sourcePage/sourceRules, disposition ' +
+  "('hostile' default | 'friendly' for allies/townsfolk | 'neutral' | 'secret'). Add features, " +
   'attacks, and spells afterward with add-feature; copy gear from a compendium with import-item.';
 
 // ---------------------------------------------------------------------------

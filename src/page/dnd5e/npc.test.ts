@@ -133,6 +133,24 @@ describe('buildNpcActorData', () => {
     expect(actorData.prototypeToken.name).toBe('Gravewidow');
   });
 
+  it('gives the token table-ready defaults: name+bars shown to all, vision on, disposition hostile', () => {
+    const pt = buildNpcActorData(baseNpc({ darkvision: 0 })).actorData.prototypeToken;
+    expect(pt.displayName).toBe(50);
+    expect(pt.displayBars).toBe(50);
+    expect(pt.disposition).toBe(-1); // authored NPC defaults to an enemy
+    expect(pt.sight).toEqual({ enabled: true, visionMode: 'basic', range: 0 });
+  });
+
+  it('sets token vision to darkvision + range from the sheet', () => {
+    const pt = buildNpcActorData(baseNpc({ darkvision: 90 })).actorData.prototypeToken;
+    expect(pt.sight).toEqual({ enabled: true, visionMode: 'darkvision', range: 90 });
+  });
+
+  it('honors an explicit friendly disposition (an ally/captive)', () => {
+    const pt = buildNpcActorData(baseNpc({ disposition: 'friendly' })).actorData.prototypeToken;
+    expect(pt.disposition).toBe(1);
+  });
+
   it('uses a flat AC block only in "flat" mode', () => {
     expect(buildNpcActorData(baseNpc()).actorData.system.attributes.ac).toEqual({
       calc: 'default',
