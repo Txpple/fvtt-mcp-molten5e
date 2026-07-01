@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   const foundry = new Foundry({
     serverUrl: config.molten.serverUrl,
     user: config.molten.user,
+    ...(config.molten.password ? { password: config.molten.password } : {}),
     ...(config.molten.magicUrl ? { magicUrl: config.molten.magicUrl } : {}),
     // Admin-key + world-id enable remote world-launch when a cold box is up but no world is active.
     ...(config.molten.adminKey ? { adminKey: config.molten.adminKey } : {}),

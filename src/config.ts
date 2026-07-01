@@ -55,11 +55,12 @@ const ConfigSchema = z.object({
       worldId: z.string().optional(), // MOLTEN_WORLD_ID — real world to remote-launch; unset = manual
       // Headless bridge (src/foundry.ts): wake a sleeping box + which user to join as.
       magicUrl: z.string().optional(), // MOLTEN_MAGIC_URL — GET to wake (…?s=token)
-      user: z.string().default('MCP-Claude'), // FOUNDRY_USER — passwordless GM to /join as
+      user: z.string().default('MCP-Claude'), // FOUNDRY_USER — GM user to /join as
       webdavUrl: z.string().url().default('https://your-server.webdav.moltenhosting.com'),
       fileBrowserUrl: z.string().url().default('https://your-server.files.moltenhosting.com'),
       webdavUser: z.string().default('foundry-ftp'),
       // --- secrets (env-only; undefined === not configured) ---
+      password: z.string().optional(), // FOUNDRY_PASSWORD — the join user's password (omit for a passwordless user)
       webdavPassword: z.string().optional(), // MOLTEN_WEBDAV_PASSWORD — WebDAV/FileBrowser
       adminKey: z.string().optional(), // MOLTEN_ADMIN_KEY — Foundry admin access key
     })
@@ -87,6 +88,7 @@ const rawConfig = {
     worldId: process.env.MOLTEN_WORLD_ID, // unset -> manual-launch path (no placeholder)
     magicUrl: process.env.MOLTEN_MAGIC_URL,
     user: process.env.FOUNDRY_USER || 'MCP-Claude',
+    password: process.env.FOUNDRY_PASSWORD,
     webdavUrl: process.env.MOLTEN_WEBDAV_URL || 'https://your-server.webdav.moltenhosting.com',
     fileBrowserUrl:
       process.env.MOLTEN_FILEBROWSER_URL || 'https://your-server.files.moltenhosting.com',
