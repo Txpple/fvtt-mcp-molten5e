@@ -75,6 +75,28 @@ try {
     profile?.attacks?.length > 0 && profile.attacks.every(a => a.name && Array.isArray(a.types)),
     'each attack entry has a name + its damage types'
   );
+
+  console.log('\n# the copy is named on its prototype token (not the source creature name)');
+  const protoName = await f.evaluate(
+    id => globalThis.game.actors.get(id)?.prototypeToken?.name,
+    actorId
+  );
+  assert(
+    protoName === `${TAG} Dragon`,
+    `prototype token carries the custom name, not "Adult Red Dragon" (got "${protoName}")`
+  );
+
+  console.log('\n# a rename via update-actor keeps the prototype token in lockstep');
+  await f.call('updateActor', { actorIdentifier: actorId, name: `${TAG} Wyrm` });
+  const renamed = await f.evaluate(id => {
+    const a = globalThis.game.actors.get(id);
+    return { name: a?.name, proto: a?.prototypeToken?.name };
+  }, actorId);
+  assert(renamed.name === `${TAG} Wyrm`, 'update-actor renamed the actor');
+  assert(
+    renamed.proto === `${TAG} Wyrm`,
+    `update-actor synced the prototype token name (got "${renamed.proto}")`
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-reskin] FATAL: ${e?.message || String(e)}`);

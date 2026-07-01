@@ -996,6 +996,12 @@ export async function createActorFromCompendium(request: {
         actorData.prototypeToken.texture.src = null;
       }
 
+      // The prototype token inherits the SOURCE creature's name (a "Worg" copied as "Gravewidow"
+      // keeps "Worg"), so re-point it to the custom name — otherwise every token dragged from the
+      // copy, and its combat-tracker entry, reads the source name instead of the rename.
+      actorData.prototypeToken = actorData.prototypeToken ?? {};
+      actorData.prototypeToken.name = customName;
+
       // File created actors under the auto-managed creatures folder.
       const folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
       if (folderId) {
@@ -1339,6 +1345,9 @@ export async function updateActor(params: any): Promise<unknown> {
   // --- identity ---
   if (typeof params.name === 'string' && params.name.trim()) {
     update.name = params.name.trim();
+    // Keep the prototype token's name in lockstep with the actor — a renamed actor should read the
+    // same on any token dragged from it (and in the combat tracker), not the pre-rename name.
+    update['prototypeToken.name'] = params.name.trim();
     applied.push('name');
   }
   if (typeof params.img === 'string' && params.img.trim()) {

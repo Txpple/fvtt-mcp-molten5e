@@ -146,7 +146,9 @@ export function buildNpcActorData(data: NpcInput): {
     name: data.name,
     type: 'npc',
     img: portrait,
-    prototypeToken: { texture: { src: portrait } },
+    // Name the prototype token for the actor — otherwise a token dragged onto the canvas (and its
+    // combat-tracker entry) reads blank instead of the creature's name.
+    prototypeToken: { name: data.name, texture: { src: portrait } },
     system: {
       abilities,
       attributes: {

@@ -128,6 +128,11 @@ describe('buildNpcActorData', () => {
     expect(actorData.prototypeToken.texture.src).toBe(actorData.img);
   });
 
+  it('names the prototype token for the NPC so dragged tokens read the creature name', () => {
+    const { actorData } = buildNpcActorData(baseNpc({ name: 'Gravewidow' }));
+    expect(actorData.prototypeToken.name).toBe('Gravewidow');
+  });
+
   it('uses a flat AC block only in "flat" mode', () => {
     expect(buildNpcActorData(baseNpc()).actorData.system.attributes.ac).toEqual({
       calc: 'default',
