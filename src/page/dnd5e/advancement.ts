@@ -916,6 +916,10 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     const snapshot = tmp.toObject();
     delete snapshot._id;
     snapshot.name = plan.name;
+    // The temp actor was created as `__mcp_pc_build_<name>`, so Foundry stamped that scratch name
+    // onto its prototypeToken too. Re-point it to the real name or every token dragged from this PC
+    // (and its combat-tracker entry) shows the build prefix.
+    if (snapshot.prototypeToken) snapshot.prototypeToken.name = plan.name;
     if (folderId) snapshot.folder = folderId;
     const real = await ActorClass.create(snapshot);
     if (!real) throw new Error(`Failed to persist PC "${plan.name}"`);

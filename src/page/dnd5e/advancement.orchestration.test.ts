@@ -69,6 +69,22 @@ describe('createPcActor orchestration', () => {
     expect(persisted?.system.spells.spell1.value).toBe(2);
   });
 
+  it('re-points the prototype token off the `__mcp_pc_build_` scratch name so dragged tokens read clean', async () => {
+    mock = installFoundryMock([fighter()]);
+    const res: any = await createPcActor({
+      name: 'Aria',
+      className: 'Fighter',
+      level: 1,
+      folder: 'fixed-folder',
+    });
+
+    expect(res.success).toBe(true);
+    const persisted = [...mock.store.actors.values()].find(a => a.name === 'Aria');
+    // The build happens on a temp `__mcp_pc_build_Aria` actor whose prototypeToken inherits that
+    // scratch name; persist must reset it to the real name or every placed token shows the prefix.
+    expect(persisted?.prototypeToken?.name).toBe('Aria');
+  });
+
   it('does NOT persist and returns success:false + errors when a forced advancement throws', async () => {
     const broken = fighter();
     broken.advancements = [

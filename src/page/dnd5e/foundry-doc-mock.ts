@@ -115,6 +115,10 @@ export class MockActor {
   name: string;
   type: string;
   system: any;
+  /** Foundry stamps prototypeToken.name from the actor name at creation when none is supplied — the
+   *  mock mirrors that so the createPcActor persist path (which must re-point it off the scratch name)
+   *  can be regression-tested. */
+  prototypeToken: any;
   folder: { id: string } | null = null;
   private _items: MockItem[] = [];
   private store: MockStore;
@@ -124,6 +128,7 @@ export class MockActor {
     this.name = data.name ?? '';
     this.type = data.type ?? 'character';
     this.system = clone(data.system ?? { attributes: { hp: {} }, spells: {}, details: {} });
+    this.prototypeToken = data.prototypeToken ? clone(data.prototypeToken) : { name: this.name };
     this.store = store;
     // Rehydrate persisted items, re-attaching advancement behaviors via the preserved __advKey so a
     // later level-up on this re-read actor can still apply them (mirrors Foundry reconstructing them).
@@ -210,6 +215,7 @@ export class MockActor {
       name: this.name,
       type: this.type,
       system: clone(this.system),
+      prototypeToken: clone(this.prototypeToken),
       items: this._items.map(i => i.toObject()),
     };
   }
