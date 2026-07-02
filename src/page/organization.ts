@@ -218,6 +218,67 @@ export async function createFolder(data: {
 }
 
 /**
+ * Update a Folder's document fields: rename, recolor, and/or reparent (nest under
+ * another folder of the SAME type, or move to root with an empty parentFolder).
+ * STRICT resolution (exact id, or exact name within the given type). Returns
+ * `updated:false` + `notFound` when the folder does not resolve — Foundry has no
+ * folder-rename tool otherwise, so this closes the "rename via move+delete" dance.
+ */
+export async function updateFolder(data: {
+  identifier: string;
+  type?: string;
+  name?: string;
+  color?: string;
+  parentFolder?: string;
+}): Promise<unknown> {
+  const type = data.type || 'Actor';
+  const folder =
+    game.folders?.get(data.identifier) ||
+    game.folders?.find((f: any) => f.name === data.identifier && f.type === type);
+  if (!folder) {
+    return { success: true, updated: false, notFound: data.identifier };
+  }
+
+  const update: Record<string, unknown> = {};
+  if (typeof data.name === 'string' && data.name.trim().length > 0) update.name = data.name.trim();
+  if (typeof data.color === 'string') update.color = data.color;
+  if (typeof data.parentFolder === 'string') {
+    const p = data.parentFolder.trim();
+    if (p === '') {
+      update.folder = null; // move to root
+    } else {
+      const parent =
+        game.folders?.get(p) ||
+        game.folders?.find((f: any) => f.name === p && f.type === folder.type);
+      if (!parent) {
+        throw new Error(`Parent folder "${data.parentFolder}" (type ${folder.type}) not found`);
+      }
+      if (parent.id === folder.id) {
+        throw new Error('A folder cannot be its own parent');
+      }
+      update.folder = parent.id;
+    }
+  }
+
+  if (Object.keys(update).length === 0) {
+    throw new Error('Provide at least one of: name, color, parentFolder');
+  }
+
+  try {
+    await folder.update(update);
+    return {
+      success: true,
+      updated: true,
+      folder: { id: folder.id ?? data.identifier, name: folder.name ?? '', type: folder.type },
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Move one or more world documents of a single type into a target folder
  * (resolved by id or name; created at root if it doesn't exist). Pass an
  * empty/omitted targetFolder to move documents to the root (no folder).

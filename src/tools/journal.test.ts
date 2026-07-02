@@ -22,7 +22,7 @@ function build(response: any = {}) {
 }
 
 describe('JournalTools.getToolDefinitions', () => {
-  it('exposes exactly the eight expected tools', () => {
+  it('exposes exactly the ten expected tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
@@ -32,9 +32,11 @@ describe('JournalTools.getToolDefinitions', () => {
       'create-journal',
       'create-quest-journal',
       'delete-journal',
+      'delete-journal-page',
       'link-quest-to-npc',
       'list-journals',
       'search-journals',
+      'set-journal-page-visibility',
       'update-journal',
       'update-quest-journal',
     ]);
@@ -264,6 +266,33 @@ describe('handleUpdateQuestJournal (append a styled section from blocks)', () =>
     expect(calls[1][1].pageId).toBe('p2');
     expect(calls[1][1].content).toContain('existing page text');
     expect(calls[1][1].content).toContain('A clue was found.');
+  });
+
+  it('forwards ownership {default:2} to a NEW page when playerVisible:true (a handout)', async () => {
+    const { tools, calls } = build((method: string) =>
+      method === 'updateJournalContent' ? { success: true, pageId: 'p9', pageName: 'Flavor' } : {}
+    );
+    await tools.handleUpdateQuestJournal({
+      journalId: 'j1',
+      newPageName: 'Flavor',
+      playerVisible: true,
+      blocks: [{ type: 'paragraph', html: 'A weathered map.' }],
+    });
+    expect(calls[0][1].ownership).toEqual({ default: 2 });
+  });
+
+  it('omits ownership entirely when playerVisible is not given (inherits GM-only)', async () => {
+    const { tools, calls } = build((method: string) =>
+      method === 'updateJournalContent'
+        ? { success: true, pageId: 'p9', pageName: 'Session 2' }
+        : {}
+    );
+    await tools.handleUpdateQuestJournal({
+      journalId: 'j1',
+      newPageName: 'Session 2',
+      blocks: [{ type: 'paragraph', html: 'x' }],
+    });
+    expect('ownership' in calls[0][1]).toBe(false);
   });
 
   it('rejects empty blocks / a bad block', async () => {
@@ -560,6 +589,17 @@ describe('handleUpdateJournal', () => {
     expect(out.renamed).toBe(false);
   });
 
+  it('forwards ownership when playerVisible is given', async () => {
+    const { tools, calls } = build({ success: true, pageId: 'p1', pageName: 'P' });
+    await tools.handleUpdateJournal({
+      journalId: 'j1',
+      newPageName: 'Handout',
+      content: '<p>x</p>',
+      playerVisible: true,
+    });
+    expect(calls[0][1].ownership).toEqual({ default: 2 });
+  });
+
   it('throws when the bridge reports success:false', async () => {
     const { tools } = build({ success: false, error: 'nope' });
     await expect(tools.handleUpdateJournal({ journalId: 'j1', name: 'X' })).rejects.toThrow();
@@ -573,6 +613,73 @@ describe('handleUpdateJournal', () => {
   it('rejects an empty journalId', async () => {
     const { tools } = build();
     await expect(tools.handleUpdateJournal({ journalId: '', name: 'X' })).rejects.toThrow();
+  });
+});
+
+describe('handleSetJournalPageVisibility', () => {
+  it('forwards journalId/pageId/playerVisible and reports the new state', async () => {
+    const { tools, calls } = build({ success: true, pageId: 'p1', pageName: 'Flavor' });
+    const out = await tools.handleSetJournalPageVisibility({
+      journalId: 'j1',
+      pageId: 'p1',
+      playerVisible: true,
+    });
+    expect(calls[0][0]).toBe('setJournalPageVisibility');
+    expect(calls[0][1]).toEqual({ journalId: 'j1', pageId: 'p1', playerVisible: true });
+    expect(out).toMatchObject({ success: true, pageId: 'p1', playerVisible: true });
+    expect(out.message).toContain('player-visible');
+  });
+
+  it('reports GM-only when hiding a page', async () => {
+    const { tools } = build({ success: true, pageId: 'p1', pageName: 'Secrets' });
+    const out = await tools.handleSetJournalPageVisibility({
+      journalId: 'j1',
+      pageId: 'p1',
+      playerVisible: false,
+    });
+    expect(out.message).toContain('GM-only');
+  });
+
+  it('throws on the bridge error payload', async () => {
+    const { tools } = build({ success: false, error: 'Page not found: p9' });
+    await expect(
+      tools.handleSetJournalPageVisibility({ journalId: 'j1', pageId: 'p9', playerVisible: true })
+    ).rejects.toThrow();
+  });
+
+  it('rejects a missing playerVisible / empty ids', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleSetJournalPageVisibility({ journalId: 'j1', pageId: 'p1' })
+    ).rejects.toThrow();
+    await expect(
+      tools.handleSetJournalPageVisibility({ journalId: '', pageId: 'p1', playerVisible: true })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleDeleteJournalPage', () => {
+  it('forwards journalId/pageId and reports the deleted page', async () => {
+    const { tools, calls } = build({
+      success: true,
+      deleted: true,
+      page: { id: 'p2', name: 'Stray' },
+    });
+    const out = await tools.handleDeleteJournalPage({ journalId: 'j1', pageId: 'p2' });
+    expect(calls[0][0]).toBe('deleteJournalPage');
+    expect(calls[0][1]).toEqual({ journalId: 'j1', pageId: 'p2' });
+    expect(out).toMatchObject({ success: true, deleted: true, page: { id: 'p2', name: 'Stray' } });
+  });
+
+  it('reports not-found when the page id does not resolve', async () => {
+    const { tools } = build({ success: true, deleted: false, notFound: 'p9' });
+    const out = await tools.handleDeleteJournalPage({ journalId: 'j1', pageId: 'p9' });
+    expect(out).toMatchObject({ success: true, deleted: false, notFound: 'p9' });
+  });
+
+  it('rejects empty ids', async () => {
+    const { tools } = build();
+    await expect(tools.handleDeleteJournalPage({ journalId: 'j1', pageId: '' })).rejects.toThrow();
   });
 });
 

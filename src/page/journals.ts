@@ -324,6 +324,7 @@ export async function updateJournal(params: {
   content?: string;
   pageId?: string;
   newPageName?: string;
+  ownership?: { default: number };
 }): Promise<{
   success: boolean;
   pageId?: string | undefined;
@@ -351,11 +352,61 @@ export async function updateJournal(params: {
       content: params.content,
       pageId: params.pageId,
       newPageName: params.newPageName,
+      ownership: params.ownership,
     });
     return { ...res, renamed };
   }
 
   return { success: true, renamed };
+}
+
+/**
+ * Set a single page's player visibility WITHOUT touching its content: patch the
+ * page's ownership default (2 = players OBSERVE a handout, 0 = GM-only). Foundry
+ * has no per-page visibility toggle otherwise, so this reveals/hides a page (e.g.
+ * one that came up GM-only from an append) without rebuilding the whole journal.
+ * Returns { success, pageId, pageName } or throws when the journal/page is missing.
+ */
+export async function setJournalPageVisibility(args: {
+  journalId: string;
+  pageId: string;
+  playerVisible: boolean;
+}): Promise<{ success: boolean; pageId: string; pageName: string }> {
+  const journal = resolveJournalStrict(args.journalId);
+  if (!journal) {
+    throw new Error(`Journal entry "${args.journalId}" not found`);
+  }
+  const page = journal.pages.get(args.pageId);
+  if (!page) {
+    throw new Error(`Page not found: ${args.pageId}`);
+  }
+  // Patch ONLY the ownership default (dot-path), preserving any per-user overrides.
+  await page.update({ 'ownership.default': args.playerVisible ? 2 : 0 });
+  return { success: true, pageId: page.id, pageName: page.name };
+}
+
+/**
+ * Delete ONE page from a journal by id, leaving the rest of the entry intact.
+ * Returns { deleted:false, notFound } when the page id doesn't resolve (never throws
+ * for a missing page — the journal itself missing is still an error).
+ */
+export async function deleteJournalPage(args: { journalId: string; pageId: string }): Promise<{
+  success: boolean;
+  deleted: boolean;
+  notFound?: string;
+  page?: { id: string; name: string };
+}> {
+  const journal = resolveJournalStrict(args.journalId);
+  if (!journal) {
+    throw new Error(`Journal entry "${args.journalId}" not found`);
+  }
+  const page = journal.pages.get(args.pageId);
+  if (!page) {
+    return { success: true, deleted: false, notFound: args.pageId };
+  }
+  const info = { id: page.id ?? args.pageId, name: page.name ?? '' };
+  await journal.deleteEmbeddedDocuments('JournalEntryPage', [args.pageId]);
+  return { success: true, deleted: true, page: info };
 }
 
 /**

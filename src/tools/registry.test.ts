@@ -45,14 +45,15 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 95 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 98 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
     // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
     // + update-note + delete-note + upload-asset-tree (M6) + screenshot-scene (visual QA)
     // + content-audit (rules 7/8/9 finishing check)
-    expect(names.length).toBe(95);
+    // + set-journal-page-visibility + delete-journal-page (journal page visibility) + update-folder
+    expect(names.length).toBe(98);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -95,6 +96,15 @@ describe('tool registry', () => {
     const { tools, handlers } = build();
     expect(tools.map(t => t.name)).toContain('screenshot-scene');
     expect(typeof handlers['screenshot-scene']).toBe('function');
+  });
+
+  it('registers the journal page-visibility tools + update-folder (dogfood tooling gaps)', () => {
+    const { tools, handlers } = build();
+    const names = new Set(tools.map(t => t.name));
+    for (const name of ['set-journal-page-visibility', 'delete-journal-page', 'update-folder']) {
+      expect(names.has(name)).toBe(true);
+      expect(typeof handlers[name]).toBe('function');
+    }
   });
 
   it('advertises the actor-creation split and fully retires the create-actor alias', () => {

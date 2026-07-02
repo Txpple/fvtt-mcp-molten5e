@@ -44,6 +44,8 @@ import {
   createJournal,
   updateJournalContent,
   updateJournal,
+  setJournalPageVisibility,
+  deleteJournalPage,
   deleteJournals,
 } from './journals.js';
 import {
@@ -86,7 +88,13 @@ import {
   requestRoll,
 } from './chat.js';
 import { setUserAvatar } from './users.js';
-import { createFolder, moveDocuments, bulkDelete, deleteFolder } from './organization.js';
+import {
+  createFolder,
+  updateFolder,
+  moveDocuments,
+  bulkDelete,
+  deleteFolder,
+} from './organization.js';
 import { manageEffect } from './effects.js';
 import { findAssetReferences, relinkAsset, setActorArt, addJournalImage } from './assets.js';
 import { searchCompendiumFaceted } from './compendium-facets.js';
@@ -144,6 +152,8 @@ const api = {
   createJournal,
   updateJournalContent,
   updateJournal,
+  setJournalPageVisibility,
+  deleteJournalPage,
   deleteJournals,
   // world items
   listWorldItems,
@@ -184,6 +194,7 @@ const api = {
   setUserAvatar,
   // organization (folders / move / bulk-delete)
   createFolder,
+  updateFolder,
   moveDocuments,
   bulkDelete,
   deleteFolder,

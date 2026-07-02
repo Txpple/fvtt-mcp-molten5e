@@ -235,6 +235,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'search-journals': args => journalTools.handleSearchJournals(args),
     'create-journal': args => journalTools.handleCreateJournal(args),
     'update-journal': args => journalTools.handleUpdateJournal(args),
+    'set-journal-page-visibility': args => journalTools.handleSetJournalPageVisibility(args),
+    'delete-journal-page': args => journalTools.handleDeleteJournalPage(args),
     'delete-journal': args => journalTools.handleDeleteJournal(args),
 
     // Ownership
@@ -307,6 +309,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
     // Organization & batch
     'create-folder': args => organizationTools.handleCreateFolder(args),
+    'update-folder': args => organizationTools.handleUpdateFolder(args),
     'move-documents': args => organizationTools.handleMoveDocuments(args),
     'bulk-delete': args => organizationTools.handleBulkDelete(args),
   };

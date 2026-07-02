@@ -21,7 +21,7 @@
 //  - weather is a top-level StringField keyed into CONFIG.weatherEffects.
 //  - playlist / journal are top-level ForeignDocumentField id strings.
 
-import { normalizeAssetPath } from './_shared.js';
+import { normalizeAssetPath, getOrCreateFolder } from './_shared.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
 
 // Foundry document class (Scene) and CONST live in the page global scope but are
@@ -507,6 +507,8 @@ export async function createScene(
     gridType?: number;
     padding?: number;
     activate?: boolean;
+    folder?: string;
+    navigation?: boolean;
     walls?: SidecarWall[];
     lights?: SidecarLight[];
     regions?: Record<string, unknown>[];
@@ -556,6 +558,25 @@ export async function createScene(
     if (typeof width === 'number') sceneData.width = width;
     if (typeof height === 'number') sceneData.height = height;
 
+    // Navigation flag (false = a DM-only scene kept off the player nav bar).
+    if (typeof args.navigation === 'boolean') sceneData.navigation = args.navigation;
+
+    // Place the scene in a folder (resolved by id or exact name+type; created at root if absent), so
+    // a scene lands in its folder in ONE call instead of create-scene + move-documents.
+    let folderName: string | null = null;
+    if (typeof args.folder === 'string' && args.folder.trim() !== '') {
+      const f = args.folder.trim();
+      const existing =
+        game.folders?.get(f) || game.folders?.find((x: any) => x.name === f && x.type === 'Scene');
+      const folderId = existing ? existing.id : await getOrCreateFolder(f, 'Scene');
+      if (folderId) {
+        sceneData.folder = folderId;
+        folderName = game.folders?.get(folderId)?.name ?? f;
+      } else {
+        warnings.push(`could not resolve or create Scene folder "${f}" — scene left at root`);
+      }
+    }
+
     // Fold in the shared fields (grid scale / vision / fog / lighting / weather / links).
     const flat = buildSceneFields(args);
     if (Object.keys(flat).length > 0 && foundryUtils?.expandObject && foundryUtils?.mergeObject) {
@@ -581,6 +602,27 @@ export async function createScene(
     // v14: the renderable background lives on the scene's initial level — set it there.
     await applySceneBackground(scene, src);
 
+    // Auto-generate the navigation thumbnail from the background when the caller didn't supply one.
+    // A scene created via the API has no nav thumbnail until an in-app save (Foundry only generates it
+    // then), so tool-made scenes came up blank; running Foundry's OWN Scene#createThumbnail here — the
+    // same code the in-app save calls — closes that gap. Best-effort: a headless render failure warns
+    // and leaves the scene thumbnail-less rather than failing the whole create.
+    let autoThumbnail = false;
+    const explicitThumb = typeof args.thumb === 'string' && args.thumb.trim() !== '';
+    if (!explicitThumb && scene && typeof scene.createThumbnail === 'function') {
+      try {
+        const t = await scene.createThumbnail({ img: src });
+        if (t?.thumb) {
+          await scene.update({ thumb: t.thumb });
+          autoThumbnail = true;
+        }
+      } catch (e) {
+        warnings.push(
+          `nav thumbnail auto-generate skipped (${e instanceof Error ? e.message : String(e)})`
+        );
+      }
+    }
+
     // Import walls/lights/regions from a map sidecar or pack payload, if supplied.
     // These are embedded documents, so the scene must already exist. Best-effort +
     // per-kind isolated: a failure to place one kind never voids the scene or the others.
@@ -597,6 +639,8 @@ export async function createScene(
       width: scene?.width,
       height: scene?.height,
       autoSized,
+      autoThumbnail,
+      ...(folderName ? { folderName } : {}),
       settings: summarizeSceneSettings(scene),
       ...placeables,
       ...(warnings.length ? { warnings } : {}),
@@ -1413,6 +1457,7 @@ function summarizeSceneSettings(scene: any): Record<string, unknown> {
     darkness: o.environment?.darknessLevel,
     globalLight: o.environment?.globalLight?.enabled,
     weather: o.weather ?? '',
+    navigation: o.navigation,
     playlist: o.playlist ?? null,
     journal: o.journal ?? null,
   };

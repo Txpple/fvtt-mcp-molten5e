@@ -42,6 +42,24 @@ const CreateFolderSchema = z.object({
   color: z.string().optional().describe('Optional hex color, e.g. "#4a90e2".'),
 });
 
+const UpdateFolderSchema = z
+  .object({
+    identifier: z.string().min(1).describe('Folder id or exact name to update.'),
+    type: z
+      .enum(DOC_TYPES)
+      .default('Actor')
+      .describe('Folder document type (needed to resolve by name; default Actor).'),
+    name: z.string().min(1).optional().describe('New folder name (rename).'),
+    color: z.string().optional().describe('New hex color, e.g. "#4a90e2".'),
+    parentFolder: z
+      .string()
+      .optional()
+      .describe('Reparent under this folder id or exact name (same type). "" = move to root.'),
+  })
+  .refine(v => v.name !== undefined || v.color !== undefined || v.parentFolder !== undefined, {
+    message: 'Provide at least one of: name, color, parentFolder',
+  });
+
 const MoveDocumentsSchema = z.object({
   documentType: z.enum(DOC_TYPES).describe('Type of the documents being moved.'),
   identifiers: z
@@ -88,6 +106,15 @@ export class OrganizationTools {
         inputSchema: toInputSchema(CreateFolderSchema),
       },
       {
+        name: 'update-folder',
+        description:
+          'Update a sidebar Folder in place — rename it, recolor it, and/or reparent it (nest under ' +
+          'another folder of the same type, or pass parentFolder:"" to move it to the root). Resolves ' +
+          'the folder by exact id or exact name+type. Use this to RENAME a folder without the ' +
+          'move-documents + delete-folder dance. GM-only.',
+        inputSchema: toInputSchema(UpdateFolderSchema),
+      },
+      {
         name: 'move-documents',
         description:
           'Move one or more world documents of a single type into a target folder (resolved by id ' +
@@ -110,6 +137,15 @@ export class OrganizationTools {
     const parsed = CreateFolderSchema.parse(args ?? {});
     const result = await this.foundry.call('createFolder', parsed);
     return `Created ${result?.type} folder "${result?.folderName}" (${result?.folderId}).`;
+  }
+
+  async handleUpdateFolder(args: any): Promise<string> {
+    const parsed = UpdateFolderSchema.parse(args ?? {});
+    const result = await this.foundry.call('updateFolder', parsed);
+    if (result?.updated === false) {
+      return `Folder not found: "${result?.notFound ?? parsed.identifier}" (type ${parsed.type}). Nothing changed.`;
+    }
+    return `Updated ${result?.folder?.type} folder → "${result?.folder?.name}" (${result?.folder?.id}).`;
   }
 
   async handleMoveDocuments(args: any): Promise<string> {

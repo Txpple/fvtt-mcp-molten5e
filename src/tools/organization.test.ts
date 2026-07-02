@@ -19,13 +19,13 @@ function build(response: any = {}) {
 }
 
 describe('OrganizationTools.getToolDefinitions', () => {
-  it('exposes exactly the three organization tools', () => {
+  it('exposes exactly the four organization tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['bulk-delete', 'create-folder', 'move-documents']);
+    expect(names).toEqual(['bulk-delete', 'create-folder', 'move-documents', 'update-folder']);
   });
 
   it('every definition has an object inputSchema with required fields', () => {
@@ -75,6 +75,57 @@ describe('handleCreateFolder', () => {
   it('rejects undefined args without throwing a non-zod error', async () => {
     const { tools } = build();
     await expect(tools.handleCreateFolder(undefined)).rejects.toThrow();
+  });
+});
+
+describe('handleUpdateFolder', () => {
+  it('forwards a rename and formats the result', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      folder: { id: 'f1', name: 'Player Handouts', type: 'JournalEntry' },
+    });
+    const out = await tools.handleUpdateFolder({
+      identifier: 'Maps',
+      type: 'JournalEntry',
+      name: 'Player Handouts',
+    });
+    expect(calls[0][0]).toBe('updateFolder');
+    expect(calls[0][1]).toMatchObject({
+      identifier: 'Maps',
+      type: 'JournalEntry',
+      name: 'Player Handouts',
+    });
+    expect(out).toBe('Updated JournalEntry folder → "Player Handouts" (f1).');
+  });
+
+  it('passes color and parentFolder through', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      folder: { id: 'f2', name: 'Loot', type: 'Item' },
+    });
+    await tools.handleUpdateFolder({
+      identifier: 'Loot',
+      type: 'Item',
+      color: '#4a90e2',
+      parentFolder: 'Treasure',
+    });
+    expect(calls[0][1]).toMatchObject({ color: '#4a90e2', parentFolder: 'Treasure' });
+  });
+
+  it('reports not found when the folder does not resolve', async () => {
+    const { tools } = build({ updated: false, notFound: 'Ghost' });
+    const out = await tools.handleUpdateFolder({ identifier: 'Ghost', type: 'Scene', name: 'X' });
+    expect(out).toContain('Folder not found: "Ghost" (type Scene)');
+  });
+
+  it('rejects a request with no updatable field', async () => {
+    const { tools } = build();
+    await expect(tools.handleUpdateFolder({ identifier: 'Maps', type: 'Scene' })).rejects.toThrow();
+  });
+
+  it('rejects an empty identifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleUpdateFolder({ identifier: '', name: 'X' })).rejects.toThrow();
   });
 });
 

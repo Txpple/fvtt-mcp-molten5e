@@ -376,6 +376,52 @@ describe('handleCreateScene', () => {
     expect(out).not.toContain('global light on');
   });
 
+  it('forwards folder + navigation to the bridge', async () => {
+    const { tools, calls } = build({ sceneName: 'X', sceneId: 'sc1', background: 'b' });
+    await tools.handleCreateScene({
+      name: 'X',
+      backgroundPath: 'b',
+      folder: 'Maps',
+      navigation: false,
+    });
+    expect(calls[0][1]).toMatchObject({ folder: 'Maps', navigation: false });
+  });
+
+  it('reports the folder and an auto-generated thumbnail', async () => {
+    const { tools } = build({
+      sceneName: 'X',
+      sceneId: 'sc1',
+      background: 'b',
+      folderName: 'Maps',
+      autoThumbnail: true,
+    });
+    const out = await tools.handleCreateScene({ name: 'X', backgroundPath: 'b', folder: 'Maps' });
+    expect(out).toContain('folder: Maps');
+    expect(out).toContain('thumbnail: auto-generated');
+  });
+
+  it('renders gridless + navigation state in the settings line', async () => {
+    const { tools } = build({
+      sceneName: 'World',
+      sceneId: 'sc1',
+      background: 'b',
+      settings: {
+        grid: { size: 100, type: 0, distance: 5, units: 'ft' },
+        tokenVision: false,
+        fogMode: 'disabled',
+        navigation: false,
+        globalLight: true,
+        weather: '',
+        playlist: null,
+        journal: null,
+      },
+    });
+    const out = await tools.handleCreateScene({ name: 'World', backgroundPath: 'b' });
+    expect(out).toContain('gridless');
+    expect(out).not.toContain('grid 100px');
+    expect(out).toContain('nav off');
+  });
+
   it('reads walls/lights from placeablesPath server-side and strips the path before the bridge call', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tc-scene-test-'));
     const file = join(dir, 'p.json');

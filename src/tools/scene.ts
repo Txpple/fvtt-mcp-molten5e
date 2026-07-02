@@ -255,6 +255,17 @@ const CreateSceneSchema = z.object({
     .describe('Foundry grid type (0 gridless, 1 square, 2+ hex). Default 1.'),
   padding: z.number().min(0).max(0.5).optional().describe('Scene padding fraction (optional).'),
   activate: z.boolean().default(false).describe('Activate the scene after creating it.'),
+  folder: z
+    .string()
+    .optional()
+    .describe('Scene folder id or exact name to place the scene in (created if absent).'),
+  navigation: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether the scene appears in the player navigation bar. Set false for a DM-only scene ' +
+        '(keeps it off the nav bar). Omit for Foundry default.'
+    ),
   flags: z
     .record(z.string(), z.unknown())
     .optional()
@@ -460,7 +471,10 @@ export class SceneTools {
         name: 'create-scene',
         description:
           'Create a Foundry Scene from a Data-relative background image path (e.g. an uploaded map). ' +
-          'Width/height auto-detect from the image when omitted. Optionally set grid size/type/' +
+          'Width/height auto-detect from the image when omitted. Places it in a `folder` (created if ' +
+          'absent) and sets `navigation` (false = a DM-only scene off the player nav bar) in the same ' +
+          'call. AUTO-GENERATES the navigation thumbnail from the background (Foundry-native) when no ' +
+          'explicit `thumb` is given — no more thumbnail-less scenes. Optionally set grid size/type/' +
           'distance/units/color/alpha, token vision, fog mode, lighting (darkness, global light, or a ' +
           'whole environment{}/fog{} mood object + saved camera for pack imports), weather, a linked ' +
           'playlist/journal, a nav thumbnail, padding, provenance flags, and ' +
@@ -601,10 +615,14 @@ export class SceneTools {
       ? result.placeableErrors.map((e: string) => `\n  ⚠ ${e}`).join('')
       : '';
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    const folderLine = result?.folderName ? `\n  folder: ${result.folderName}` : '';
+    const thumbLine = result?.autoThumbnail ? '\n  thumbnail: auto-generated from background' : '';
     return (
       `Created scene "${result?.sceneName}" (${result?.sceneId})` +
       `${result?.active ? ' [active]' : ''}\n  background: ${result?.background}` +
       dims +
+      folderLine +
+      thumbLine +
       placeableLine +
       teleportHint +
       placeableErrs +
@@ -956,14 +974,22 @@ function formatSceneSettings(s: any): string {
   if (!s || typeof s !== 'object') return '';
   const parts: string[] = [];
   const g = s.grid ?? {};
-  if (g.size != null || g.distance != null) {
-    parts.push(`grid ${g.size ?? '?'}px = ${g.distance ?? '?'}${g.units ? ` ${g.units}` : ''}`);
+  // gridType 0 = gridless (no overlay); 2+ = hex. Show the type so a gridless/hex change is
+  // confirmable from the report (not just the size line, which looks identical for square vs gridless).
+  if (g.type === 0) {
+    parts.push('gridless');
+  } else if (g.size != null || g.distance != null) {
+    const hex = typeof g.type === 'number' && g.type >= 2 ? ' hex' : '';
+    parts.push(
+      `grid ${g.size ?? '?'}px = ${g.distance ?? '?'}${g.units ? ` ${g.units}` : ''}${hex}`
+    );
   }
   if (s.tokenVision != null) parts.push(`vision ${s.tokenVision ? 'on' : 'off'}`);
   if (s.fogMode) parts.push(`fog ${s.fogMode}`);
   if (typeof s.darkness === 'number' && s.darkness > 0) parts.push(`darkness ${s.darkness}`);
   if (s.globalLight === true) parts.push('global light on');
   if (s.weather) parts.push(`weather ${s.weather}`);
+  if (typeof s.navigation === 'boolean') parts.push(`nav ${s.navigation ? 'on' : 'off'}`);
   if (s.playlist) parts.push(`playlist ${s.playlist}`);
   if (s.journal) parts.push(`journal ${s.journal}`);
   return parts.length ? `\n  settings: ${parts.join(', ')}` : '';

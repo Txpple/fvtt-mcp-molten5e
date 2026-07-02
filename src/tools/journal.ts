@@ -78,6 +78,13 @@ const UpdateQuestJournalSchema = z.object({
     .string()
     .optional()
     .describe('If set (without pageId), create a NEW page with this name from the blocks instead.'),
+  playerVisible: z
+    .boolean()
+    .optional()
+    .describe(
+      'Set the target/new page visibility: true = players can OBSERVE it (a handout), false = ' +
+        'GM-only. Omit to leave visibility unchanged (a new page then inherits GM-only).'
+    ),
 });
 
 const ListJournalsSchema = z.object({
@@ -188,10 +195,40 @@ const UpdateJournalSchema = z
       .string()
       .optional()
       .describe('If set (without pageId), create a new page with this name from content.'),
+    playerVisible: z
+      .boolean()
+      .optional()
+      .describe(
+        'Set the written page visibility: true = players can OBSERVE it (a handout), false = ' +
+          'GM-only. Omit to leave it unchanged. To flip an EXISTING page without rewriting its ' +
+          'content, use set-journal-page-visibility.'
+      ),
   })
   .refine(v => v.name !== undefined || v.content !== undefined, {
     message: 'Provide at least one of: name, content',
   });
+
+const SetJournalPageVisibilitySchema = z.object({
+  journalId: z
+    .string()
+    .min(1, 'Journal ID is required')
+    .describe('Journal entry id or exact name.'),
+  pageId: z.string().min(1, 'Page ID is required').describe('Page id (from list-journals).'),
+  playerVisible: z
+    .boolean()
+    .describe('true = players can OBSERVE this page (a handout); false = GM-only.'),
+});
+
+const DeleteJournalPageSchema = z.object({
+  journalId: z
+    .string()
+    .min(1, 'Journal ID is required')
+    .describe('Journal entry id or exact name.'),
+  pageId: z
+    .string()
+    .min(1, 'Page ID is required')
+    .describe('Page id to delete (from list-journals).'),
+});
 
 const DeleteJournalSchema = z.object({
   identifiers: z
@@ -282,6 +319,23 @@ export class JournalTools {
         inputSchema: toInputSchema(UpdateJournalSchema),
       },
       {
+        name: 'set-journal-page-visibility',
+        description:
+          'Flip one journal PAGE between player-visible (a handout players can OBSERVE) and GM-only, ' +
+          'WITHOUT rewriting its content. Sets the page ownership default. Use this to reveal/hide an ' +
+          'existing page — e.g. a page that came up GM-only from an append — instead of rebuilding the ' +
+          'whole journal. GM-only.',
+        inputSchema: toInputSchema(SetJournalPageVisibilitySchema),
+      },
+      {
+        name: 'delete-journal-page',
+        description:
+          'Delete ONE page from a JournalEntry by page id (from list-journals), leaving the rest of ' +
+          'the entry intact. Use to remove a stray/mistaken page instead of deleting and rebuilding ' +
+          'the whole journal. GM-only.',
+        inputSchema: toInputSchema(DeleteJournalPageSchema),
+      },
+      {
         name: 'delete-journal',
         description:
           'Permanently delete one or more JournalEntry documents by exact id or exact name. STRICT ' +
@@ -289,6 +343,12 @@ export class JournalTools {
         inputSchema: toInputSchema(DeleteJournalSchema),
       },
     ];
+  }
+
+  /** Map a playerVisible flag to a page ownership patch: true = OBSERVER (2), false = GM-only (0). */
+  private ownershipFor(playerVisible?: boolean): { default: number } | undefined {
+    if (playerVisible === undefined) return undefined;
+    return { default: playerVisible ? 2 : 0 };
   }
 
   /**
@@ -392,6 +452,7 @@ export class JournalTools {
     try {
       const request = UpdateQuestJournalSchema.parse(args);
       const sectionHtml = renderStyledHtml(request.blocks);
+      const ownership = this.ownershipFor(request.playerVisible);
 
       // New page: set its content directly (nothing to append to).
       if (request.newPageName) {
@@ -399,6 +460,7 @@ export class JournalTools {
           journalId: request.journalId,
           content: sectionHtml,
           newPageName: request.newPageName,
+          ...(ownership ? { ownership } : {}),
         });
         if (!result || result.error || !result.success) {
           throw new Error(result?.error || 'Failed to create the new page');
@@ -417,6 +479,7 @@ export class JournalTools {
         journalId: request.journalId,
         content: current + sectionHtml,
         ...(request.pageId ? { pageId: request.pageId } : {}),
+        ...(ownership ? { ownership } : {}),
       });
       if (!result || result.error || !result.success) {
         throw new Error(result?.error || 'Failed to append the section');
@@ -671,6 +734,7 @@ export class JournalTools {
   async handleUpdateJournal(args: any): Promise<any> {
     try {
       const request = UpdateJournalSchema.parse(args);
+      const ownership = this.ownershipFor(request.playerVisible);
 
       const result = await this.foundry.call('updateJournal', {
         journalId: request.journalId,
@@ -678,6 +742,7 @@ export class JournalTools {
         ...(request.content !== undefined ? { content: request.content } : {}),
         ...(request.pageId !== undefined ? { pageId: request.pageId } : {}),
         ...(request.newPageName !== undefined ? { newPageName: request.newPageName } : {}),
+        ...(ownership ? { ownership } : {}),
       });
 
       if (!result || result.error || result.success === false) {
@@ -694,6 +759,75 @@ export class JournalTools {
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'update-journal', 'journal update');
+    }
+  }
+
+  /**
+   * Flip a single journal page's player visibility without rewriting its content.
+   */
+  async handleSetJournalPageVisibility(args: any): Promise<any> {
+    try {
+      const request = SetJournalPageVisibilitySchema.parse(args);
+
+      const result = await this.foundry.call('setJournalPageVisibility', {
+        journalId: request.journalId,
+        pageId: request.pageId,
+        playerVisible: request.playerVisible,
+      });
+
+      if (!result || result.error || result.success === false) {
+        throw new Error(result?.error || 'Failed to set page visibility');
+      }
+
+      return {
+        success: true,
+        journalId: request.journalId,
+        pageId: result.pageId,
+        pageName: result.pageName,
+        playerVisible: request.playerVisible,
+        message: `Page "${result.pageName}" is now ${request.playerVisible ? 'player-visible (handout)' : 'GM-only'}.`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(
+        error,
+        'set-journal-page-visibility',
+        'journal page visibility'
+      );
+    }
+  }
+
+  /**
+   * Delete one page from a journal by id, leaving the rest of the entry intact.
+   */
+  async handleDeleteJournalPage(args: any): Promise<any> {
+    try {
+      const request = DeleteJournalPageSchema.parse(args);
+
+      const result = await this.foundry.call('deleteJournalPage', {
+        journalId: request.journalId,
+        pageId: request.pageId,
+      });
+
+      if (!result || result.error) {
+        throw new Error(result?.error || 'Failed to delete page');
+      }
+      if (result.deleted === false) {
+        return {
+          success: true,
+          deleted: false,
+          notFound: result.notFound,
+          message: `Page not found: "${result.notFound}". Nothing deleted.`,
+        };
+      }
+
+      return {
+        success: true,
+        deleted: true,
+        page: result.page,
+        message: `Deleted page "${result.page?.name}" (${result.page?.id}).`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'delete-journal-page', 'journal page deletion');
     }
   }
 
