@@ -65,15 +65,12 @@
     bake name/bars/vision (design.md §7); these table rules are the caller's to enforce on every
     created PC/NPC until the tools grow create-time params:
     - **Disposition follows role, at creation time:** civilians / townsfolk / bystanders → **neutral**;
-      actual enemies → hostile; party allies → friendly. Never leave background folk on the
-      copied-monster hostile default — batch-fix with `update-actor` `disposition` right after creating.
-    - **Auto-rotate is ALWAYS on:** compendium copies ship `prototypeToken.lockRotation: true` — set it
-      to **false** on every created actor so tokens face their movement.
-    - **Dynamic token ring OFF** (`prototypeToken.ring.enabled: false`) — the 2024 books ship it on.
-    - **`randomImg` OFF** once specific art is set (2024 MM copies ship it on; it's a wildcard-art flag
-      that doesn't apply to a single texture).
-    No tool exposes lockRotation / ring / randomImg yet (update-actor covers disposition only) — until
-    the create-time params land, flag the gap and fix via the bridge if it matters at the table.
+      actual enemies → hostile; party allies → friendly. Pass `disposition` to
+      `create-actor-from-compendium` / `author-npc` when you create — never leave background folk on
+      the copied-monster hostile default (fix stragglers with `update-actor` `disposition`).
+    - **Auto-rotate ON, dynamic ring OFF, `randomImg` OFF** — the 2024-book prototype tokens ship all
+      three the other way; the creation tools now bake the corrections into every created actor
+      automatically. Flip an existing actor with `update-actor` `tokenAutoRotate` / `tokenRing`.
 
 11. **Run `content-audit` as the finishing check.** Before declaring a build done, scan what you made
     (`actorIdentifiers` for NPCs + their gear, `itemFolders` / `worldItemIds` for loot) with the
