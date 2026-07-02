@@ -53,6 +53,30 @@ describe('handleUpdateActor', () => {
     expect(res.message).toContain('Barbed Devil');
   });
 
+  it('forwards the prototype-token toggles (auto-rotate / ring)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Osric the Bartender', type: 'npc' },
+      applied: ['tokenAutoRotate', 'tokenRing'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Osric the Bartender',
+      tokenAutoRotate: true,
+      tokenRing: false,
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].tokenAutoRotate).toBe(true);
+    expect(call?.[1].tokenRing).toBe(false);
+  });
+
+  it('rejects a non-boolean token toggle', async () => {
+    const { tool } = makeTool({});
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', tokenAutoRotate: 'yes' })
+    ).rejects.toThrow();
+  });
+
   it('applies the default replace mode to Set fields', async () => {
     const { tool, calls } = makeTool({
       success: true,

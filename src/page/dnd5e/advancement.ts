@@ -949,6 +949,7 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
         tokenDefaults({
           disposition: TOKEN_DISPOSITION.friendly,
           darkvision: readDarkvision(snapshot.system?.attributes?.senses),
+          ring: snapshot.prototypeToken.ring,
         })
       );
     }

@@ -39,10 +39,18 @@ export function resolveDisposition(
  * The prototypeToken fields every created actor receives. Merge over an existing prototypeToken
  * (keep its `name`/`texture`). `disposition` is the resolved numeric Foundry value; `darkvision` is
  * the range in feet (0 = basic vision).
+ *
+ * House token rules (authoring-policy rule 10) — the 2024-book prototype tokens ship all three the
+ * other way, so every creation path forces: auto-rotate ON (`lockRotation: false`, tokens face their
+ * movement), dynamic token ring OFF, and `randomImg` OFF (wildcard art is wrong once a single
+ * texture is set). Pass the source's `ring` when copying so its subject art/colors survive the
+ * forced-off ring and a manual re-enable in the token config still looks right.
  */
 export function tokenDefaults(opts: {
   disposition: number;
   darkvision?: number;
+  /** Existing ring config (e.g. a compendium copy's) to preserve while forcing `enabled: false`. */
+  ring?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const dark = opts.darkvision && opts.darkvision > 0 ? opts.darkvision : 0;
   return {
@@ -50,5 +58,8 @@ export function tokenDefaults(opts: {
     displayBars: TOKEN_DISPLAY_ALWAYS,
     disposition: opts.disposition,
     sight: { enabled: true, visionMode: dark > 0 ? 'darkvision' : 'basic', range: dark },
+    lockRotation: false,
+    randomImg: false,
+    ring: { ...(opts.ring ?? {}), enabled: false },
   };
 }

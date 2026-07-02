@@ -155,6 +155,48 @@ describe('handleCreateActorFromCompendium', () => {
     expect(calls[0][1]).not.toHaveProperty('modifications');
   });
 
+  it("forwards the caller's disposition (house rule: townsfolk are neutral)", async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'Osric the Bartender', id: 'a1' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({
+      packId: 'dnd-monster-manual.actors',
+      itemId: 'commoner-id',
+      names: ['Osric the Bartender'],
+      disposition: 'neutral',
+    });
+    const call = calls.find(c => c[0] === 'createActorFromCompendium');
+    expect(call![1].disposition).toBe('neutral');
+  });
+
+  it('omits disposition from the page call when not given (page falls back by source type)', async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'X' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({ packId: 'p', itemId: 'i', names: ['X'] });
+    expect(calls[0][1]).not.toHaveProperty('disposition');
+  });
+
+  it('rejects an unknown disposition value', async () => {
+    const { tools } = build({});
+    await expect(
+      tools.handleCreateActorFromCompendium({
+        packId: 'p',
+        itemId: 'i',
+        names: ['X'],
+        disposition: 'angry',
+      })
+    ).rejects.toThrow();
+  });
+
   it('surfaces the layered modifications the page applied to the world copy', async () => {
     const { tools } = build({
       success: true,

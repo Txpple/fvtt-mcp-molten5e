@@ -52,6 +52,20 @@ const UpdateActorSchema = z.object({
       "Prototype-token disposition (friend vs foe). Set 'friendly' to mark an NPC an ally (e.g. a " +
         "freed captive), 'hostile' for an enemy, 'neutral' for a bystander."
     ),
+  tokenAutoRotate: z
+    .boolean()
+    .optional()
+    .describe(
+      'Prototype-token auto-rotation: true = the token turns to face its movement ' +
+        '(lockRotation off — the house default; new creations already get it), false = fixed facing.'
+    ),
+  tokenRing: z
+    .boolean()
+    .optional()
+    .describe(
+      'Prototype-token dynamic ring: false = plain token (the house default; new creations ' +
+        'already get it), true = re-enable the ring (its colors/subject config is preserved).'
+    ),
 
   // details (most NPC-only)
   size: z
@@ -259,7 +273,7 @@ export class DnD5eUpdateActorTool {
         name: 'update-actor',
         description:
           "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
-          '• identity — name, img, disposition (token friend/foe)\n' +
+          '• identity — name, img, disposition (token friend/foe), tokenAutoRotate (face movement), tokenRing (dynamic ring)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
           '• vitals — hp, ac, initiative\n' +

@@ -4,6 +4,9 @@
 // now reports the copied creature's attack damage TYPES, so an agent reskinning the base to a new theme
 // must SEE the off-theme damage and reconcile it (replace the abilities, not reflavor in prose). Copies
 // the Adult Red Dragon (fire + slashing) and asserts the damageProfile surfaces those types per attack.
+// Also asserts the copy's prototype token follows the house token rules (auto-rotate on, dynamic ring
+// off, randomImg off), that update-actor's tokenRing/tokenAutoRotate toggles flip them, and that a
+// caller-supplied disposition ('neutral' townsfolk) overrides the npc→hostile default.
 // Cleaned up in `finally`.
 //
 // Build first: npm run build. Run: node scripts/verify-reskin-visibility.mjs
@@ -38,11 +41,13 @@ const f = new Foundry({
   serverUrl: env.MOLTEN_SERVER_URL,
   magicUrl: env.MOLTEN_MAGIC_URL,
   user: env.FOUNDRY_USER || 'MCP-Claude',
+  password: env.FOUNDRY_PASSWORD,
   adminKey: env.MOLTEN_ADMIN_KEY,
   worldId: env.MOLTEN_WORLD_ID,
 });
 
 let actorId;
+let commonerId;
 
 try {
   console.log('[verify-reskin] connecting to sandbox…');
@@ -97,14 +102,58 @@ try {
     renamed.proto === `${TAG} Wyrm`,
     `update-actor synced the prototype token name (got "${renamed.proto}")`
   );
+
+  console.log('\n# house token rules on the copy (auto-rotate on, ring off, no wildcard art)');
+  const houseRules = await f.evaluate(id => {
+    const pt = globalThis.game.actors.get(id)?.prototypeToken;
+    return {
+      lockRotation: pt?.lockRotation,
+      randomImg: pt?.randomImg,
+      ringEnabled: pt?.ring?.enabled,
+    };
+  }, actorId);
+  assert(houseRules.lockRotation === false, 'auto-rotate is on (lockRotation false)');
+  assert(houseRules.randomImg === false, 'randomImg is off');
+  assert(houseRules.ringEnabled === false, 'dynamic token ring is off');
+
+  console.log('\n# update-actor token toggles flip ring + auto-rotate back');
+  await f.call('updateActor', {
+    actorIdentifier: actorId,
+    tokenRing: true,
+    tokenAutoRotate: false,
+  });
+  const toggled = await f.evaluate(id => {
+    const pt = globalThis.game.actors.get(id)?.prototypeToken;
+    return { lockRotation: pt?.lockRotation, ringEnabled: pt?.ring?.enabled };
+  }, actorId);
+  assert(toggled.ringEnabled === true, 'tokenRing:true re-enabled the ring');
+  assert(toggled.lockRotation === true, 'tokenAutoRotate:false locked rotation');
+
+  console.log('\n# a neutral townsfolk copy (caller disposition overrides the npc→hostile default)');
+  const out2 = await f.call('createActorFromCompendium', {
+    packId: 'dnd-monster-manual.actors',
+    itemId: 'mmCommoner000000',
+    customNames: [`${TAG} Commoner`],
+    quantity: 1,
+    addToScene: false,
+    disposition: 'neutral',
+  });
+  commonerId = out2?.actors?.[0]?.id;
+  if (!commonerId) throw new Error('commoner not created');
+  const disp = await f.evaluate(
+    id => globalThis.game.actors.get(id)?.prototypeToken?.disposition,
+    commonerId
+  );
+  assert(disp === 0, `commoner copy is neutral (disposition 0, got ${disp})`);
 } catch (e) {
   fails++;
   console.log(`\n[verify-reskin] FATAL: ${e?.message || String(e)}`);
 } finally {
-  if (actorId) {
+  const created = [actorId, commonerId].filter(Boolean);
+  if (created.length) {
     try {
-      await f.call('deleteActor', { identifiers: [actorId], removeEmptyFolder: true });
-      console.log('\n[verify-reskin] cleaned up dragon');
+      await f.call('deleteActor', { identifiers: created, removeEmptyFolder: true });
+      console.log('\n[verify-reskin] cleaned up created actors');
     } catch {
       /* best-effort */
     }

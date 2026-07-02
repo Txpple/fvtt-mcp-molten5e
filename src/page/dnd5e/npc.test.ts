@@ -151,6 +151,13 @@ describe('buildNpcActorData', () => {
     expect(pt.disposition).toBe(1);
   });
 
+  it('applies the house token rules: auto-rotate on, no wildcard art, ring off', () => {
+    const pt = buildNpcActorData(baseNpc()).actorData.prototypeToken;
+    expect(pt.lockRotation).toBe(false);
+    expect(pt.randomImg).toBe(false);
+    expect(pt.ring).toEqual({ enabled: false });
+  });
+
   it('uses a flat AC block only in "flat" mode', () => {
     expect(buildNpcActorData(baseNpc()).actorData.system.attributes.ac).toEqual({
       calc: 'default',

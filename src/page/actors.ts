@@ -37,6 +37,7 @@ import {
   resolveDisposition,
   TOKEN_DISPOSITION,
   tokenDefaults,
+  type DispositionKey,
 } from './dnd5e/token-defaults.js';
 
 // Foundry document class (Actor) lives in the page global scope but is not
@@ -944,6 +945,9 @@ export async function createActorFromCompendium(request: {
   // instantiated WORLD COPY (never the source compendium doc). Applied via the same updateActor
   // correctness; same edits applied to every copy.
   modifications?: Record<string, any>;
+  // The caller's friend/foe judgment (authoring-policy rule 10) — e.g. 'neutral' for townsfolk.
+  // Absent → by source type: copied PC pregen friendly, copied monster hostile.
+  disposition?: DispositionKey;
 }): Promise<unknown> {
   const { packId, itemId, customNames, quantity = 1, addToScene = false, placement } = request;
   const modifications = request.modifications;
@@ -1006,18 +1010,22 @@ export async function createActorFromCompendium(request: {
       // keeps "Worg"), so re-point it to the custom name — otherwise every token dragged from the
       // copy, and its combat-tracker entry, reads the source name instead of the rename. Then apply
       // the shared table-ready defaults: name + HP bar shown to everyone, vision on and matching the
-      // copied sheet's darkvision, and a disposition (a copied PC pregen is friendly, a copied monster
-      // is hostile — the GM flips an allied NPC via update-actor).
+      // copied sheet's darkvision, and a disposition — the caller's call when given (rule 10:
+      // townsfolk are neutral), else by source type (a copied PC pregen is friendly, a copied
+      // monster is hostile).
       actorData.prototypeToken = actorData.prototypeToken ?? {};
       actorData.prototypeToken.name = customName;
       Object.assign(
         actorData.prototypeToken,
         tokenDefaults({
-          disposition:
+          disposition: resolveDisposition(
+            request.disposition,
             sourceData.type === 'character'
               ? TOKEN_DISPOSITION.friendly
-              : TOKEN_DISPOSITION.hostile,
+              : TOKEN_DISPOSITION.hostile
+          ),
           darkvision: readDarkvision(sourceData.system?.attributes?.senses),
+          ring: actorData.prototypeToken.ring,
         })
       );
 
@@ -1320,7 +1328,7 @@ export async function removeActorItems(params: {
  * are handled by updateActorItem / add-feature). Resolves the actor fuzzily, then builds ONE
  * `actor.update()` patch from whichever field groups the caller supplied:
  *
- *  - identity:   name, img
+ *  - identity:   name, img, disposition, tokenAutoRotate (= !lockRotation), tokenRing (ring.enabled)
  *  - details:    size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source
  *  - abilities:  abilities.<ab>, savingThrows (replace), skills (merge)
  *  - vitals:     hp, ac, initiative
@@ -1390,6 +1398,17 @@ export async function updateActor(params: any): Promise<unknown> {
       TOKEN_DISPOSITION.hostile
     );
     applied.push('disposition');
+  }
+  if (typeof params.tokenAutoRotate === 'boolean') {
+    // Auto-rotate = the inverse of Foundry's lockRotation. House rule 10 wants this ON; the
+    // 2024-book prototype tokens ship it locked.
+    update['prototypeToken.lockRotation'] = !params.tokenAutoRotate;
+    applied.push('tokenAutoRotate');
+  }
+  if (typeof params.tokenRing === 'boolean') {
+    // Only the enabled flag — the ring's colors/subject config is preserved for a later re-enable.
+    update['prototypeToken.ring.enabled'] = params.tokenRing;
+    applied.push('tokenRing');
   }
 
   // --- details ---

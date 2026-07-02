@@ -22,6 +22,27 @@ describe('tokenDefaults', () => {
     expect(t.disposition).toBe(-1);
     expect(t.sight).toEqual({ enabled: true, visionMode: 'darkvision', range: 60 });
   });
+
+  it('applies the house token rules: auto-rotate on, no wildcard art, ring off', () => {
+    // The 2024-book prototype tokens ship lockRotation/randomImg/ring.enabled all true; every
+    // creation path must force them the other way (shared authoring-policy rule 10).
+    const t = tokenDefaults({ disposition: TOKEN_DISPOSITION.neutral });
+    expect(t.lockRotation).toBe(false);
+    expect(t.randomImg).toBe(false);
+    expect(t.ring).toEqual({ enabled: false });
+  });
+
+  it('preserves a copied ring config (subject art/colors) while forcing it off', () => {
+    const sourceRing = {
+      enabled: true,
+      subject: { texture: 'modules/mm/subjects/commoner.webp', scale: 0.8 },
+      colors: { ring: '#aabbcc', background: '#112233' },
+    };
+    const t = tokenDefaults({ disposition: TOKEN_DISPOSITION.neutral, ring: sourceRing });
+    expect(t.ring).toEqual({ ...sourceRing, enabled: false });
+    // The source object itself is not mutated.
+    expect(sourceRing.enabled).toBe(true);
+  });
 });
 
 describe('readDarkvision', () => {

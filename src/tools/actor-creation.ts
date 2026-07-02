@@ -64,6 +64,15 @@ const CreateActorFromCompendiumSchema = z.object({
     })
     .optional()
     .describe('Token placement options (only used when addToScene is true)'),
+  disposition: z
+    .enum(['friendly', 'neutral', 'hostile', 'secret'])
+    .optional()
+    .describe(
+      "Prototype-token disposition for the created copies — YOUR judgment call (shared " +
+        "authoring-policy house token rules): 'neutral' for civilians/townsfolk/bystanders, " +
+        "'friendly' for allies, 'hostile' for enemies. Omit to default by source type (copied PC " +
+        'pregen → friendly, copied monster → hostile).'
+    ),
   modifications: z
     .record(z.string(), z.any())
     .optional()
@@ -167,7 +176,7 @@ export class ActorCreationTools {
    * Handle actor creation from specific compendium entry
    */
   async handleCreateActorFromCompendium(args: any): Promise<any> {
-    const { packId, itemId, names, quantity, addToScene, placement, modifications } =
+    const { packId, itemId, names, quantity, addToScene, placement, modifications, disposition } =
       CreateActorFromCompendiumSchema.parse(args);
     assertNoSrdPacks(packId, 'create-actor-from-compendium');
     const finalQuantity = quantity || names.length;
@@ -203,6 +212,7 @@ export class ActorCreationTools {
           : undefined,
         // Prefab-as-base: layer these edits onto the world copy (never the compendium source).
         ...(modifications ? { modifications } : {}),
+        ...(disposition ? { disposition } : {}),
       });
 
       this.logger.info('Actor creation completed', {
