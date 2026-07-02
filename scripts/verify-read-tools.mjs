@@ -44,6 +44,7 @@ const foundry = new Foundry({
   serverUrl: env.MOLTEN_SERVER_URL,
   magicUrl: env.MOLTEN_MAGIC_URL,
   user: env.FOUNDRY_USER || 'MCP-Claude',
+  password: env.FOUNDRY_PASSWORD,
 });
 
 const scene = new SceneTools({ foundry, logger });

@@ -63,6 +63,7 @@ const f = new Foundry({
   serverUrl: env.MOLTEN_SERVER_URL,
   magicUrl: env.MOLTEN_MAGIC_URL,
   user: env.FOUNDRY_USER || 'MCP-Claude',
+  password: env.FOUNDRY_PASSWORD,
   // Allow the script to bring up a fully-cold Molten box on its own (mirrors the integration setup).
   adminKey: env.MOLTEN_ADMIN_KEY,
   worldId: env.MOLTEN_WORLD_ID,

@@ -24,6 +24,7 @@ const cfg = {
   serverUrl: env.MOLTEN_SERVER_URL,
   magicUrl: env.MOLTEN_MAGIC_URL,
   user: env.FOUNDRY_USER || 'MCP-Claude',
+  password: env.FOUNDRY_PASSWORD,
   adminKey: env.MOLTEN_ADMIN_KEY,
   worldId: env.MOLTEN_WORLD_ID,
 };
