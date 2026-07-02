@@ -90,6 +90,29 @@ describe('createPcActor orchestration', () => {
     expect(persisted?.prototypeToken?.sight?.enabled).toBe(true);
   });
 
+  it('resolves a folder NAME to its Folder id before persisting (never passes a name as a folder id)', async () => {
+    mock = installFoundryMock([fighter()]);
+    // Seed an existing "DM Tools" Actor folder the resolver should match BY NAME and return its id.
+    (globalThis as any).game.folders = {
+      get: (id: string) =>
+        id === 'fold-DM' ? { id: 'fold-DM', name: 'DM Tools', type: 'Actor' } : undefined,
+      find: (fn: (f: any) => boolean) =>
+        [{ id: 'fold-DM', name: 'DM Tools', type: 'Actor' }].find(fn),
+    };
+
+    const res: any = await createPcActor({
+      name: 'Aria',
+      className: 'Fighter',
+      level: 1,
+      folder: 'DM Tools', // a NAME — must resolve to the folder's id, not pass through as an id
+    });
+
+    expect(res.success).toBe(true);
+    // Regression: the old code set snapshot.folder = "DM Tools" (the raw name), so Actor.create got a
+    // name where Foundry expects a Folder id and THREW live. It must be the resolved id now.
+    expect(res.actor.folder).toBe('fold-DM');
+  });
+
   it('does NOT persist and returns success:false + errors when a forced advancement throws', async () => {
     const broken = fighter();
     broken.advancements = [

@@ -32,6 +32,26 @@ import {
 import { addSpellsToActor } from './spells.js';
 import { readDarkvision, TOKEN_DISPOSITION, tokenDefaults } from './token-defaults.js';
 
+/**
+ * Resolve a PC's target folder to a real Folder **id**. Accepts a folder id OR an exact folder name
+ * (type Actor), creating the folder when a name doesn't exist yet; with no `folder` requested, falls
+ * back to the default "Foundry MCP Characters" folder. Returns null only if creation fails.
+ *
+ * WHY THIS EXISTS: the caller passes a folder NAME (e.g. "DM Tools"). The old code used that string
+ * directly as `snapshot.folder`, so `Actor.create` received a name where Foundry expects a Folder id
+ * and THREW ("An unexpected error occurred"). Resolving the name → id here fixes create-pc /
+ * create-pc-from-prefab when a `folder` is supplied.
+ */
+async function resolvePcFolderId(folder?: string): Promise<string | null> {
+  if (folder && folder.trim().length > 0) {
+    const f = folder.trim();
+    const existing =
+      game.folders?.get(f) || game.folders?.find((x: any) => x.name === f && x.type === 'Actor');
+    return existing ? existing.id : await getOrCreateFolder(f, 'Actor');
+  }
+  return getOrCreateFolder('Foundry MCP Characters', 'Actor');
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -912,8 +932,8 @@ export async function createPcActor(plan: PcBuildPlan): Promise<PcBuildResult> {
     }
 
     // 4. PERSIST — snapshot the built _source and create the real actor (one DB write, embedded items
-    //    keep their _ids so originalClass stays valid). File under the PC folder.
-    const folderId = plan.folder ?? (await getOrCreateFolder('Foundry MCP Characters', 'Actor'));
+    //    keep their _ids so originalClass stays valid). File under the PC folder (name → id resolve).
+    const folderId = await resolvePcFolderId(plan.folder);
     const snapshot = tmp.toObject();
     delete snapshot._id;
     snapshot.name = plan.name;
@@ -1290,8 +1310,8 @@ export async function createPcFromPrefab(plan: PcPrefabPlan): Promise<PcBuildRes
   const src = await resolvePremiumCharacter(plan);
   const { data } = await importFromCompendium(src.packId, src.actorId);
 
-  // 2. Rename + file under the PC folder; normalize a remote prototype-token texture to a local fallback.
-  const folderId = plan.folder ?? (await getOrCreateFolder('Foundry MCP Characters', 'Actor'));
+  // 2. Rename + file under the PC folder (name → id resolve); normalize a remote token texture to local.
+  const folderId = await resolvePcFolderId(plan.folder);
   data.name = plan.name;
   if (folderId) data.folder = folderId;
   if (data.prototypeToken?.texture?.src?.startsWith('http')) {
