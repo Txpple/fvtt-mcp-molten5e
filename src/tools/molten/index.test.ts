@@ -161,6 +161,35 @@ describe('world-DB write refusal (corruption guard)', () => {
     expect(davInstance.move).not.toHaveBeenCalled();
   });
 
+  it('move-asset creates the destination parents before MOVE (Apache 500s on a missing collection)', async () => {
+    davInstance.stat.mockResolvedValue({ path: 'assets/a.png', name: 'a.png', isCollection: false });
+    davInstance.exists.mockResolvedValue(false);
+    const out = await build().handleMoveAsset({
+      fromPath: 'assets/a.png',
+      toPath: 'assets/new-dir/a.png',
+      force: true,
+    });
+    expect(out).toMatch(/Moved/);
+    expect(davInstance.ensureParents).toHaveBeenCalledWith('assets/new-dir/a.png');
+    expect(davInstance.ensureParents.mock.invocationCallOrder[0]).toBeLessThan(
+      davInstance.move.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('copy-asset creates the destination parents before COPY', async () => {
+    davInstance.stat.mockResolvedValue({ path: 'assets/a.png', name: 'a.png', isCollection: false });
+    davInstance.exists.mockResolvedValue(false);
+    const out = await build().handleCopyAsset({
+      fromPath: 'assets/a.png',
+      toPath: 'assets/new-dir/a.png',
+    });
+    expect(out).toMatch(/Copied/);
+    expect(davInstance.ensureParents).toHaveBeenCalledWith('assets/new-dir/a.png');
+    expect(davInstance.ensureParents.mock.invocationCallOrder[0]).toBeLessThan(
+      davInstance.copy.mock.invocationCallOrder[0]
+    );
+  });
+
   it('allows a normal assets path (not flagged as world-DB)', async () => {
     // assets/ under a world is fine; only `worlds/<w>/data/` is the live DB.
     davInstance.stat.mockResolvedValue(null);

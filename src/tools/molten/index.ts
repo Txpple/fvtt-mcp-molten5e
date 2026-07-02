@@ -283,18 +283,20 @@ export class MoltenTools {
         name: 'move-asset',
         description:
           'Plane B (file channel, write). Move/rename a file under the Foundry `Data/` root over ' +
-          'WebDAV. REFERENCE-AWARE: by default REFUSES with a report if anything references the ' +
-          'source (moving would break those pointers). Pass relink:true to move AND rewrite all ' +
-          'references (old→new), or force:true to move without relinking. Refuses live world-DB ' +
-          'paths. Requires MOLTEN_WEBDAV_PASSWORD.',
+          'WebDAV; missing destination parent folders are created automatically. REFERENCE-AWARE: ' +
+          'by default REFUSES with a report if anything references the source (moving would break ' +
+          'those pointers). Pass relink:true to move AND rewrite all references (old→new), or ' +
+          'force:true to move without relinking. Refuses live world-DB paths. Requires ' +
+          'MOLTEN_WEBDAV_PASSWORD.',
         inputSchema: toInputSchema(MoveAssetSchema),
       },
       {
         name: 'copy-asset',
         description:
-          'Plane B (file channel, write). Copy a file under the Foundry `Data/` root over WebDAV. ' +
-          '(Copying does not affect existing references, so no reference check is needed.) Refuses ' +
-          'live world-DB destination paths. Requires MOLTEN_WEBDAV_PASSWORD.',
+          'Plane B (file channel, write). Copy a file under the Foundry `Data/` root over WebDAV; ' +
+          'missing destination parent folders are created automatically. (Copying does not affect ' +
+          'existing references, so no reference check is needed.) Refuses live world-DB ' +
+          'destination paths. Requires MOLTEN_WEBDAV_PASSWORD.',
         inputSchema: toInputSchema(CopyAssetSchema),
       },
       {
@@ -614,6 +616,9 @@ export class MoltenTools {
         }
       }
 
+      // WebDAV MOVE does not create missing collections (Apache answers 500, not 409), so build the
+      // destination's parents first — same contract as upload-asset.
+      await dav.ensureParents(cleanTo);
       await dav.move(cleanFrom, cleanTo, overwrite, entry.isCollection);
       this.logger.info('move-asset', { fromPath: cleanFrom, toPath: cleanTo, relink, force });
 
@@ -652,6 +657,8 @@ export class MoltenTools {
       if (!overwrite && (await dav.exists(cleanTo))) {
         return `Refused: "Data/${cleanTo}" already exists. Pass overwrite:true to replace it.`;
       }
+      // COPY has the same missing-collection failure mode as MOVE — create parents first.
+      await dav.ensureParents(cleanTo);
       await dav.copy(cleanFrom, cleanTo, overwrite, entry.isCollection);
       this.logger.info('copy-asset', { fromPath: cleanFrom, toPath: cleanTo });
       return `Copied Data/${cleanFrom} → Data/${cleanTo}.`;
