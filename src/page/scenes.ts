@@ -1773,8 +1773,9 @@ function resolveSceneLink(kind: 'playlist' | 'journal', idOrName: string): strin
   throw new Error(`No ${kind} found matching "${trimmed}" (by id or exact name).`);
 }
 
-/** Resolve a scene by exact id, then exact name; null when neither matches. */
-function resolveSceneStrict(identifier: string): any {
+/** Resolve a scene by exact id, then exact name; null when neither matches. Shared with the placeable
+ * CRUD kernel (`_placeables.ts`), which resolves the target scene the same strict way every write does. */
+export function resolveSceneStrict(identifier: string): any {
   return (
     game.scenes?.get(identifier) || game.scenes?.find((s: any) => s.name === identifier) || null
   );

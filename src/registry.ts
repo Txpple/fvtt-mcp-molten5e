@@ -14,6 +14,7 @@ import { ItemTools } from './tools/items.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
+import { PlaceableTools } from './tools/placeables.js';
 import { JournalTools } from './tools/journal.js';
 import { OwnershipTools } from './tools/ownership.js';
 
@@ -68,6 +69,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const itemTools = new ItemTools({ foundry, logger });
   const compendiumTools = new CompendiumTools({ foundry, logger });
   const sceneTools = new SceneTools({ foundry, logger });
+  const placeableTools = new PlaceableTools({ foundry, logger });
   const actorCreationTools = new ActorCreationTools({ foundry, logger });
 
   const dnd5eAddFeatureTool = new DnD5eAddFeatureTool({ foundry, logger });
@@ -117,6 +119,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...itemTools.getToolDefinitions(),
     ...compendiumTools.getToolDefinitions(),
     ...sceneTools.getToolDefinitions(),
+    ...placeableTools.getToolDefinitions(),
     ...actorCreationTools.getToolDefinitions(),
     ...dnd5eNpcTools.getToolDefinitions(),
     ...dnd5ePcTools.getToolDefinitions(),
@@ -281,6 +284,12 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'update-region': args => sceneTools.handleUpdateRegion(args),
     'delete-region': args => sceneTools.handleDeleteRegion(args),
     'update-token': args => sceneTools.handleUpdateToken(args),
+
+    // Scene placeables — per-type CRUD over the shared kernel (src/page/_placeables.ts)
+    'create-tiles': args => placeableTools.handleCreateTiles(args),
+    'list-tiles': args => placeableTools.handleListTiles(args),
+    'update-tiles': args => placeableTools.handleUpdateTiles(args),
+    'delete-tiles': args => placeableTools.handleDeleteTiles(args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

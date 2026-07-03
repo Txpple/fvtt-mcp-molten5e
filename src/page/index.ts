@@ -30,6 +30,12 @@ import {
   prepareSceneShot,
 } from './scenes.js';
 import {
+  createSceneTiles,
+  listSceneTiles,
+  updateSceneTiles,
+  deleteSceneTiles,
+} from './placeables/tile.js';
+import {
   listActors,
   getCharacterInfo,
   getCharacterEntity,
@@ -141,6 +147,11 @@ const api = {
   deleteSceneRegions,
   updateSceneTokens,
   prepareSceneShot,
+  // scene placeables (per-type CRUD over the shared kernel)
+  createSceneTiles,
+  listSceneTiles,
+  updateSceneTiles,
+  deleteSceneTiles,
   // actors / characters
   listActors,
   getCharacterInfo,

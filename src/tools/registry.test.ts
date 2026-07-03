@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 104 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 109 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -56,7 +56,8 @@ describe('tool registry', () => {
     // + create-teleporter/create-region/list-regions/update-region/delete-region (region authoring)
     // + get-rolltable (deterministic roll-table entry reader)
     // + update-token (placed-token instance editor: rotation/scale/elevation/hidden/lockRotation/x/y/name)
-    expect(names.length).toBe(105);
+    // + create-tiles/list-tiles/update-tiles/delete-tiles (Tile CRUD over the placeable kernel)
+    expect(names.length).toBe(109);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -120,6 +121,15 @@ describe('tool registry', () => {
     const { tools, handlers } = build();
     expect(tools.map(t => t.name)).toContain('update-token');
     expect(typeof handlers['update-token']).toBe('function');
+  });
+
+  it('registers the Tile placeable CRUD tools (over the shared placeable kernel)', () => {
+    const { tools, handlers } = build();
+    const names = new Set(tools.map(t => t.name));
+    for (const name of ['create-tiles', 'list-tiles', 'update-tiles', 'delete-tiles']) {
+      expect(names.has(name)).toBe(true);
+      expect(typeof handlers[name]).toBe('function');
+    }
   });
 
   it('registers the journal page-visibility tools + update-folder (dogfood tooling gaps)', () => {
