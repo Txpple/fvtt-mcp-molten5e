@@ -13,8 +13,17 @@
 >   11/11 live checks pass (`scripts/verify-teleporter-scene-fields.mjs`).
 > - ✅ **Phase 0b (`update-scene` parity) — DONE + live-verified.** `environment`/`fog`/`initial`/`flags`
 >   now editable on an existing scene, deep-merged (a partial patch layers on).
-> - **Wall CRUD (was Phase 3): DEFERRED** to the Foundry in-app UI per owner decision (§6, Q1).
-> - Phases 1–2 (shared core + Tile CRUD) and Lights/Sounds/Drawings/Templates remain as below.
+> - ✅ **Phase 1 (shared kernel) — DONE.** `src/page/_placeables.ts` (kernel) + `src/utils/placeable-format.ts`
+>   (formatter) + `src/tools/placeables.ts` (per-type tools, split out of scene.ts). Region/Note NOT yet
+>   retrofitted onto the kernel (additive for now — a later DRY cleanup).
+> - ✅ **THE FOCUS SET — DONE + live-verified (28/28, `scripts/verify-placeables-tooling.mjs`).** Owner
+>   scoped placeable editing to **tokens / tiles / lights / notes**: **Tile full CRUD**
+>   (create/list/update/delete-tiles), **AmbientLight full CRUD** (create/list/update/delete-lights),
+>   and read-only **list-tokens** + **list-notes** (the inspect layer that makes the existing
+>   update-token / *-note editing loops usable). Tokens are update+read-only, notes keep their existing
+>   create/update/delete — both by owner decision. 115 tools total; the 10 new ones need a CC restart.
+> - **Wall CRUD: DEFERRED** to the Foundry in-app UI per owner decision (§6, Q1).
+> - **Drawings / AmbientSounds / MeasuredTemplates: DROPPED** from the near-term plan (out of the focus set).
 
 ---
 
@@ -436,7 +445,7 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
 - **Tests** — Node forwarding test in `scene.test.ts`; live proof (deep-merge layering, camera
   round-trip, flag stamp) in `verify-teleporter-scene-fields.mjs`. No new tool (schema-only, no restart).
 
-### Phase 1 — Extract the shared core (behavior-preserving, no new tools)
+### Phase 1 — Extract the shared core (✅ DONE — kernel + formatter shipped; Region/Note retrofit deferred)
 
 - Add `src/page/placeable-geometry.ts` (promote `sceneGrid`→`sceneGeo`, move `gridRectShape`, add
   `cellToPixel`/`pixelToCell`/`wallSegment`) + `placeable-geometry.test.ts`.
@@ -449,7 +458,7 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
 - **Effort:** medium. **Restart:** none (pure internal refactor, no surface change). **Risk:** the
   region source-id↔create-doc alignment through the null filter — wrap-don't-rewrite, gate on tests.
 
-### Phase 2 — Tile CRUD (the cited need; the worked example)
+### Phase 2 — Tile CRUD (✅ DONE, live-verified 16/16 — the cited "edit tile scale" need)
 
 - `create-tiles` / `list-tiles` / `update-tiles` / `delete-tiles` — Tile descriptor (`width`/`height`
   sizing, `texture` TextureData, `occlusionMode` with the Set-coercion probe, KEEP+WARN on
@@ -460,7 +469,11 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
 - **Rationale:** 40 live tiles, zero tooling, and "edit a tile's scale" is the literal cited need.
 - **Effort:** medium. **Restart:** yes (four new tools).
 
-### Phase 3 — AmbientLight CRUD (Walls DEFERRED to the Foundry UI)
+### Phase 3 — AmbientLight CRUD (✅ DONE, live-verified — Walls DEFERRED to the Foundry UI)
+
+> Also shipped in this focus set, not originally its own phase: read-only **list-tokens** and
+> **list-notes** — the inspect layer that makes update-token and the note tools usable on any scene.
+
 
 - **Walls: DEFERRED** (owner decision, Q1). Walls are drawn in-app or shipped by a pack; nobody
   hand-edits wall #438 through an agent. Not built now; revisit only if a real skill needs to
@@ -471,7 +484,7 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
   the v14 shape, so standalone create is nearly free once the kernel exists.)
 - **Effort:** medium (Lights are the nested-`config` outlier). **Restart:** yes.
 
-### Phase 4 — Drawing + AmbientSound (defer; lower demand)
+### Phase 4 — Drawing + AmbientSound (DROPPED from the near-term plan — outside the focus set)
 
 - `create-drawings` / … (GM annotations, secret-area boxes) and `create-sounds` / … (positional audio,
   composes with `playlist-builder`). Build **only when a skill needs them** — the descriptor makes each
