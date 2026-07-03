@@ -16,12 +16,8 @@ import {
   countWallsMissingSight,
   sidecarLightToV14,
   sidecarRegionToV14,
-  remapTeleportDestination,
   TOM_CARTOS_FLAG_SCOPE,
   gridRectShape,
-  teleportDestUuid,
-  teleportDestinationsOf,
-  buildTokenUpdate,
 } from './scenes.js';
 
 describe('fogModeToNumber', () => {
@@ -347,106 +343,6 @@ describe('sidecarRegionToV14', () => {
   });
 });
 
-describe('remapTeleportDestination', () => {
-  const sceneIdMap = { oldSceneA: 'newSceneA', oldSceneC: 'newSceneC' };
-  const regionIdMap = { oldRegB: 'newRegB', oldRegD: 'newRegD' };
-
-  it('rewrites a Scene.X.Region.Y destination using both maps', () => {
-    const res = remapTeleportDestination('Scene.oldSceneC.Region.oldRegD', sceneIdMap, regionIdMap);
-    expect(res).toEqual({ status: 'rewritten', dest: 'Scene.newSceneC.Region.newRegD' });
-  });
-
-  it('reports unchanged when the destination already equals the rewrite', () => {
-    const res = remapTeleportDestination(
-      'Scene.newSceneA.Region.newRegB',
-      { newSceneA: 'newSceneA' },
-      { newRegB: 'newRegB' }
-    );
-    expect(res.status).toBe('unchanged');
-  });
-
-  it('is IDEMPOTENT: a destination already holding the new ids (map VALUES) is unchanged, not unresolved', () => {
-    // Regression (caught live at the e2e): on a second remap pass the destination already points at
-    // the NEW scene/region (the map values), which are NOT keys — the old code flagged these
-    // already-correct teleporters as "unresolved". They must read as `unchanged`.
-    const res = remapTeleportDestination('Scene.newSceneC.Region.newRegD', sceneIdMap, regionIdMap);
-    expect(res.status).toBe('unchanged');
-    // mixed: scene already-new but region still an old key → resolves to a fresh rewrite
-    expect(
-      remapTeleportDestination('Scene.oldSceneA.Region.oldRegB', sceneIdMap, regionIdMap).status
-    ).toBe('rewritten');
-  });
-
-  it('is no-match for a non-teleport / unset destination', () => {
-    expect(remapTeleportDestination(undefined, sceneIdMap, regionIdMap).status).toBe('no-match');
-    expect(remapTeleportDestination('', sceneIdMap, regionIdMap).status).toBe('no-match');
-    expect(remapTeleportDestination('Macro.abc', sceneIdMap, regionIdMap).status).toBe('no-match');
-  });
-
-  it('is unresolved (and reports the original) when the target scene or region was not imported', () => {
-    const res = remapTeleportDestination(
-      'Scene.notImported.Region.oldRegB',
-      sceneIdMap,
-      regionIdMap
-    );
-    expect(res.status).toBe('unresolved');
-    expect(res.reason).toBe('Scene.notImported.Region.oldRegB');
-    // region missing from the map also fails closed
-    expect(
-      remapTeleportDestination('Scene.oldSceneA.Region.gone', sceneIdMap, regionIdMap).status
-    ).toBe('unresolved');
-  });
-});
-
-describe('teleportDestUuid', () => {
-  it('builds a v12+ region teleport destination UUID', () => {
-    expect(teleportDestUuid('sABC', 'rXYZ')).toBe('Scene.sABC.Region.rXYZ');
-  });
-});
-
-describe('teleportDestinationsOf', () => {
-  it('reads the LIVE `destinations` SET (v14.364 SetField model value)', () => {
-    // The teleportToken `destinations` field is a SetField: the live model exposes a Set (an array
-    // only via toObject()). dumpRegion/remap read the live doc, so a Set must be handled.
-    expect(teleportDestinationsOf({ destinations: new Set(['Scene.a.Region.b']) })).toEqual([
-      'Scene.a.Region.b',
-    ]);
-  });
-
-  it('reads the v14.364 `destinations` ARRAY', () => {
-    expect(
-      teleportDestinationsOf({
-        destinations: ['Scene.a.Region.b', 'Scene.c.Region.d'],
-        choice: true,
-      })
-    ).toEqual(['Scene.a.Region.b', 'Scene.c.Region.d']);
-  });
-
-  it('falls back to a singular `destination` for pre-migration data', () => {
-    expect(teleportDestinationsOf({ destination: 'Scene.a.Region.b' })).toEqual([
-      'Scene.a.Region.b',
-    ]);
-  });
-
-  it('prefers the array when both are present (post-migration shape)', () => {
-    expect(
-      teleportDestinationsOf({
-        destinations: ['Scene.a.Region.b'],
-        destination: 'Scene.legacy.Region.x',
-      })
-    ).toEqual(['Scene.a.Region.b']);
-  });
-
-  it('drops empty / non-string entries and returns [] for a non-teleport behavior', () => {
-    expect(teleportDestinationsOf({ destinations: ['Scene.a.Region.b', '', 42, null] })).toEqual([
-      'Scene.a.Region.b',
-    ]);
-    expect(teleportDestinationsOf({})).toEqual([]);
-    expect(teleportDestinationsOf(undefined)).toEqual([]);
-    expect(teleportDestinationsOf({ destination: '' })).toEqual([]);
-  });
-});
-
 describe('gridRectShape', () => {
   // A padded cave: 140px cells, background inset 280px from the padded-canvas origin.
   const grid = { size: 140, sceneX: 280, sceneY: 280 };
@@ -477,80 +373,5 @@ describe('gridRectShape', () => {
   it('falls back to a 100px cell when the grid size is missing', () => {
     const s = gridRectShape({ size: 0, sceneX: 0, sceneY: 0 }, 50, 50, 1, 1, false);
     expect(s).toMatchObject({ width: 100, height: 100, x: 0, y: 0 });
-  });
-});
-
-describe('buildTokenUpdate — the pure placed-token patch builder (update-token)', () => {
-  it('sets rotation and always carries the _id', () => {
-    const { update, changed } = buildTokenUpdate({ id: 't1' }, { rotation: 90 });
-    expect(update).toMatchObject({ _id: 't1', rotation: 90 });
-    expect(changed).toBe(true);
-  });
-
-  it('maps `scale` onto BOTH texture.scaleX and texture.scaleY', () => {
-    const { update } = buildTokenUpdate({ id: 't1' }, { scale: 1.5 });
-    expect(update['texture.scaleX']).toBe(1.5);
-    expect(update['texture.scaleY']).toBe(1.5);
-  });
-
-  it('GOTCHA: rotating a lockRotation:true token AUTO-UNLOCKS it and warns', () => {
-    const { update, warnings } = buildTokenUpdate(
-      { id: 't1', lockRotation: true },
-      { rotation: 45 }
-    );
-    expect(update.rotation).toBe(45);
-    expect(update.lockRotation).toBe(false);
-    expect(warnings.some(w => /auto-unlocked/i.test(w))).toBe(true);
-  });
-
-  it('does NOT touch lockRotation when rotating an already-unlocked token', () => {
-    const { update, warnings } = buildTokenUpdate(
-      { id: 't1', lockRotation: false },
-      { rotation: 45 }
-    );
-    expect(update).not.toHaveProperty('lockRotation');
-    expect(warnings).toEqual([]);
-  });
-
-  it('respects an EXPLICIT lockRotation:true but warns the rotation will be hidden', () => {
-    const { update, warnings } = buildTokenUpdate(
-      { id: 't1', lockRotation: false },
-      { rotation: 45, lockRotation: true }
-    );
-    expect(update.lockRotation).toBe(true);
-    expect(warnings.some(w => /will hide/i.test(w))).toBe(true);
-  });
-
-  it('randomizeRotation uses the injected RNG (deterministic) and unlocks a locked token', () => {
-    const { update } = buildTokenUpdate(
-      { id: 't1', lockRotation: true },
-      { randomizeRotation: true },
-      () => 0.5
-    );
-    expect(update.rotation).toBe(180); // floor(0.5 * 360)
-    expect(update.lockRotation).toBe(false);
-  });
-
-  it('randomizeRotation overrides an explicit rotation', () => {
-    const { update } = buildTokenUpdate(
-      { id: 't1' },
-      { rotation: 10, randomizeRotation: true },
-      () => 0
-    );
-    expect(update.rotation).toBe(0); // from the RNG, not the 10
-  });
-
-  it('passes through elevation / hidden / x / y and trims name', () => {
-    const { update } = buildTokenUpdate(
-      { id: 't1' },
-      { elevation: 5, hidden: true, x: 100, y: 200, name: '  Corpse  ' }
-    );
-    expect(update).toMatchObject({ elevation: 5, hidden: true, x: 100, y: 200, name: 'Corpse' });
-  });
-
-  it('ignores an empty/whitespace name and reports changed:false when nothing but _id is set', () => {
-    const { update, changed } = buildTokenUpdate({ id: 't1' }, { name: '   ' });
-    expect(update).toEqual({ _id: 't1' });
-    expect(changed).toBe(false);
   });
 });

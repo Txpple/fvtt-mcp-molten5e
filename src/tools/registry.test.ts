@@ -45,21 +45,16 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 109 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 129 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
-    // 87 + remap-teleporters (M3) + get-scene-dimensions + create-scene-notes (M4)
-    // + update-note + delete-note + upload-asset-tree (M6) + screenshot-scene (visual QA)
-    // + content-audit (rules 7/8/9 finishing check)
-    // + set-journal-page-visibility + delete-journal-page (journal page visibility) + update-folder
-    // + create-teleporter/create-region/list-regions/update-region/delete-region (region authoring)
-    // + get-rolltable (deterministic roll-table entry reader)
-    // + update-token (placed-token instance editor: rotation/scale/elevation/hidden/lockRotation/x/y/name)
-    // + create-tiles/list-tiles/update-tiles/delete-tiles (Tile CRUD over the placeable kernel)
-    // + create-lights/list-lights/update-lights/delete-lights (AmbientLight CRUD)
-    // + list-tokens + list-notes (read-only inspect layer; token/note mutation stays in their own tools)
-    expect(names.length).toBe(115);
+    // 115 as of the tiles/lights focus set, + the placeable-library completion (14):
+    // + create/list/update/delete-sounds (AmbientSound CRUD)
+    // + create/list/update/delete-drawings (Drawing CRUD)
+    // + create/list/update/delete-walls (Wall CRUD — doors/sight edit loop)
+    // + place-tokens + delete-tokens (placed-token lifecycle; update-token stays bespoke)
+    expect(names.length).toBe(129);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

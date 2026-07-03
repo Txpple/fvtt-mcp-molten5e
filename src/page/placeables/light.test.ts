@@ -8,20 +8,26 @@
 import { describe, it, expect } from 'vitest';
 import { lightDescriptor } from './light.js';
 
+// The kernel always passes a ctx; the Light descriptor doesn't use it.
+const CTX = { scene: {} };
+
 describe('lightDescriptor.toCreateDoc', () => {
   it('folds flat emission inputs into the nested config (incl. animation + darkness range)', () => {
-    const r = lightDescriptor.toCreateDoc!({
-      x: 500,
-      y: 600,
-      dim: 40,
-      bright: 20,
-      color: '#fcd674',
-      animationType: 'torch',
-      animationSpeed: 5,
-      animationIntensity: 5,
-      darknessMin: 0.1,
-      walls: true,
-    }) as { doc?: any };
+    const r = lightDescriptor.toCreateDoc!(
+      {
+        x: 500,
+        y: 600,
+        dim: 40,
+        bright: 20,
+        color: '#fcd674',
+        animationType: 'torch',
+        animationSpeed: 5,
+        animationIntensity: 5,
+        darknessMin: 0.1,
+        walls: true,
+      },
+      CTX
+    ) as { doc?: any };
     expect(r.doc).toMatchObject({
       x: 500,
       y: 600,
@@ -37,7 +43,7 @@ describe('lightDescriptor.toCreateDoc', () => {
   });
 
   it('errors on a missing center coordinate', () => {
-    expect((lightDescriptor.toCreateDoc!({ x: 0 }) as { error?: string }).error).toMatch(/y/);
+    expect((lightDescriptor.toCreateDoc!({ x: 0 }, CTX) as { error?: string }).error).toMatch(/y/);
   });
 });
 
@@ -45,7 +51,8 @@ describe('lightDescriptor.buildPatch', () => {
   it('writes config.* dot-paths for emission (partial change preserves the rest)', () => {
     const r = lightDescriptor.buildPatch!(
       {},
-      { id: 'l1', x: 10, dim: 60, color: '#ffffff', animationType: 'pulse', darknessMin: 0.2 }
+      { id: 'l1', x: 10, dim: 60, color: '#ffffff', animationType: 'pulse', darknessMin: 0.2 },
+      CTX
     ) as { changed: boolean; patch?: any };
     expect(r.changed).toBe(true);
     expect(r.patch).toEqual({
@@ -58,7 +65,7 @@ describe('lightDescriptor.buildPatch', () => {
   });
 
   it('changed:false when only the id is supplied', () => {
-    const r = lightDescriptor.buildPatch!({}, { id: 'l1' }) as { changed: boolean };
+    const r = lightDescriptor.buildPatch!({}, { id: 'l1' }, CTX) as { changed: boolean };
     expect(r.changed).toBe(false);
   });
 });

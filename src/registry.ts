@@ -14,7 +14,7 @@ import { ItemTools } from './tools/items.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
-import { PlaceableTools } from './tools/placeables.js';
+import { PlaceableTools } from './tools/placeables/index.js';
 import { JournalTools } from './tools/journal.js';
 import { OwnershipTools } from './tools/ownership.js';
 
@@ -267,35 +267,50 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     // Scene-pack module import (Node-only, off-line): read a Tom-Cartos-style module's packs off disk
     'read-pack': args => packReaderTools.handleReadPack(args),
 
-    // Scenes (authoring) — SceneTools also owns get-current-scene / get-world-info above
+    // Scenes (authoring) — scene-DOCUMENT tools only; placeables are the block below
     'create-scene': args => sceneTools.handleCreateScene(args),
     'list-scenes': args => sceneTools.handleListScenes(args),
     'update-scene': args => sceneTools.handleUpdateScene(args),
     'delete-scene': args => sceneTools.handleDeleteScene(args),
-    'remap-teleporters': args => sceneTools.handleRemapTeleporters(args),
     'get-scene-dimensions': args => sceneTools.handleGetSceneDimensions(args),
-    'create-scene-notes': args => sceneTools.handleCreateSceneNotes(args),
-    'update-note': args => sceneTools.handleUpdateNote(args),
-    'delete-note': args => sceneTools.handleDeleteNote(args),
     'screenshot-scene': args => sceneTools.handleScreenshotScene(args),
-    'create-teleporter': args => sceneTools.handleCreateTeleporter(args),
-    'create-region': args => sceneTools.handleCreateRegion(args),
-    'list-regions': args => sceneTools.handleListRegions(args),
-    'update-region': args => sceneTools.handleUpdateRegion(args),
-    'delete-region': args => sceneTools.handleDeleteRegion(args),
-    'update-token': args => sceneTools.handleUpdateToken(args),
 
-    // Scene placeables — per-type CRUD over the shared kernel (src/page/_placeables.ts)
-    'create-tiles': args => placeableTools.handleCreateTiles(args),
-    'list-tiles': args => placeableTools.handleListTiles(args),
-    'update-tiles': args => placeableTools.handleUpdateTiles(args),
-    'delete-tiles': args => placeableTools.handleDeleteTiles(args),
-    'create-lights': args => placeableTools.handleCreateLights(args),
-    'list-lights': args => placeableTools.handleListLights(args),
-    'update-lights': args => placeableTools.handleUpdateLights(args),
-    'delete-lights': args => placeableTools.handleDeleteLights(args),
-    'list-tokens': args => placeableTools.handleListTokens(args),
-    'list-notes': args => placeableTools.handleListNotes(args),
+    // Scene placeables — the per-type CRUD library over the shared kernel
+    // (src/page/_placeables.ts + src/page/placeables/** + src/tools/placeables/**)
+    'create-tiles': args => placeableTools.handle('create-tiles', args),
+    'list-tiles': args => placeableTools.handle('list-tiles', args),
+    'update-tiles': args => placeableTools.handle('update-tiles', args),
+    'delete-tiles': args => placeableTools.handle('delete-tiles', args),
+    'create-lights': args => placeableTools.handle('create-lights', args),
+    'list-lights': args => placeableTools.handle('list-lights', args),
+    'update-lights': args => placeableTools.handle('update-lights', args),
+    'delete-lights': args => placeableTools.handle('delete-lights', args),
+    'create-sounds': args => placeableTools.handle('create-sounds', args),
+    'list-sounds': args => placeableTools.handle('list-sounds', args),
+    'update-sounds': args => placeableTools.handle('update-sounds', args),
+    'delete-sounds': args => placeableTools.handle('delete-sounds', args),
+    'create-drawings': args => placeableTools.handle('create-drawings', args),
+    'list-drawings': args => placeableTools.handle('list-drawings', args),
+    'update-drawings': args => placeableTools.handle('update-drawings', args),
+    'delete-drawings': args => placeableTools.handle('delete-drawings', args),
+    'create-walls': args => placeableTools.handle('create-walls', args),
+    'list-walls': args => placeableTools.handle('list-walls', args),
+    'update-walls': args => placeableTools.handle('update-walls', args),
+    'delete-walls': args => placeableTools.handle('delete-walls', args),
+    'list-tokens': args => placeableTools.handle('list-tokens', args),
+    'place-tokens': args => placeableTools.handle('place-tokens', args),
+    'update-token': args => placeableTools.handle('update-token', args),
+    'delete-tokens': args => placeableTools.handle('delete-tokens', args),
+    'create-scene-notes': args => placeableTools.handle('create-scene-notes', args),
+    'list-notes': args => placeableTools.handle('list-notes', args),
+    'update-note': args => placeableTools.handle('update-note', args),
+    'delete-note': args => placeableTools.handle('delete-note', args),
+    'create-region': args => placeableTools.handle('create-region', args),
+    'list-regions': args => placeableTools.handle('list-regions', args),
+    'update-region': args => placeableTools.handle('update-region', args),
+    'delete-region': args => placeableTools.handle('delete-region', args),
+    'create-teleporter': args => placeableTools.handle('create-teleporter', args),
+    'remap-teleporters': args => placeableTools.handle('remap-teleporters', args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

@@ -84,8 +84,8 @@ try {
   const fromId = tp?.from?.id;
   const toId = tp?.to?.id;
   assert(!!fromId && !!toId, 'both endpoint regions created');
-  const fromDest = tp?.from?.behaviors?.find(x => x.destination)?.destination;
-  const toDest = tp?.to?.behaviors?.find(x => x.destination)?.destination;
+  const fromDest = tp?.from?.behaviors?.find(x => x.destinations?.length)?.destinations?.[0];
+  const toDest = tp?.to?.behaviors?.find(x => x.destinations?.length)?.destinations?.[0];
   assert(
     fromDest === `Scene.${bId}.Region.${toId}`,
     `A→B teleport points at B's region (${fromDest})`
@@ -106,12 +106,12 @@ try {
   );
 
   console.log('\n# update-region: widen B trigger to 3 cells (centered on its cell)');
-  const up = await f.call('updateSceneRegion', {
+  // Kernel contract (post-retrofit): batch patches keyed by id; updated docs come back in items[].
+  const up = await f.call('updateSceneRegions', {
     sceneIdentifier: bId,
-    regionId: toId,
-    rect: { x: 910, y: 910, widthCells: 3 },
+    patches: [{ id: toId, rect: { x: 910, y: 910, widthCells: 3 } }],
   });
-  const us = up?.region?.shapes?.[0];
+  const us = up?.items?.[0]?.shapes?.[0];
   assert(
     us?.x === 700 && us?.width === 420 && us?.y === 840 && us?.height === 140,
     `resized to 3 cells wide (700,840,420,140) — got (${us?.x},${us?.y},${us?.width},${us?.height})`
@@ -120,7 +120,7 @@ try {
   console.log('\n# create-region: a plain rectangle region on A');
   const cr = await f.call('createSceneRegions', {
     sceneIdentifier: aId,
-    regions: [
+    items: [
       {
         name: `${TAG} Trap`,
         color: '#ff3333',
@@ -131,30 +131,30 @@ try {
     ],
   });
   assert(cr?.created === 1, 'created 1 plain region');
-  const trapId = cr?.regions?.[0]?.id;
+  const trapId = cr?.items?.[0]?.id;
   assert(!!trapId, 'plain region has an id');
 
   console.log('\n# list-regions: A now has the teleporter + the trap');
   const list = await f.call('listSceneRegions', { sceneIdentifier: aId });
   assert(
-    Array.isArray(list?.regions) && list.regions.length === 2,
-    `A lists 2 regions (got ${list?.regions?.length})`
+    Array.isArray(list?.items) && list.items.length === 2,
+    `A lists 2 regions (got ${list?.items?.length})`
   );
   assert(
-    list.regions.some(r => r.id === trapId),
+    list.items.some(r => r.id === trapId),
     'list includes the trap region'
   );
   assert(
-    list.regions.some(r => r.id === fromId),
+    list.items.some(r => r.id === fromId),
     'list includes the teleporter region'
   );
 
   console.log('\n# delete-region: remove the trap, teleporter remains');
-  const del = await f.call('deleteSceneRegions', { sceneIdentifier: aId, regionIds: [trapId] });
+  const del = await f.call('deleteSceneRegions', { sceneIdentifier: aId, ids: [trapId] });
   assert(del?.deleted === 1, 'deleted 1 region');
   const list2 = await f.call('listSceneRegions', { sceneIdentifier: aId });
   assert(
-    list2?.regions?.length === 1 && list2.regions[0].id === fromId,
+    list2?.items?.length === 1 && list2.items[0].id === fromId,
     'only the teleporter remains'
   );
 
@@ -165,8 +165,14 @@ try {
     twoWay: false,
   });
   assert(one?.twoWay === false, 'reports one-way');
-  assert(!!one?.from?.behaviors?.find(x => x.destination), 'one-way from-side has a teleport');
-  assert(!one?.to?.behaviors?.some(x => x.destination), 'one-way to-side has NO return teleport');
+  assert(
+    !!one?.from?.behaviors?.find(x => x.destinations?.length),
+    'one-way from-side has a teleport'
+  );
+  assert(
+    !one?.to?.behaviors?.some(x => x.destinations?.length),
+    'one-way to-side has NO return teleport'
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-region] FATAL: ${e?.message || String(e)}`);

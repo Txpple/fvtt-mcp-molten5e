@@ -31,6 +31,17 @@ export interface PatchResult {
 }
 
 /**
+ * Per-call context handed to the descriptor hooks. `scene` lets a descriptor do scene-relative math
+ * (e.g. Region's grid-snapped rect convenience needs the scene's grid geometry); `index` is the item's
+ * position in the create batch (for indexed defaults like "Region 2"). Descriptors that don't need it
+ * simply declare fewer parameters — structural typing keeps them assignable.
+ */
+export interface PlaceableCtx {
+  scene: any;
+  index?: number;
+}
+
+/**
  * The type-specific half of placeable CRUD. `docName` is the embedded document name Foundry batches on
  * (`scene.createEmbeddedDocuments(docName, …)`). `collection(scene)` returns the scene's embedded
  * collection (e.g. `s => s.tiles`). `dump` serializes ONE live doc to a compact read-back (ids + salient
@@ -41,8 +52,8 @@ export interface PlaceableDescriptor {
   docName: string;
   collection: (scene: any) => any;
   dump: (doc: any) => Record<string, unknown>;
-  toCreateDoc?: (input: any) => Promise<CreateDocResult> | CreateDocResult;
-  buildPatch?: (existing: any, patch: any) => Promise<PatchResult> | PatchResult;
+  toCreateDoc?: (input: any, ctx: PlaceableCtx) => Promise<CreateDocResult> | CreateDocResult;
+  buildPatch?: (existing: any, patch: any, ctx: PlaceableCtx) => Promise<PatchResult> | PatchResult;
 }
 
 /** Iterate an embedded collection as an array whether it exposes `.contents` or is already iterable. */
@@ -86,7 +97,7 @@ export async function crudCreate(
   const warnings: string[] = [];
   for (let i = 0; i < args.items.length; i++) {
     try {
-      const r = await desc.toCreateDoc(args.items[i]);
+      const r = await desc.toCreateDoc(args.items[i], { scene, index: i });
       if (r.warnings?.length) warnings.push(...r.warnings);
       if (r.error) errors.push(`${desc.docName} ${i}: ${r.error}`);
       else if (r.doc) data.push(r.doc);
@@ -179,7 +190,7 @@ export async function crudUpdate<P extends { id: string }>(
       continue;
     }
     matched++;
-    const { patch, warnings: w, changed } = await desc.buildPatch(doc, p);
+    const { patch, warnings: w, changed } = await desc.buildPatch(doc, p, { scene });
     if (w?.length) warnings.push(...w);
     if (changed && patch) updates.push({ _id: doc.id, ...patch });
   }
@@ -212,6 +223,8 @@ export interface CrudDeleteResult {
   notFound?: string;
   deleted: number;
   notFoundIds?: string[];
+  /** Post-delete integrity notes (e.g. a surviving teleporter now pointing at a deleted region). */
+  warnings?: string[];
 }
 
 /** Delete N placeables of one type by id. Partitions present vs notFoundIds, one batched call. */

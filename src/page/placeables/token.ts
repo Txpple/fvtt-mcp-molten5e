@@ -1,12 +1,22 @@
-// Page-side Token descriptor for the placeable CRUD kernel — LIST ONLY.
+// Page-side Token placeable functions: LIST + PLACE + DELETE over the kernel, UPDATE bespoke.
 //
-// Placed-token MUTATION stays in the bespoke update-token tool (updateSceneTokens): its actor→all-copies
-// matching and the lockRotation auto-unlock gotcha don't fit a generic id-keyed patch, and token
-// create/delete are the actor's lifecycle, not a scene edit. What was missing was a READ: you can't feed
-// update-token a token id without first seeing what's on the map. list-tokens fills that (works on ANY
-// scene by id/name, not just the active one like get-current-scene). Dump only.
+// A placed token is an actor INSTANCE on a scene. The lifecycle rules this file owns:
+//  - PLACE (create) goes through the actor's prototype token via `actor.getTokenDocument()` — the
+//    same machinery a GM drag uses — so the house token defaults baked into the prototype at actor
+//    creation (auto-rotate, ring, disposition) carry onto the map. Placement is skeletal by design:
+//    the GM drags tokens in the app; this exists for batch encounter prep ("place the hobgoblin band").
+//  - UPDATE stays the bespoke `updateSceneTokens` (update-token tool): its actor→ALL-copies matching
+//    and the lockRotation auto-unlock gotcha don't fit the kernel's generic id-keyed patch.
+//  - DELETE removes the placed instance only — the sidebar actor is untouched (that's delete-actor).
 
-import { crudList, type PlaceableDescriptor } from '../_placeables.js';
+import {
+  crudCreate,
+  crudDelete,
+  crudList,
+  type CreateDocResult,
+  type PlaceableDescriptor,
+} from '../_placeables.js';
+import { resolveSceneStrict } from '../scenes.js';
 
 const DISPOSITION_NAME: Record<number, string> = {
   [-2]: 'secret',
@@ -14,6 +24,83 @@ const DISPOSITION_NAME: Record<number, string> = {
   0: 'neutral',
   1: 'friendly',
 };
+const DISPOSITION_NUMBER: Record<string, number> = {
+  secret: -2,
+  hostile: -1,
+  neutral: 0,
+  friendly: 1,
+};
+
+export interface TokenPlaceInput {
+  actor?: string;
+  x?: number;
+  y?: number;
+  hidden?: boolean;
+  elevation?: number;
+  rotation?: number;
+  name?: string;
+  disposition?: string;
+}
+
+/**
+ * PURE: build the override object layered onto the actor's prototype token for one placement.
+ * Only supplied fields override the prototype (so house defaults survive); `disposition` maps the
+ * friendly name to the CONST number. Returns an error for an unknown disposition instead of
+ * writing a NaN. Exported for unit testing.
+ */
+export function tokenPlacementOverrides(input: TokenPlaceInput): {
+  overrides?: Record<string, unknown>;
+  error?: string;
+} {
+  for (const k of ['x', 'y'] as const) {
+    if (typeof input[k] !== 'number') return { error: `${k} is required (a number)` };
+  }
+  const overrides: Record<string, unknown> = { x: input.x, y: input.y };
+  if (typeof input.hidden === 'boolean') overrides.hidden = input.hidden;
+  if (typeof input.elevation === 'number') overrides.elevation = input.elevation;
+  if (typeof input.rotation === 'number') overrides.rotation = input.rotation;
+  if (typeof input.name === 'string' && input.name.trim() !== '')
+    overrides.name = input.name.trim();
+  if (input.disposition !== undefined) {
+    const d = DISPOSITION_NUMBER[String(input.disposition).toLowerCase()];
+    if (d === undefined) {
+      return {
+        error: `unknown disposition "${input.disposition}" (friendly, neutral, hostile, or secret)`,
+      };
+    }
+    overrides.disposition = d;
+  }
+  return { overrides };
+}
+
+/**
+ * Resolve the actor (id or EXACT name) and build the token create-doc from its prototype with the
+ * placement overrides applied. Prefers `actor.getTokenDocument()` (core's own drag-drop machinery —
+ * handles wildcard art and prototype merge); falls back to a manual prototype spread if a future
+ * core drops it.
+ */
+async function toCreateDoc(input: TokenPlaceInput): Promise<CreateDocResult> {
+  if (!input?.actor || typeof input.actor !== 'string') {
+    return { error: 'actor is required (actor id or exact name)' };
+  }
+  const actor =
+    game.actors?.get(input.actor) ?? game.actors?.find((a: any) => a.name === input.actor);
+  if (!actor) return { error: `actor not found: "${input.actor}" (id or exact name)` };
+
+  const { overrides, error } = tokenPlacementOverrides(input);
+  if (error) return { error };
+
+  let doc: Record<string, unknown>;
+  if (typeof (actor as any).getTokenDocument === 'function') {
+    const td = await (actor as any).getTokenDocument(overrides);
+    doc = td.toObject();
+    delete doc._id; // the create path mints a fresh id
+  } else {
+    doc = { ...(actor as any).prototypeToken.toObject(), actorId: actor.id, ...overrides };
+    delete doc.randomImg; // prototype-only field — not part of the TokenDocument schema
+  }
+  return { doc };
+}
 
 function dump(doc: any): Record<string, unknown> {
   return {
@@ -39,8 +126,207 @@ export const tokenDescriptor: PlaceableDescriptor = {
   docName: 'Token',
   collection: (scene: any) => scene.tokens,
   dump,
+  toCreateDoc,
+  // NO buildPatch — placed-token mutation stays in the bespoke updateSceneTokens below.
 };
 
-// --- bridge page function (registered in src/page/index.ts) ------------------
+// --- bespoke placed-token UPDATE (the update-token tool) ----------------------
+
+/** The current-state token fields buildTokenUpdate reads (a minimal, testable slice of TokenDocument). */
+export interface TokenLike {
+  id: string;
+  name?: string;
+  lockRotation?: boolean;
+}
+
+/** The mutations update-token can apply to a placed token. */
+export interface TokenPatchArgs {
+  rotation?: number;
+  randomizeRotation?: boolean;
+  scale?: number;
+  elevation?: number;
+  hidden?: boolean;
+  lockRotation?: boolean;
+  x?: number;
+  y?: number;
+  name?: string;
+}
+
+/**
+ * PURE: build the `updateEmbeddedDocuments("Token", …)` patch for ONE token, plus any warnings, from
+ * the token's current state and the requested changes. Extracted from updateSceneTokens so the tricky
+ * bits are unit-testable without a live game.
+ *
+ * The baked-in GOTCHA: a token whose prototype had auto-rotate OFF carries `lockRotation:true`, which
+ * makes Foundry IGNORE the token's `rotation` visually. So when a rotation is applied to a
+ * lockRotation:true token and the caller did NOT explicitly pass `lockRotation`, we AUTO-UNLOCK it (and
+ * warn) so the angle actually shows. If the caller explicitly keeps lockRotation:true while setting a
+ * rotation, we keep their choice but warn the rotation won't be visible. `randomFn` is injected
+ * (defaults to Math.random) so tests are deterministic.
+ */
+export function buildTokenUpdate(
+  token: TokenLike,
+  args: TokenPatchArgs,
+  randomFn: () => number = Math.random
+): { update: Record<string, unknown>; warnings: string[]; changed: boolean } {
+  const update: Record<string, unknown> = { _id: token.id };
+  const warnings: string[] = [];
+  const label = `"${token.name ?? token.id}" (${token.id})`;
+
+  let rotationApplied = false;
+  if (args.randomizeRotation === true) {
+    update.rotation = Math.floor(randomFn() * 360); // 0..359
+    rotationApplied = true;
+  } else if (typeof args.rotation === 'number') {
+    update.rotation = args.rotation;
+    rotationApplied = true;
+  }
+
+  // lockRotation: an explicit value wins; otherwise auto-unlock a locked token that's getting a rotation.
+  if (typeof args.lockRotation === 'boolean') {
+    update.lockRotation = args.lockRotation;
+    if (args.lockRotation === true && rotationApplied) {
+      warnings.push(`${label}: rotation set but lockRotation:true will hide it visually.`);
+    }
+  } else if (rotationApplied && token.lockRotation === true) {
+    update.lockRotation = false;
+    warnings.push(
+      `${label}: auto-unlocked rotation (lockRotation was true, which would have hidden the angle).`
+    );
+  }
+
+  if (typeof args.scale === 'number') {
+    update['texture.scaleX'] = args.scale;
+    update['texture.scaleY'] = args.scale;
+  }
+  if (typeof args.elevation === 'number') update.elevation = args.elevation;
+  if (typeof args.hidden === 'boolean') update.hidden = args.hidden;
+  if (typeof args.x === 'number') update.x = args.x;
+  if (typeof args.y === 'number') update.y = args.y;
+  if (typeof args.name === 'string' && args.name.trim() !== '') update.name = args.name.trim();
+
+  const changed = Object.keys(update).length > 1; // more than just _id
+  return { update, warnings, changed };
+}
+
+/**
+ * Update one or more PLACED tokens on a scene — a token INSTANCE, NOT the actor's prototype token
+ * (that's update-actor). Resolve the scene by id/exact-name (default: the active scene), then target
+ * tokens by token id(s) and/or by actor (id OR exact name — matches ALL placed copies of that actor,
+ * e.g. every "Dead Guard" on the map). Patch any of: rotation (or `randomizeRotation` for an
+ * independent per-token angle), art scale (texture.scaleX/scaleY together), elevation, hidden,
+ * lockRotation, x/y, name — batched into ONE updateEmbeddedDocuments call. buildTokenUpdate owns the
+ * lockRotation gotcha (auto-unlock so a set rotation is visible).
+ */
+export async function updateSceneTokens(
+  args: {
+    sceneIdentifier?: string;
+    tokenIds?: string[];
+    actorIds?: string[];
+  } & TokenPatchArgs
+): Promise<{
+  success: boolean;
+  matched: number;
+  updated: number;
+  notFound?: string;
+  sceneId?: string;
+  sceneName?: string;
+  tokens?: Array<Record<string, unknown>>;
+  warnings?: string[];
+  unmatched?: { tokenIds?: string[]; actorIds?: string[] };
+}> {
+  const scene = args?.sceneIdentifier
+    ? resolveSceneStrict(args.sceneIdentifier)
+    : (game.scenes?.current ?? null);
+  if (!scene) {
+    return {
+      success: true,
+      matched: 0,
+      updated: 0,
+      notFound: args?.sceneIdentifier ?? '(no active scene)',
+    };
+  }
+
+  // Resolve actor targets (id or exact name) → a set of actor ids; collect names that resolved to nothing.
+  const wantActorIds = new Set<string>();
+  const unmatchedActorIds: string[] = [];
+  for (const raw of args?.actorIds ?? []) {
+    const a = game.actors?.get(raw) || game.actors?.find((x: any) => x.name === raw);
+    if (a) wantActorIds.add(a.id);
+    else unmatchedActorIds.push(raw);
+  }
+  const wantTokenIds = new Set<string>(args?.tokenIds ?? []);
+  if (wantTokenIds.size === 0 && wantActorIds.size === 0) {
+    throw new Error(
+      'provide at least one target: tokenIds and/or actorIds (id or exact actor name)'
+    );
+  }
+
+  const hasField =
+    args.rotation !== undefined ||
+    args.randomizeRotation === true ||
+    args.scale !== undefined ||
+    args.elevation !== undefined ||
+    args.hidden !== undefined ||
+    args.lockRotation !== undefined ||
+    args.x !== undefined ||
+    args.y !== undefined ||
+    (typeof args.name === 'string' && args.name.trim() !== '');
+  if (!hasField) {
+    throw new Error(
+      'provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, or name)'
+    );
+  }
+
+  const matched = scene.tokens.filter(
+    (t: any) => wantTokenIds.has(t.id) || (t.actorId && wantActorIds.has(t.actorId))
+  );
+  const matchedTokenIds = new Set(matched.map((t: any) => t.id));
+  const unmatchedTokenIds = [...wantTokenIds].filter(id => !matchedTokenIds.has(id));
+
+  const warnings: string[] = [];
+  const updates: Record<string, unknown>[] = [];
+  for (const t of matched) {
+    const { update, warnings: w, changed } = buildTokenUpdate(t, args);
+    warnings.push(...w);
+    if (changed) updates.push(update);
+  }
+
+  if (updates.length > 0) await scene.updateEmbeddedDocuments('Token', updates);
+
+  const summarize = (t: any) => ({
+    id: t.id,
+    name: t.name,
+    actorId: t.actorId || undefined,
+    rotation: t.rotation,
+    scale: t.texture?.scaleX,
+    elevation: t.elevation,
+    hidden: t.hidden,
+    lockRotation: t.lockRotation,
+    x: t.x,
+    y: t.y,
+  });
+
+  const unmatched: { tokenIds?: string[]; actorIds?: string[] } = {};
+  if (unmatchedTokenIds.length > 0) unmatched.tokenIds = unmatchedTokenIds;
+  if (unmatchedActorIds.length > 0) unmatched.actorIds = unmatchedActorIds;
+
+  return {
+    success: true,
+    matched: matched.length,
+    updated: updates.length,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    tokens: matched.map((t: any) => summarize(scene.tokens.get(t.id))),
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(Object.keys(unmatched).length > 0 ? { unmatched } : {}),
+  };
+}
+
+// --- bridge page functions (registered in src/page/index.ts) ------------------
 export const listSceneTokens = (args: { sceneIdentifier: string }) =>
   crudList(tokenDescriptor, args);
+export const placeSceneTokens = (args: { sceneIdentifier: string; items: TokenPlaceInput[] }) =>
+  crudCreate(tokenDescriptor, args);
+export const deleteSceneTokens = (args: { sceneIdentifier: string; ids: string[] }) =>
+  crudDelete(tokenDescriptor, args);

@@ -16,17 +16,7 @@ import {
   createScene,
   updateScene,
   deleteScenes,
-  remapSceneTeleporters,
   getSceneDimensions,
-  createSceneNotes,
-  updateSceneNote,
-  deleteSceneNotes,
-  createSceneRegions,
-  createSceneTeleporter,
-  listSceneRegions,
-  updateSceneRegion,
-  deleteSceneRegions,
-  updateSceneTokens,
   prepareSceneShot,
 } from './scenes.js';
 import {
@@ -41,8 +31,44 @@ import {
   updateSceneLights,
   deleteSceneLights,
 } from './placeables/light.js';
-import { listSceneTokens } from './placeables/token.js';
-import { listSceneNotes } from './placeables/note.js';
+import {
+  listSceneTokens,
+  placeSceneTokens,
+  deleteSceneTokens,
+  updateSceneTokens,
+} from './placeables/token.js';
+import {
+  createSceneNotes,
+  listSceneNotes,
+  updateSceneNotes,
+  deleteSceneNotes,
+} from './placeables/note.js';
+import {
+  createSceneRegions,
+  listSceneRegions,
+  updateSceneRegions,
+  deleteSceneRegions,
+  createSceneTeleporter,
+  remapSceneTeleporters,
+} from './placeables/region.js';
+import {
+  createSceneSounds,
+  listSceneSounds,
+  updateSceneSounds,
+  deleteSceneSounds,
+} from './placeables/sound.js';
+import {
+  createSceneDrawings,
+  listSceneDrawings,
+  updateSceneDrawings,
+  deleteSceneDrawings,
+} from './placeables/drawing.js';
+import {
+  createSceneWalls,
+  listSceneWalls,
+  updateSceneWalls,
+  deleteSceneWalls,
+} from './placeables/wall.js';
 import {
   listActors,
   getCharacterInfo,
@@ -136,26 +162,16 @@ import {
 } from './dnd5e/advancement.js';
 
 const api = {
-  // world / scene
+  // world / scene (scene-DOCUMENT ops only — placeables live below)
   getWorldInfo,
   getActiveScene,
   listScenes,
   createScene,
   updateScene,
   deleteScenes,
-  remapSceneTeleporters,
   getSceneDimensions,
-  createSceneNotes,
-  updateSceneNote,
-  deleteSceneNotes,
-  createSceneRegions,
-  createSceneTeleporter,
-  listSceneRegions,
-  updateSceneRegion,
-  deleteSceneRegions,
-  updateSceneTokens,
   prepareSceneShot,
-  // scene placeables (per-type CRUD over the shared kernel)
+  // scene placeables (per-type CRUD over the shared kernel, src/page/placeables/**)
   createSceneTiles,
   listSceneTiles,
   updateSceneTiles,
@@ -165,7 +181,31 @@ const api = {
   updateSceneLights,
   deleteSceneLights,
   listSceneTokens,
+  placeSceneTokens,
+  deleteSceneTokens,
+  updateSceneTokens,
+  createSceneNotes,
   listSceneNotes,
+  updateSceneNotes,
+  deleteSceneNotes,
+  createSceneRegions,
+  listSceneRegions,
+  updateSceneRegions,
+  deleteSceneRegions,
+  createSceneTeleporter,
+  remapSceneTeleporters,
+  createSceneSounds,
+  listSceneSounds,
+  updateSceneSounds,
+  deleteSceneSounds,
+  createSceneDrawings,
+  listSceneDrawings,
+  updateSceneDrawings,
+  deleteSceneDrawings,
+  createSceneWalls,
+  listSceneWalls,
+  updateSceneWalls,
+  deleteSceneWalls,
   // actors / characters
   listActors,
   getCharacterInfo,

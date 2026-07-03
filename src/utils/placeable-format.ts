@@ -35,6 +35,7 @@ interface DeleteResult {
   sceneName?: string;
   deleted?: number;
   notFoundIds?: string[];
+  warnings?: string[];
 }
 
 function warningBlock(warnings?: string[]): string {
@@ -45,8 +46,14 @@ function warningBlock(warnings?: string[]): string {
 /** "Created N tile(s) on "Scene" (id)" + one line per created id, + per-item errors + warnings. */
 export function formatCreatePlaceables(r: CreateResult, noun: string): string {
   if (r?.notFound) return `Scene not found: "${r.notFound}". No ${noun}s created.`;
+  // Display label: `name` where the type has one, else `text` (a Note pin's label lives there).
   const lines = Array.isArray(r?.items)
-    ? r.items.map(it => `\n  • ${it.id}${it.name ? ` — ${it.name}` : ''}`).join('')
+    ? r.items
+        .map(it => {
+          const label = it.name ?? it.text;
+          return `\n  • ${it.id}${label ? ` — ${label}` : ''}`;
+        })
+        .join('')
     : '';
   const errs = Array.isArray(r?.errors) ? r.errors.map(e => `\n  ⚠ ${e}`).join('') : '';
   return (
@@ -81,12 +88,15 @@ export function formatUpdatePlaceables(r: UpdateResult, noun: string): string {
   );
 }
 
-/** "Deleted N tile(s) from "Scene" (id)" + a not-found-ids tail. */
+/** "Deleted N tile(s) from "Scene" (id)" + a not-found-ids tail + integrity warnings. */
 export function formatDeletePlaceables(r: DeleteResult, noun: string): string {
   if (r?.notFound) return `Scene not found: "${r.notFound}". Nothing deleted.`;
   const missing =
     Array.isArray(r?.notFoundIds) && r.notFoundIds.length > 0
       ? ` (${r.notFoundIds.length} id(s) not found: ${r.notFoundIds.join(', ')})`
       : '';
-  return `Deleted ${r?.deleted ?? 0} ${noun}(s) from "${r?.sceneName}" (${r?.sceneId})${missing}.`;
+  return (
+    `Deleted ${r?.deleted ?? 0} ${noun}(s) from "${r?.sceneName}" (${r?.sceneId})${missing}.` +
+    warningBlock(r?.warnings)
+  );
 }
