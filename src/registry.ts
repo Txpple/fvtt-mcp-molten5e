@@ -345,6 +345,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'set-user-avatar': args => userTools.handleSetUserAvatar(args),
 
     // Organization & batch
+    'list-folders': args => organizationTools.handleListFolders(args),
     'create-folder': args => organizationTools.handleCreateFolder(args),
     'update-folder': args => organizationTools.handleUpdateFolder(args),
     'move-documents': args => organizationTools.handleMoveDocuments(args),

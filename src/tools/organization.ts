@@ -5,10 +5,10 @@ import { formatDeletionResult } from '../utils/format.js';
 import { toInputSchema } from '../utils/schema.js';
 
 /**
- * Organization & batch tools — create-folder, move-documents, bulk-delete.
- * General-purpose document wrangling across every world collection (Actor,
- * Item, JournalEntry, Scene, RollTable, Cards, Playlist, Macro). Runs over the
- * bridge; GM-only for writes. delete-folder lives in actor-creation.ts.
+ * Organization & batch tools — list-folders (the read/inspect step), create-folder,
+ * update-folder, move-documents, bulk-delete. General-purpose document wrangling across
+ * every world collection (Actor, Item, JournalEntry, Scene, RollTable, Cards, Playlist,
+ * Macro). Runs over the bridge; GM-only for writes. delete-folder lives in actor-creation.ts.
  */
 
 export interface OrganizationToolsOptions {
@@ -30,6 +30,13 @@ const DOC_TYPES = [
 // Single source of truth for each tool's input contract: the handlers parse with these schemas
 // and getToolDefinitions() advertises toInputSchema(...) of the same schema. Descriptions are
 // copied verbatim from the previous hand-written JSON Schema; only `.describe()` is added.
+const ListFoldersSchema = z.object({
+  type: z
+    .enum(DOC_TYPES)
+    .optional()
+    .describe('Filter to one document type (Actor, Scene, …). Omit for the whole sidebar.'),
+});
+
 const CreateFolderSchema = z.object({
   name: z.string().min(1).describe('Folder name.'),
   type: z
@@ -99,6 +106,16 @@ export class OrganizationTools {
   getToolDefinitions() {
     return [
       {
+        name: 'list-folders',
+        description:
+          'Read the sidebar folder TREE — every world folder (or one document type) in tree order ' +
+          'with its id, nesting depth + "/"-joined path, hex color, parent, direct document count, ' +
+          'and subfolder count. The inspect step the folder tools were missing: find the ids/names ' +
+          'for update-folder (rename/recolor/reparent), delete-folder, move-documents, and the ' +
+          'folder params on the create tools — without guessing what exists. Read-only.',
+        inputSchema: toInputSchema(ListFoldersSchema),
+      },
+      {
         name: 'create-folder',
         description:
           'Create a sidebar Folder for any world document type, optionally nested under a parent ' +
@@ -131,6 +148,31 @@ export class OrganizationTools {
         inputSchema: toInputSchema(BulkDeleteSchema),
       },
     ];
+  }
+
+  async handleListFolders(args: any): Promise<string> {
+    const parsed = ListFoldersSchema.parse(args ?? {});
+    const result: any = await this.foundry.call('listFolders', parsed);
+    const folders: any[] = Array.isArray(result?.folders) ? result.folders : [];
+    if (folders.length === 0) {
+      return parsed.type ? `No ${parsed.type} folders exist.` : 'No folders exist.';
+    }
+    const types: string[] = Array.isArray(result?.types) ? result.types : [];
+    const lines: string[] = [`Folders (${folders.length} across ${types.length} type(s)):`];
+    for (const t of types) {
+      const ofType = folders.filter(f => f.type === t);
+      lines.push(`\n${t} (${ofType.length}):`);
+      for (const f of ofType) {
+        const bits = [
+          f.color ? `${f.color}` : null,
+          `${f.documentCount} doc(s)`,
+          f.subfolderCount > 0 ? `${f.subfolderCount} subfolder(s)` : null,
+          f.orphaned ? 'ORPHANED (dangling parent)' : null,
+        ].filter(Boolean);
+        lines.push(`${'  '.repeat(f.depth + 1)}- "${f.name}" (${f.id}) — ${bits.join(', ')}`);
+      }
+    }
+    return lines.join('\n');
   }
 
   async handleCreateFolder(args: any): Promise<string> {

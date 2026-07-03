@@ -109,6 +109,26 @@ in-world text only — no GM notes). Track progress with `update-quest-journal` 
 - Keep secrets out of player-visible pages entirely — split into a GM page + a handout page rather than
   relying on a `gmnote` box, which still renders its text to anyone who can open the page.
 
+## Player handouts vs GM keys — separate entries, separate folders
+
+A player handout and a GM key are **two different journal entries**, never two pages of one. This is the
+house convention — keep it consistent so the sidebar stays trustworthy at a glance:
+
+- **Player handouts** live in a **`Player Handouts`** folder and hold **only** player-facing pages —
+  never a GM-only page, never a `gmnote` block. A `gmnote` renders its text to anyone who can open the
+  page, so it leaks even on a page you thought was safe; if a journal contains anything the players
+  shouldn't read, it does not belong in Player Handouts. A handout is only what you'd physically hand the
+  table.
+- **GM material** lives in a **`GM Notes`** folder and each entry is named **`<Name> — GM Key`** (e.g.
+  `Daggerford — GM Key`, `Wisp Caves — GM Key`, `Trade Way Ambush — GM Key`). Read-aloud / boxed text the
+  GM reads *aloud* is the GM's script — it belongs in the GM key, not in a handout.
+- **When one subject needs both,** build two entries: `<Name>` (Player Handouts, player-visible) and
+  `<Name> — GM Key` (GM Notes, GM-only). Don't smuggle GM notes into a handout as a "GM-only page."
+- **Staging a handout hidden** (revealed later in session): create it with its pages GM-only (omit
+  `playerVisible`) so the whole entry is invisible to players; in session, flip the **entry's** default
+  ownership to Observer once and every inheriting page reveals at once. Per-page `playerVisible: true`
+  makes a page visible **now** — use that only when the players should see it immediately.
+
 ## Linking — mix-and-match by reference (never restate stats)
 
 - A world **NPC** the quest involves → `link-quest-to-npc` (a clickable `@UUID[Actor.id]` in a GM note).

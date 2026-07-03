@@ -163,6 +163,83 @@ async function deleteByResolver(
 // ---------------------------------------------------------------------------
 
 /**
+ * Read the sidebar folder TREE — the missing inspect step for the folder write tools (you can't
+ * reparent/recolor/move-into what you can't see). Returns every world folder (optionally one
+ * document type), DFS tree-ordered with depth + a human "/"-joined path, plus each folder's color,
+ * parent, direct document count, and subfolder count. Read-only; ids feed update-folder /
+ * delete-folder / move-documents / the folder params on the create tools.
+ */
+export function listFolders(args?: { type?: string }): unknown {
+  const type = args?.type;
+  if (type !== undefined && !WORLD_DOC_TYPES.includes(type)) {
+    throw new Error(`Unknown folder type "${type}". Valid: ${WORLD_DOC_TYPES.join(', ')}`);
+  }
+  const all: any[] = (game.folders?.contents ?? []).filter(
+    (f: any) => type === undefined || f.type === type
+  );
+
+  // Folder.color is a Color object in v12+ (a string in older data) — surface a plain hex or null.
+  const colorOf = (f: any): string | null => {
+    const c = f?.color;
+    if (!c) return null;
+    if (typeof c === 'string') return c;
+    return typeof c.css === 'string' ? c.css : null;
+  };
+
+  // DFS per type: roots first, siblings alphabetical (deterministic regardless of the world's
+  // manual-sort values), children directly under their parent so depth renders as a tree.
+  const byName = (a: any, b: any) => String(a.name ?? '').localeCompare(String(b.name ?? ''));
+  const out: Array<Record<string, unknown>> = [];
+  const types = [...new Set(all.map((f: any) => String(f.type)))].sort();
+  for (const t of types) {
+    const ofType = all.filter((f: any) => f.type === t);
+    const childrenOf = (parentId: string | null) =>
+      ofType.filter((f: any) => (f.folder?.id ?? null) === parentId).sort(byName);
+    const walk = (parentId: string | null, depth: number, prefix: string) => {
+      for (const f of childrenOf(parentId)) {
+        const path = prefix ? `${prefix}/${f.name}` : String(f.name ?? '');
+        const { documents, subfolders } = folderChildCounts(f);
+        out.push({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          depth,
+          path,
+          color: colorOf(f),
+          parentId: f.folder?.id ?? null,
+          parentName: f.folder?.name ?? null,
+          documentCount: documents,
+          subfolderCount: subfolders,
+        });
+        walk(f.id, depth + 1, path);
+      }
+    };
+    walk(null, 0, '');
+    // Defensive sweep: a folder whose parent reference dangles (corrupt/mid-delete data) would be
+    // unreachable from the root walk — surface it flat rather than silently dropping it.
+    const seen = new Set(out.map(f => f.id));
+    for (const f of ofType.filter((x: any) => !seen.has(x.id)).sort(byName)) {
+      const { documents, subfolders } = folderChildCounts(f);
+      out.push({
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        depth: 0,
+        path: String(f.name ?? ''),
+        color: colorOf(f),
+        parentId: f.folder?.id ?? null,
+        parentName: f.folder?.name ?? null,
+        documentCount: documents,
+        subfolderCount: subfolders,
+        orphaned: true,
+      });
+    }
+  }
+
+  return { success: true, total: out.length, types, folders: out };
+}
+
+/**
  * Create a Folder for any world document type, optionally nested under a
  * parent folder of the same type. Flagged mcpGenerated so the auto-cleanup
  * paths (e.g. deleteActor) recognise it.

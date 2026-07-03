@@ -19,13 +19,19 @@ function build(response: any = {}) {
 }
 
 describe('OrganizationTools.getToolDefinitions', () => {
-  it('exposes exactly the four organization tools', () => {
+  it('exposes exactly the five organization tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['bulk-delete', 'create-folder', 'move-documents', 'update-folder']);
+    expect(names).toEqual([
+      'bulk-delete',
+      'create-folder',
+      'list-folders',
+      'move-documents',
+      'update-folder',
+    ]);
   });
 
   it('every definition has an object inputSchema with required fields', () => {
@@ -34,6 +40,94 @@ describe('OrganizationTools.getToolDefinitions', () => {
       expect(def.inputSchema.type).toBe('object');
       expect(Array.isArray(def.inputSchema.required)).toBe(true);
     }
+  });
+});
+
+describe('handleListFolders', () => {
+  it('renders the folder tree with depth indentation, colors, and counts', async () => {
+    const { tools, calls } = build({
+      success: true,
+      total: 3,
+      types: ['Actor', 'Scene'],
+      folders: [
+        {
+          id: 'fA',
+          name: '_DM',
+          type: 'Actor',
+          depth: 0,
+          path: '_DM',
+          color: '#7c4dff',
+          parentId: null,
+          documentCount: 1,
+          subfolderCount: 1,
+        },
+        {
+          id: 'fB',
+          name: 'Corpses',
+          type: 'Actor',
+          depth: 1,
+          path: '_DM/Corpses',
+          color: null,
+          parentId: 'fA',
+          documentCount: 4,
+          subfolderCount: 0,
+        },
+        {
+          id: 'fC',
+          name: 'Maps',
+          type: 'Scene',
+          depth: 0,
+          path: 'Maps',
+          color: null,
+          parentId: null,
+          documentCount: 3,
+          subfolderCount: 0,
+        },
+      ],
+    });
+    const out = await tools.handleListFolders({});
+    expect(calls[0][0]).toBe('listFolders');
+    expect(out).toContain('Folders (3 across 2 type(s)):');
+    expect(out).toContain('Actor (2):');
+    expect(out).toContain('  - "_DM" (fA) — #7c4dff, 1 doc(s), 1 subfolder(s)');
+    expect(out).toContain('    - "Corpses" (fB) — 4 doc(s)'); // depth 1 → deeper indent, no color
+    expect(out).toContain('Scene (1):');
+  });
+
+  it('forwards the type filter and reports an empty result plainly', async () => {
+    const { tools, calls } = build({ success: true, total: 0, types: [], folders: [] });
+    const out = await tools.handleListFolders({ type: 'Playlist' });
+    expect(calls[0][1]).toEqual({ type: 'Playlist' });
+    expect(out).toBe('No Playlist folders exist.');
+  });
+
+  it('flags an orphaned folder (dangling parent)', async () => {
+    const { tools } = build({
+      success: true,
+      total: 1,
+      types: ['Actor'],
+      folders: [
+        {
+          id: 'fX',
+          name: 'Lost',
+          type: 'Actor',
+          depth: 0,
+          path: 'Lost',
+          color: null,
+          parentId: 'gone',
+          documentCount: 0,
+          subfolderCount: 0,
+          orphaned: true,
+        },
+      ],
+    });
+    const out = await tools.handleListFolders({});
+    expect(out).toContain('ORPHANED (dangling parent)');
+  });
+
+  it('rejects an unknown type at the schema layer', async () => {
+    const { tools } = build();
+    await expect(tools.handleListFolders({ type: 'Spellbook' })).rejects.toThrow();
   });
 });
 

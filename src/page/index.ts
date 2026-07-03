@@ -136,6 +136,7 @@ import {
 } from './chat.js';
 import { setUserAvatar } from './users.js';
 import {
+  listFolders,
   createFolder,
   updateFolder,
   moveDocuments,
@@ -272,6 +273,7 @@ const api = {
   // users
   setUserAvatar,
   // organization (folders / move / bulk-delete)
+  listFolders,
   createFolder,
   updateFolder,
   moveDocuments,
