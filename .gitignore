@@ -17,6 +17,10 @@ node_modules/
 # Spike / diagnostic screenshots
 scripts/*.png
 
+# Scratch/probe outputs (e.g. a live schema dump from a spike-*.mjs run). The generating
+# script is committed; its large JSON output is regenerable and stays local.
+/scratch-*.json
+
 # Environment Files
 .env
 .env.local
