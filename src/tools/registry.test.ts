@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 103 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 104 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -54,7 +54,8 @@ describe('tool registry', () => {
     // + content-audit (rules 7/8/9 finishing check)
     // + set-journal-page-visibility + delete-journal-page (journal page visibility) + update-folder
     // + create-teleporter/create-region/list-regions/update-region/delete-region (region authoring)
-    expect(names.length).toBe(103);
+    // + get-rolltable (deterministic roll-table entry reader)
+    expect(names.length).toBe(104);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

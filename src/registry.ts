@@ -293,6 +293,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'list-rolltables': args => tableTools.handleListRollTables(args),
     'update-rolltable': args => tableTools.handleUpdateRollTable(args),
     'roll-on-table': args => tableTools.handleRollOnTable(args),
+    'get-rolltable': args => tableTools.handleGetRollTable(args),
     'delete-rolltable': args => tableTools.handleDeleteRollTable(args),
 
     // Cards

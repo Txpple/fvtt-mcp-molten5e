@@ -20,7 +20,7 @@ function build(response: any = {}) {
 }
 
 describe('TableTools.getToolDefinitions', () => {
-  it('exposes exactly the six rolltable tools', () => {
+  it('exposes exactly the seven rolltable tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
@@ -29,6 +29,7 @@ describe('TableTools.getToolDefinitions', () => {
     expect(names).toEqual([
       'create-rolltable',
       'delete-rolltable',
+      'get-rolltable',
       'import-rolltable',
       'list-rolltables',
       'roll-on-table',
@@ -316,6 +317,68 @@ describe('handleRollOnTable', () => {
   it('rejects an empty identifier', async () => {
     const { tools } = build();
     await expect(tools.handleRollOnTable({ identifier: '' })).rejects.toThrow();
+  });
+});
+
+describe('handleGetRollTable', () => {
+  it('formats the table header and every entry, prettifying links', async () => {
+    const { tools, calls } = build({
+      found: true,
+      id: 't1',
+      name: 'Loot',
+      formula: '1d3',
+      replacement: true,
+      displayRoll: true,
+      description: '',
+      results: [
+        { range: [1, 1], text: 'Gold', links: [] },
+        { range: [2, 3], text: '@UUID[u]{Ruby}', links: [{ uuid: 'u', label: 'Ruby' }] },
+      ],
+    });
+    const out = await tools.handleGetRollTable({ identifier: 'Loot' });
+    expect(calls[0][0]).toBe('getRollTable');
+    expect(calls[0][1]).toEqual({ identifier: 'Loot' });
+    expect(out).toBe(
+      'Roll table "Loot" (t1) — 1d3, 2 result(s) [replacement on, displayRoll on]\n' +
+        '  [1] Gold\n' +
+        '  [2-3] Ruby\n' +
+        '      → Ruby [u]'
+    );
+  });
+
+  it('shows a description line and the no-replacement flag', async () => {
+    const { tools } = build({
+      found: true,
+      id: 't2',
+      name: 'Rumors',
+      formula: '1d4',
+      replacement: false,
+      displayRoll: true,
+      description: 'Tavern <em>gossip</em>.',
+      results: [{ range: [1, 4], text: 'A rumor', links: [] }],
+    });
+    const out = await tools.handleGetRollTable({ identifier: 't2' });
+    expect(out).toBe(
+      'Roll table "Rumors" (t2) — 1d4, 1 result(s) [replacement off, displayRoll on]\n' +
+        'Tavern <em>gossip</em>.\n' +
+        '  [1-4] A rumor'
+    );
+  });
+
+  it('reports not-found when the bridge says found:false', async () => {
+    const { tools } = build({ found: false, notFound: 'Ghost' });
+    const out = await tools.handleGetRollTable({ identifier: 'Ghost' });
+    expect(out).toBe('Roll table not found: "Ghost".');
+  });
+
+  it('rejects a missing identifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleGetRollTable({})).rejects.toThrow();
+  });
+
+  it('rejects an empty identifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleGetRollTable({ identifier: '' })).rejects.toThrow();
   });
 });
 

@@ -154,6 +154,42 @@ try {
     `weighted table formula 1d4 (${t5?.formula})`
   );
 
+  // --- 6. get-rolltable: read a table's FULL entries deterministically (no rolling) ---
+  console.log('\n# get-rolltable (deterministic full read — the reader tool)');
+  const tR = await makeTable('Readable', [
+    { text: 'First entry' },
+    { text: 'A pouch holding {{link}} and 2d6 gp', uuid: itemB.uuid },
+    { uuid: itemA.uuid, name: 'Third — an item', weight: 2 },
+  ]);
+  const got = await f.call('getRollTable', { identifier: tR.tableId });
+  assert(got?.found === true, 'get-rolltable found the table by id');
+  assert(got?.id === tR.tableId && got?.name === `${TAG} Readable`, 'returns id + name');
+  assert(
+    Array.isArray(got?.results) && got.results.length === 3 && got.resultCount === 3,
+    `returns all 3 entries (${got?.results?.length}/${got?.resultCount})`
+  );
+  const lows = (got?.results ?? []).map(r => r.range?.[0]);
+  assert(
+    lows.length === 3 && lows[0] <= lows[1] && lows[1] <= lows[2],
+    `entries sorted by low range — read 1..N without rolling (${JSON.stringify(lows)})`
+  );
+  assert(got.results[0].text === 'First entry', 'plain-text entry read back verbatim');
+  assert(
+    got.results[1].text === `A pouch holding @UUID[${itemB.uuid}]{${itemB.name}} and 2d6 gp` &&
+      got.results[1].links?.[0]?.uuid === itemB.uuid,
+    'mixed-loot entry reads back with the enricher + surfaces its link'
+  );
+  assert(
+    got.results[2].text === `@UUID[${itemA.uuid}]{Third — an item}` &&
+      got.results[2].links?.[0]?.label === 'Third — an item',
+    'uuid entry reads back with the resolved link + explicit label'
+  );
+  const missing = await f.call('getRollTable', { identifier: 'ZZ-NO-SUCH-TABLE-xyz' });
+  assert(
+    missing?.found === false && missing?.notFound === 'ZZ-NO-SUCH-TABLE-xyz',
+    'missing table -> found:false + notFound (clean sentinel, not a throw)'
+  );
+
   // --- GUARDS: correctness enforced at the seam (design.md §2.3/§2.4) ---
   console.log('\n# guards');
   await expectThrow(

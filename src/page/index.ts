@@ -71,6 +71,7 @@ import {
 import {
   listPlaylists,
   listRollTables,
+  getRollTable,
   listCards,
   rollOnTable,
   createPlaylist,
@@ -181,6 +182,7 @@ const api = {
   // collections (playlists / roll tables / cards)
   listPlaylists,
   listRollTables,
+  getRollTable,
   listCards,
   rollOnTable,
   createPlaylist,

@@ -139,6 +139,51 @@ export async function rollOnTable(args: { identifier: string }): Promise<unknown
   };
 }
 
+// Read a RollTable's full contents — every result with its range, weight, drawn flag, text, and any
+// embedded @UUID item links — so the entries can be INSPECTED without brute-force rolling (list-rolltables
+// gives only a summary; roll-on-table draws one random entry). Results are sorted by their low range so a
+// d<N> table reads 1..N in order. Pure read: no roll, no mutation. Returns found:false / notFound when the
+// identifier doesn't resolve.
+export function getRollTable(args: { identifier: string }): unknown {
+  const table = resolveStrict(game.tables, args?.identifier);
+  if (!table) {
+    return { success: true, found: false, notFound: args?.identifier };
+  }
+  const results = (table.results?.contents ?? [])
+    .map((r: any) => {
+      // v14 canonical field is `description`; `text` is a deprecation getter.
+      const description = r.description ?? r.text ?? '';
+      return {
+        id: r.id ?? '',
+        type: r.type ?? '',
+        range: r.range,
+        weight: r.weight ?? 1,
+        drawn: r.drawn ?? false,
+        text: description,
+        // Populated for document/pack results (a linked actor/item); null for plain text entries.
+        documentUuid: r.documentUuid ?? null,
+        documentName: r.name ?? null,
+        img: r.img ?? null,
+        links: parseUuidLinks(description),
+      };
+    })
+    .sort((a: any, b: any) => (a.range?.[0] ?? 0) - (b.range?.[0] ?? 0));
+
+  return {
+    success: true,
+    found: true,
+    id: table.id ?? '',
+    name: table.name ?? '',
+    formula: table.formula ?? '',
+    replacement: table.replacement ?? true,
+    displayRoll: table.displayRoll ?? true,
+    description: table.description ?? '',
+    folder: table.folder?.name ?? null,
+    resultCount: table.results?.size ?? results.length,
+    results,
+  };
+}
+
 // --- playlist writes ---
 
 // Default Foundry playlist-mode constants if CONST.PLAYLIST_MODES is unavailable.

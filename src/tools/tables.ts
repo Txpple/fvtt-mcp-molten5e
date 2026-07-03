@@ -97,6 +97,10 @@ const RollOnTableSchema = z.object({
   identifier: z.string().min(1).describe('Table id or exact name.'),
 });
 
+const GetRollTableSchema = z.object({
+  identifier: z.string().min(1).describe('Table id or exact name.'),
+});
+
 const DeleteRollTableSchema = z.object({
   identifiers: z
     .array(z.string().min(1))
@@ -170,6 +174,16 @@ export class TableTools {
         inputSchema: toInputSchema(RollOnTableSchema),
       },
       {
+        name: 'get-rolltable',
+        description:
+          "Read a RollTable's FULL contents — every entry with its roll range, weight, drawn flag, the " +
+          'result text (HTML/@UUID enrichers intact), and any linked items surfaced as uuid + label — ' +
+          'sorted low-to-high so a d<N> table reads 1..N. The deterministic way to inspect or audit a ' +
+          "table's entries without brute-force rolling (list-rolltables gives only a per-table summary; " +
+          'roll-on-table draws one random entry). Resolves by id or exact name.',
+        inputSchema: toInputSchema(GetRollTableSchema),
+      },
+      {
         name: 'delete-rolltable',
         description:
           'Permanently delete one or more RollTable documents by exact id or exact name. STRICT ' +
@@ -229,6 +243,32 @@ export class TableTools {
     let out = `Rolled ${result?.total} on "${result?.tableName}" → ${texts || '(no result matched)'}`;
     if (links.length > 0) {
       out += `\n  importable: ${links.map((l: any) => `${l.label} [${l.uuid}]`).join('; ')}`;
+    }
+    return out;
+  }
+
+  async handleGetRollTable(args: any): Promise<string> {
+    const { identifier } = GetRollTableSchema.parse(args ?? {});
+    const t: any = await this.foundry.call('getRollTable', { identifier });
+    if (!t || t.found === false) {
+      return `Roll table not found: "${t?.notFound ?? identifier}".`;
+    }
+    const results = Array.isArray(t.results) ? t.results : [];
+    const meta =
+      `[replacement ${t.replacement === false ? 'off' : 'on'}, ` +
+      `displayRoll ${t.displayRoll === false ? 'off' : 'on'}]`;
+    let out = `Roll table "${t.name}" (${t.id}) — ${t.formula}, ${results.length} result(s) ${meta}`;
+    const desc = stripUuidEnrichers(t.description ?? '').trim();
+    if (desc) out += `\n${desc}`;
+    for (const r of results) {
+      const lo = r?.range?.[0];
+      const hi = r?.range?.[1];
+      const label = lo === hi ? `${lo}` : `${lo}-${hi}`;
+      out += `\n  [${label}] ${stripUuidEnrichers(r?.text ?? '')}`;
+      const links = Array.isArray(r?.links) ? r.links : [];
+      if (links.length > 0) {
+        out += `\n      → ${links.map((l: any) => `${l.label} [${l.uuid}]`).join('; ')}`;
+      }
     }
     return out;
   }
