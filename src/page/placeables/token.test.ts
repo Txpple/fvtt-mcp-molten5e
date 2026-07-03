@@ -6,7 +6,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildTokenUpdate, tokenDescriptor, tokenPlacementOverrides } from './token.js';
+import {
+  buildHpPatch,
+  buildTokenUpdate,
+  tokenDescriptor,
+  tokenPlacementOverrides,
+} from './token.js';
 
 describe('tokenDescriptor.dump', () => {
   it('maps the numeric disposition to a name and surfaces art src + scale', () => {
@@ -164,5 +169,73 @@ describe('buildTokenUpdate — the pure placed-token patch builder (update-token
     const { update, changed } = buildTokenUpdate({ id: 't1' }, { name: '   ' });
     expect(update).toEqual({ _id: 't1' });
     expect(changed).toBe(false);
+  });
+
+  it('maps displayName / displayBars friendly keys onto CONST.TOKEN_DISPLAY_MODES numbers', () => {
+    const { update } = buildTokenUpdate({ id: 't1' }, { displayName: 'always', displayBars: 'hover' });
+    expect(update.displayName).toBe(50); // ALWAYS
+    expect(update.displayBars).toBe(30); // HOVER
+  });
+
+  it('maps displayName "none" to 0 (a falsy value that must still be written)', () => {
+    const { update, changed } = buildTokenUpdate({ id: 't1' }, { displayName: 'none' });
+    expect(update.displayName).toBe(0);
+    expect(changed).toBe(true);
+  });
+
+  it('warns on an unknown display mode and does NOT write it', () => {
+    const { update, warnings } = buildTokenUpdate({ id: 't1' }, { displayName: 'sometimes' });
+    expect(update).not.toHaveProperty('displayName');
+    expect(warnings.some(w => /unknown displayName/i.test(w))).toBe(true);
+  });
+
+  it('sets the bar attributes via dot-path and clears a bar with "" → null', () => {
+    const { update } = buildTokenUpdate({ id: 't1' }, { bar1: 'attributes.hp', bar2: '' });
+    expect(update['bar1.attribute']).toBe('attributes.hp');
+    expect(update['bar2.attribute']).toBeNull();
+  });
+
+  it('toggles the dynamic token ring via ring.enabled (both true and false register a change)', () => {
+    expect(buildTokenUpdate({ id: 't1' }, { ring: false }).update['ring.enabled']).toBe(false);
+    expect(buildTokenUpdate({ id: 't1' }, { ring: false }).changed).toBe(true);
+    expect(buildTokenUpdate({ id: 't1' }, { ring: true }).update['ring.enabled']).toBe(true);
+  });
+});
+
+describe('buildHpPatch — the pure per-token HP patch builder (update-token hp)', () => {
+  it('returns null when no hp object is supplied', () => {
+    expect(buildHpPatch(undefined)).toBeNull();
+  });
+
+  it('returns null for an empty hp object (nothing to change)', () => {
+    expect(buildHpPatch({})).toBeNull();
+  });
+
+  it('maps current HP onto the system.attributes.hp.value dot-path', () => {
+    expect(buildHpPatch({ value: 20 })).toEqual({ 'system.attributes.hp.value': 20 });
+  });
+
+  it('maps value + max together (the "reset to a lower max" case)', () => {
+    expect(buildHpPatch({ value: 35, max: 35 })).toEqual({
+      'system.attributes.hp.value': 35,
+      'system.attributes.hp.max': 35,
+    });
+  });
+
+  it('writes temp and tempmax when given', () => {
+    expect(buildHpPatch({ temp: 5, tempmax: -3 })).toEqual({
+      'system.attributes.hp.temp': 5,
+      'system.attributes.hp.tempmax': -3,
+    });
+  });
+
+  it('treats 0 as a real value (a downed creature), not an absent field', () => {
+    expect(buildHpPatch({ value: 0 })).toEqual({ 'system.attributes.hp.value': 0 });
+  });
+
+  it('writes ONLY the sub-fields supplied (max stays untouched when only value is set)', () => {
+    const patch = buildHpPatch({ value: 16 });
+    expect(patch).not.toBeNull();
+    expect(patch).not.toHaveProperty('system.attributes.hp.max');
   });
 });

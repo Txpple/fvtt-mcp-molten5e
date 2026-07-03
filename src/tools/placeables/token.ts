@@ -102,6 +102,50 @@ const UpdateTokenSchema = z
     x: z.number().optional().describe('New token X in absolute canvas pixels.'),
     y: z.number().optional().describe('New token Y in absolute canvas pixels.'),
     name: z.string().min(1).optional().describe('Rename the placed token (its nameplate).'),
+    displayName: z
+      .enum(['none', 'control', 'owner-hover', 'hover', 'owner', 'always'])
+      .optional()
+      .describe(
+        'Nameplate visibility: none | control (only when selected) | owner-hover | hover | ' +
+          'owner (always, to owners) | always (always, to everyone).'
+      ),
+    displayBars: z
+      .enum(['none', 'control', 'owner-hover', 'hover', 'owner', 'always'])
+      .optional()
+      .describe(
+        'Resource (health) bar visibility, same modes as displayName: none | control | ' +
+          'owner-hover | hover | owner | always.'
+      ),
+    bar1: z
+      .string()
+      .optional()
+      .describe('Bar 1 resource attribute path (health bar is "attributes.hp"); "" clears it.'),
+    bar2: z
+      .string()
+      .optional()
+      .describe('Bar 2 resource attribute path (e.g. "attributes.hp"); "" clears it.'),
+    ring: z
+      .boolean()
+      .optional()
+      .describe(
+        'Dynamic token ring: false = plain token (the house default), true = ring on. ' +
+          'Sets ring.enabled on the placed token.'
+      ),
+    hp: z
+      .object({
+        value: z.number().int().optional().describe('Current hit points.'),
+        max: z.number().int().optional().describe('Max hit points.'),
+        temp: z.number().int().optional().describe('Temporary hit points.'),
+        tempmax: z.number().int().optional().describe('Max-HP modifier (system.attributes.hp.tempmax).'),
+      })
+      .optional()
+      .describe(
+        "Set THIS placed token's hit points on its own actor — PER-TOKEN, so two copies of the same " +
+          'actor can differ (e.g. a band wounded to different HP). Writes system.attributes.hp.* on the ' +
+          "token's (unlinked) delta, NOT the prototype/statblock — the right home for a token's current " +
+          'HP. For a linked token it writes the shared base actor. Only the sub-fields you pass change; ' +
+          '0 is valid (a downed creature).'
+      ),
   })
   .refine(v => (v.tokenIds?.length ?? 0) > 0 || (v.actorIds?.length ?? 0) > 0, {
     message: 'Provide at least one target: tokenIds and/or actorIds.',
@@ -116,10 +160,16 @@ const UpdateTokenSchema = z
       v.lockRotation !== undefined ||
       v.x !== undefined ||
       v.y !== undefined ||
-      v.name !== undefined,
+      v.name !== undefined ||
+      v.displayName !== undefined ||
+      v.displayBars !== undefined ||
+      v.bar1 !== undefined ||
+      v.bar2 !== undefined ||
+      v.ring !== undefined ||
+      v.hp !== undefined,
     {
       message:
-        'Provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, or name).',
+        'Provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp).',
     }
   );
 
@@ -154,7 +204,11 @@ export const tokenToolModule: PlaceableModuleFactory = foundry => ({
         'OR exact name — updates EVERY placed copy of that actor, e.g. all "Dead Guard" corpses). Patch ' +
         'any of: `rotation` (or `randomizeRotation` for an independent per-token angle), `scale` (token ' +
         'art size — sets texture.scaleX/scaleY together), `elevation`, `hidden`, `lockRotation`, `x`/`y`, ' +
-        '`name` — all matched tokens update in one batch. GOTCHA handled for you: a token whose actor had ' +
+        '`name`, `displayName` (nameplate visibility), `displayBars` (resource-bar visibility), `bar1`/`bar2` ' +
+        '(which resource each bar tracks — the health bar is bar1 = attributes.hp), `ring` (dynamic token ' +
+        "ring on/off), and `hp` (this token's CURRENT hit points, per-token on its own delta — so two copies " +
+        'of one actor can be wounded differently, which update-actor cannot do) — all matched tokens update in ' +
+        'one batch. GOTCHA handled for you: a token whose actor had ' +
         'auto-rotate OFF carries lockRotation:true, which HIDES a set rotation — so when you rotate a ' +
         'locked token the tool auto-unlocks it and warns. Reports matched/updated counts + any ' +
         'unresolved ids. GM-only.',
@@ -202,7 +256,10 @@ export const tokenToolModule: PlaceableModuleFactory = foundry => ({
         ? result.tokens
             .map(
               (t: any) =>
-                `\n  • ${t.name} (${t.id}) — rot ${t.rotation}°, scale ${t.scale}, elev ${t.elevation}${t.hidden ? ', hidden' : ''}`
+                `\n  • ${t.name} (${t.id}) — rot ${t.rotation}°, scale ${t.scale}, elev ${t.elevation}` +
+                `${t.hidden ? ', hidden' : ''}, name ${t.displayName}, bars ${t.displayBars}` +
+                `${t.bar1 ? ` (${t.bar1})` : ''}, ring ${t.ring ? 'on' : 'off'}` +
+                `${t.hp ? `, hp ${t.hp.value}/${t.hp.max}` : ''}`
             )
             .join('')
         : '';

@@ -31,6 +31,19 @@ const DISPOSITION_NUMBER: Record<string, number> = {
   friendly: 1,
 };
 
+// Nameplate / resource-bar visibility (CONST.TOKEN_DISPLAY_MODES). Friendly key ↔ Foundry number.
+const DISPLAY_MODES: Record<string, number> = {
+  none: 0,
+  control: 10,
+  'owner-hover': 20,
+  hover: 30,
+  owner: 40,
+  always: 50,
+};
+const DISPLAY_MODE_NAME: Record<number, string> = Object.fromEntries(
+  Object.entries(DISPLAY_MODES).map(([k, v]) => [v, k])
+);
+
 export interface TokenPlaceInput {
   actor?: string;
   x?: number;
@@ -150,6 +163,20 @@ export interface TokenPatchArgs {
   x?: number;
   y?: number;
   name?: string;
+  displayName?: string; // nameplate visibility mode key (DISPLAY_MODES)
+  displayBars?: string; // resource-bar visibility mode key (DISPLAY_MODES)
+  bar1?: string; // bar1 resource attribute (e.g. "attributes.hp"); "" clears it
+  bar2?: string; // bar2 resource attribute; "" clears it
+  ring?: boolean; // dynamic token ring on/off (ring.enabled)
+  hp?: TokenHpArgs; // per-token hit points, written to the token's OWN actor (delta) — see buildHpPatch
+}
+
+/** The hit-point sub-fields update-token can set on a placed token's own actor. */
+export interface TokenHpArgs {
+  value?: number; // current HP
+  max?: number; // max HP
+  temp?: number; // temporary HP
+  tempmax?: number; // max-HP modifier (system.attributes.hp.tempmax)
 }
 
 /**
@@ -205,8 +232,44 @@ export function buildTokenUpdate(
   if (typeof args.y === 'number') update.y = args.y;
   if (typeof args.name === 'string' && args.name.trim() !== '') update.name = args.name.trim();
 
+  // Nameplate / resource-bar visibility (map friendly key → CONST.TOKEN_DISPLAY_MODES number).
+  if (typeof args.displayName === 'string') {
+    const m = DISPLAY_MODES[args.displayName];
+    if (m === undefined) warnings.push(`${label}: unknown displayName mode "${args.displayName}".`);
+    else update.displayName = m;
+  }
+  if (typeof args.displayBars === 'string') {
+    const m = DISPLAY_MODES[args.displayBars];
+    if (m === undefined) warnings.push(`${label}: unknown displayBars mode "${args.displayBars}".`);
+    else update.displayBars = m;
+  }
+  // Which actor resource each bar tracks ("" → clear the bar). The health bar is bar1 = attributes.hp.
+  if (typeof args.bar1 === 'string') update['bar1.attribute'] = args.bar1.trim() || null;
+  if (typeof args.bar2 === 'string') update['bar2.attribute'] = args.bar2.trim() || null;
+  // Dynamic token ring on/off (the house default is OFF — a plain token).
+  if (typeof args.ring === 'boolean') update['ring.enabled'] = args.ring;
+
   const changed = Object.keys(update).length > 1; // more than just _id
   return { update, warnings, changed };
+}
+
+/**
+ * PURE: build the `system.attributes.hp.*` patch applied to a placed token's OWN actor. This is what
+ * makes token HP per-instance: for an UNLINKED token, `token.actor.update(patch)` writes the token's
+ * ActorDelta, so two copies of the same base actor (e.g. two "Hobgoblin Archer" tokens) can hold
+ * DIFFERENT current HP — the thing update-actor cannot do. For a LINKED token the same call writes
+ * the shared base actor, which is the correct semantics there. Returns null when nothing HP-related
+ * was supplied (so callers can treat "no HP change" cleanly). Only the sub-fields present are written,
+ * and 0 is a legitimate value (a downed creature), so we test types, not truthiness.
+ */
+export function buildHpPatch(hp?: TokenHpArgs): Record<string, number> | null {
+  if (!hp) return null;
+  const patch: Record<string, number> = {};
+  if (typeof hp.value === 'number') patch['system.attributes.hp.value'] = hp.value;
+  if (typeof hp.max === 'number') patch['system.attributes.hp.max'] = hp.max;
+  if (typeof hp.temp === 'number') patch['system.attributes.hp.temp'] = hp.temp;
+  if (typeof hp.tempmax === 'number') patch['system.attributes.hp.tempmax'] = hp.tempmax;
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 /**
@@ -216,7 +279,8 @@ export function buildTokenUpdate(
  * e.g. every "Dead Guard" on the map). Patch any of: rotation (or `randomizeRotation` for an
  * independent per-token angle), art scale (texture.scaleX/scaleY together), elevation, hidden,
  * lockRotation, x/y, name — batched into ONE updateEmbeddedDocuments call. buildTokenUpdate owns the
- * lockRotation gotcha (auto-unlock so a set rotation is visible).
+ * lockRotation gotcha (auto-unlock so a set rotation is visible). HP is applied separately, per token,
+ * on the token's own actor (buildHpPatch) so unlinked copies of one prototype can hold different HP.
  */
 export async function updateSceneTokens(
   args: {
@@ -262,6 +326,7 @@ export async function updateSceneTokens(
     );
   }
 
+  const hpPatch = buildHpPatch(args.hp);
   const hasField =
     args.rotation !== undefined ||
     args.randomizeRotation === true ||
@@ -271,10 +336,16 @@ export async function updateSceneTokens(
     args.lockRotation !== undefined ||
     args.x !== undefined ||
     args.y !== undefined ||
-    (typeof args.name === 'string' && args.name.trim() !== '');
+    (typeof args.name === 'string' && args.name.trim() !== '') ||
+    args.displayName !== undefined ||
+    args.displayBars !== undefined ||
+    args.bar1 !== undefined ||
+    args.bar2 !== undefined ||
+    args.ring !== undefined ||
+    hpPatch !== null;
   if (!hasField) {
     throw new Error(
-      'provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, or name)'
+      'provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp)'
     );
   }
 
@@ -286,10 +357,25 @@ export async function updateSceneTokens(
 
   const warnings: string[] = [];
   const updates: Record<string, unknown>[] = [];
+  const updatedIds = new Set<string>(); // tokens changed by EITHER the doc patch or the HP patch
   for (const t of matched) {
     const { update, warnings: w, changed } = buildTokenUpdate(t, args);
     warnings.push(...w);
-    if (changed) updates.push(update);
+    if (changed) {
+      updates.push(update);
+      updatedIds.add(t.id);
+    }
+    // HP is not a TokenDocument field — it lives on the token's actor (the delta for an unlinked
+    // token, the base actor for a linked one). Apply it per token so shared-prototype copies diverge.
+    if (hpPatch) {
+      const actor = (t as any).actor;
+      if (actor) {
+        await actor.update(hpPatch);
+        updatedIds.add(t.id);
+      } else {
+        warnings.push(`"${t.name ?? t.id}" (${t.id}): no actor — HP not applied.`);
+      }
+    }
   }
 
   if (updates.length > 0) await scene.updateEmbeddedDocuments('Token', updates);
@@ -305,6 +391,13 @@ export async function updateSceneTokens(
     lockRotation: t.lockRotation,
     x: t.x,
     y: t.y,
+    displayName: DISPLAY_MODE_NAME[t.displayName] ?? t.displayName,
+    displayBars: DISPLAY_MODE_NAME[t.displayBars] ?? t.displayBars,
+    bar1: t.bar1?.attribute ?? null,
+    ring: t.ring?.enabled ?? false,
+    hp: t.actor?.system?.attributes?.hp
+      ? { value: t.actor.system.attributes.hp.value, max: t.actor.system.attributes.hp.max }
+      : undefined,
   });
 
   const unmatched: { tokenIds?: string[]; actorIds?: string[] } = {};
@@ -314,7 +407,7 @@ export async function updateSceneTokens(
   return {
     success: true,
     matched: matched.length,
-    updated: updates.length,
+    updated: updatedIds.size,
     sceneId: scene.id,
     sceneName: scene.name,
     tokens: matched.map((t: any) => summarize(scene.tokens.get(t.id))),
