@@ -280,6 +280,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'list-regions': args => sceneTools.handleListRegions(args),
     'update-region': args => sceneTools.handleUpdateRegion(args),
     'delete-region': args => sceneTools.handleDeleteRegion(args),
+    'update-token': args => sceneTools.handleUpdateToken(args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

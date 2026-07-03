@@ -47,6 +47,7 @@ describe('SceneTools.getToolDefinitions', () => {
         'update-note',
         'update-region',
         'update-scene',
+        'update-token',
       ].sort()
     );
   });

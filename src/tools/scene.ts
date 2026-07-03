@@ -580,6 +580,85 @@ const DeleteRegionSchema = z.object({
   regionIds: z.array(z.string().min(1)).min(1).describe('Region ids to delete.'),
 });
 
+// --- placed-token editing (a token INSTANCE on a scene, not the actor prototype token) --------------
+const UpdateTokenSchema = z
+  .object({
+    sceneIdentifier: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Scene id or exact name holding the token(s). Omit to use the ACTIVE scene.'),
+    tokenIds: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        'Placed-token ids to update (from get-current-scene). Combined (union) with actorIds.'
+      ),
+    actorIds: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        'Actor id OR exact actor name — updates ALL placed copies of each (e.g. every "Dead Guard" ' +
+          'token on the map). Combined (union) with tokenIds.'
+      ),
+    rotation: z
+      .number()
+      .optional()
+      .describe('Facing in degrees (0–359), applied to every matched token.'),
+    randomizeRotation: z
+      .boolean()
+      .optional()
+      .describe(
+        'Give each matched token its OWN random angle (0–359) instead of one shared `rotation` — ' +
+          'e.g. to strew corpses naturally. Overrides `rotation` when true.'
+      ),
+    scale: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'Token ART scale (sets texture.scaleX and scaleY together). 1 = normal, 1.5 = 50% larger.'
+      ),
+    elevation: z
+      .number()
+      .optional()
+      .describe('Token elevation in grid-distance units (e.g. feet).'),
+    hidden: z
+      .boolean()
+      .optional()
+      .describe('Hide (true) or reveal (false) the token from players.'),
+    lockRotation: z
+      .boolean()
+      .optional()
+      .describe(
+        'Lock the token art from rotating. NOTE: lockRotation:true HIDES any `rotation` you set, so ' +
+          'when you rotate a locked token and omit this, the tool AUTO-UNLOCKS it (and warns) so the ' +
+          'angle is visible.'
+      ),
+    x: z.number().optional().describe('New token X in absolute canvas pixels.'),
+    y: z.number().optional().describe('New token Y in absolute canvas pixels.'),
+    name: z.string().min(1).optional().describe('Rename the placed token (its nameplate).'),
+  })
+  .refine(v => (v.tokenIds?.length ?? 0) > 0 || (v.actorIds?.length ?? 0) > 0, {
+    message: 'Provide at least one target: tokenIds and/or actorIds.',
+  })
+  .refine(
+    v =>
+      v.rotation !== undefined ||
+      v.randomizeRotation === true ||
+      v.scale !== undefined ||
+      v.elevation !== undefined ||
+      v.hidden !== undefined ||
+      v.lockRotation !== undefined ||
+      v.x !== undefined ||
+      v.y !== undefined ||
+      v.name !== undefined,
+    {
+      message:
+        'Provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, or name).',
+    }
+  );
+
 export class SceneTools {
   private foundry: FoundryBridge;
   private logger: Logger;
@@ -751,6 +830,21 @@ export class SceneTools {
         description:
           'Delete one or more Regions from a scene by id. Missing ids are reported, never fatal. GM-only.',
         inputSchema: toInputSchema(DeleteRegionSchema),
+      },
+      {
+        name: 'update-token',
+        description:
+          'Edit one or more PLACED tokens on a scene — a token INSTANCE already dropped on the map, NOT ' +
+          "the actor's prototype token (that's update-actor). Resolve the scene by id/exact name " +
+          '(default: the ACTIVE scene), then target tokens by `tokenIds` and/or `actorIds` (an actor id ' +
+          'OR exact name — updates EVERY placed copy of that actor, e.g. all "Dead Guard" corpses). Patch ' +
+          'any of: `rotation` (or `randomizeRotation` for an independent per-token angle), `scale` (token ' +
+          'art size — sets texture.scaleX/scaleY together), `elevation`, `hidden`, `lockRotation`, `x`/`y`, ' +
+          '`name` — all matched tokens update in one batch. GOTCHA handled for you: a token whose actor had ' +
+          'auto-rotate OFF carries lockRotation:true, which HIDES a set rotation — so when you rotate a ' +
+          'locked token the tool auto-unlocks it and warns. Reports matched/updated counts + any ' +
+          'unresolved ids. GM-only.',
+        inputSchema: toInputSchema(UpdateTokenSchema),
       },
     ];
   }
@@ -986,6 +1080,46 @@ export class SceneTools {
         ? ` (${result.notFoundIds.length} id(s) not found: ${result.notFoundIds.join(', ')})`
         : '';
     return `Deleted ${result?.deleted ?? 0} region(s) from "${result?.sceneName}" (${result?.sceneId})${missing}.`;
+  }
+
+  async handleUpdateToken(args: any): Promise<string> {
+    const parsed = UpdateTokenSchema.parse(args ?? {});
+    const result = await this.foundry.call('updateSceneTokens', parsed);
+    if (result?.notFound) {
+      return `Scene not found: "${result.notFound}". Nothing changed.`;
+    }
+    const um = result?.unmatched ?? {};
+    const umBits = [
+      ...(um.tokenIds?.length ? [`token ${um.tokenIds.join(', ')}`] : []),
+      ...(um.actorIds?.length ? [`actor ${um.actorIds.join(', ')}`] : []),
+    ];
+    if ((result?.matched ?? 0) === 0) {
+      return (
+        `No tokens matched on "${result?.sceneName}" (${result?.sceneId})` +
+        (umBits.length ? ` — unresolved ${umBits.join('; ')}` : '') +
+        '.'
+      );
+    }
+    const rows = Array.isArray(result?.tokens)
+      ? result.tokens
+          .map(
+            (t: any) =>
+              `\n  • ${t.name} (${t.id}) — rot ${t.rotation}°, scale ${t.scale}, elev ${t.elevation}${t.hidden ? ', hidden' : ''}`
+          )
+          .join('')
+      : '';
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    const warnLine = warns.length
+      ? `\n\n⚠️ ${warns.length} note(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
+      : '';
+    const umLine = umBits.length ? `\n  (unresolved: ${umBits.join('; ')})` : '';
+    return (
+      `Updated ${result?.updated ?? 0} of ${result?.matched ?? 0} matched token(s) on ` +
+      `"${result?.sceneName}" (${result?.sceneId})` +
+      rows +
+      umLine +
+      warnLine
+    );
   }
 
   async handleListScenes(args: any): Promise<string> {

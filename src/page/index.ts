@@ -26,6 +26,7 @@ import {
   listSceneRegions,
   updateSceneRegion,
   deleteSceneRegions,
+  updateSceneTokens,
   prepareSceneShot,
 } from './scenes.js';
 import {
@@ -138,6 +139,7 @@ const api = {
   listSceneRegions,
   updateSceneRegion,
   deleteSceneRegions,
+  updateSceneTokens,
   prepareSceneShot,
   // actors / characters
   listActors,

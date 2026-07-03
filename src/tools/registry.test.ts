@@ -55,7 +55,8 @@ describe('tool registry', () => {
     // + set-journal-page-visibility + delete-journal-page (journal page visibility) + update-folder
     // + create-teleporter/create-region/list-regions/update-region/delete-region (region authoring)
     // + get-rolltable (deterministic roll-table entry reader)
-    expect(names.length).toBe(104);
+    // + update-token (placed-token instance editor: rotation/scale/elevation/hidden/lockRotation/x/y/name)
+    expect(names.length).toBe(105);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -113,6 +114,12 @@ describe('tool registry', () => {
       expect(names.has(name)).toBe(true);
       expect(typeof handlers[name]).toBe('function');
     }
+  });
+
+  it('registers update-token (placed-token instance editor)', () => {
+    const { tools, handlers } = build();
+    expect(tools.map(t => t.name)).toContain('update-token');
+    expect(typeof handlers['update-token']).toBe('function');
   });
 
   it('registers the journal page-visibility tools + update-folder (dogfood tooling gaps)', () => {

@@ -1326,6 +1326,199 @@ export async function deleteSceneRegions(args: {
   };
 }
 
+// --- placed-token editing (a token INSTANCE on a scene, not the actor prototype token) -------------
+
+/** The current-state token fields buildTokenUpdate reads (a minimal, testable slice of TokenDocument). */
+export interface TokenLike {
+  id: string;
+  name?: string;
+  lockRotation?: boolean;
+}
+
+/** The mutations update-token can apply to a placed token. */
+export interface TokenPatchArgs {
+  rotation?: number;
+  randomizeRotation?: boolean;
+  scale?: number;
+  elevation?: number;
+  hidden?: boolean;
+  lockRotation?: boolean;
+  x?: number;
+  y?: number;
+  name?: string;
+}
+
+/**
+ * PURE: build the `updateEmbeddedDocuments("Token", …)` patch for ONE token, plus any warnings, from
+ * the token's current state and the requested changes. Extracted from updateSceneTokens so the tricky
+ * bits are unit-testable without a live game.
+ *
+ * The baked-in GOTCHA: a token whose prototype had auto-rotate OFF carries `lockRotation:true`, which
+ * makes Foundry IGNORE the token's `rotation` visually. So when a rotation is applied to a
+ * lockRotation:true token and the caller did NOT explicitly pass `lockRotation`, we AUTO-UNLOCK it (and
+ * warn) so the angle actually shows. If the caller explicitly keeps lockRotation:true while setting a
+ * rotation, we keep their choice but warn the rotation won't be visible. `randomFn` is injected
+ * (defaults to Math.random) so tests are deterministic.
+ */
+export function buildTokenUpdate(
+  token: TokenLike,
+  args: TokenPatchArgs,
+  randomFn: () => number = Math.random
+): { update: Record<string, unknown>; warnings: string[]; changed: boolean } {
+  const update: Record<string, unknown> = { _id: token.id };
+  const warnings: string[] = [];
+  const label = `"${token.name ?? token.id}" (${token.id})`;
+
+  let rotationApplied = false;
+  if (args.randomizeRotation === true) {
+    update.rotation = Math.floor(randomFn() * 360); // 0..359
+    rotationApplied = true;
+  } else if (typeof args.rotation === 'number') {
+    update.rotation = args.rotation;
+    rotationApplied = true;
+  }
+
+  // lockRotation: an explicit value wins; otherwise auto-unlock a locked token that's getting a rotation.
+  if (typeof args.lockRotation === 'boolean') {
+    update.lockRotation = args.lockRotation;
+    if (args.lockRotation === true && rotationApplied) {
+      warnings.push(`${label}: rotation set but lockRotation:true will hide it visually.`);
+    }
+  } else if (rotationApplied && token.lockRotation === true) {
+    update.lockRotation = false;
+    warnings.push(
+      `${label}: auto-unlocked rotation (lockRotation was true, which would have hidden the angle).`
+    );
+  }
+
+  if (typeof args.scale === 'number') {
+    update['texture.scaleX'] = args.scale;
+    update['texture.scaleY'] = args.scale;
+  }
+  if (typeof args.elevation === 'number') update.elevation = args.elevation;
+  if (typeof args.hidden === 'boolean') update.hidden = args.hidden;
+  if (typeof args.x === 'number') update.x = args.x;
+  if (typeof args.y === 'number') update.y = args.y;
+  if (typeof args.name === 'string' && args.name.trim() !== '') update.name = args.name.trim();
+
+  const changed = Object.keys(update).length > 1; // more than just _id
+  return { update, warnings, changed };
+}
+
+/**
+ * Update one or more PLACED tokens on a scene — a token INSTANCE, NOT the actor's prototype token
+ * (that's update-actor). Resolve the scene by id/exact-name (default: the active scene), then target
+ * tokens by token id(s) and/or by actor (id OR exact name — matches ALL placed copies of that actor,
+ * e.g. every "Dead Guard" on the map). Patch any of: rotation (or `randomizeRotation` for an
+ * independent per-token angle), art scale (texture.scaleX/scaleY together), elevation, hidden,
+ * lockRotation, x/y, name — batched into ONE updateEmbeddedDocuments call. buildTokenUpdate owns the
+ * lockRotation gotcha (auto-unlock so a set rotation is visible).
+ */
+export async function updateSceneTokens(
+  args: {
+    sceneIdentifier?: string;
+    tokenIds?: string[];
+    actorIds?: string[];
+  } & TokenPatchArgs
+): Promise<{
+  success: boolean;
+  matched: number;
+  updated: number;
+  notFound?: string;
+  sceneId?: string;
+  sceneName?: string;
+  tokens?: Array<Record<string, unknown>>;
+  warnings?: string[];
+  unmatched?: { tokenIds?: string[]; actorIds?: string[] };
+}> {
+  const scene = args?.sceneIdentifier
+    ? resolveSceneStrict(args.sceneIdentifier)
+    : (game.scenes?.current ?? null);
+  if (!scene) {
+    return {
+      success: true,
+      matched: 0,
+      updated: 0,
+      notFound: args?.sceneIdentifier ?? '(no active scene)',
+    };
+  }
+
+  // Resolve actor targets (id or exact name) → a set of actor ids; collect names that resolved to nothing.
+  const wantActorIds = new Set<string>();
+  const unmatchedActorIds: string[] = [];
+  for (const raw of args?.actorIds ?? []) {
+    const a = game.actors?.get(raw) || game.actors?.find((x: any) => x.name === raw);
+    if (a) wantActorIds.add(a.id);
+    else unmatchedActorIds.push(raw);
+  }
+  const wantTokenIds = new Set<string>(args?.tokenIds ?? []);
+  if (wantTokenIds.size === 0 && wantActorIds.size === 0) {
+    throw new Error(
+      'provide at least one target: tokenIds and/or actorIds (id or exact actor name)'
+    );
+  }
+
+  const hasField =
+    args.rotation !== undefined ||
+    args.randomizeRotation === true ||
+    args.scale !== undefined ||
+    args.elevation !== undefined ||
+    args.hidden !== undefined ||
+    args.lockRotation !== undefined ||
+    args.x !== undefined ||
+    args.y !== undefined ||
+    (typeof args.name === 'string' && args.name.trim() !== '');
+  if (!hasField) {
+    throw new Error(
+      'provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, or name)'
+    );
+  }
+
+  const matched = scene.tokens.filter(
+    (t: any) => wantTokenIds.has(t.id) || (t.actorId && wantActorIds.has(t.actorId))
+  );
+  const matchedTokenIds = new Set(matched.map((t: any) => t.id));
+  const unmatchedTokenIds = [...wantTokenIds].filter(id => !matchedTokenIds.has(id));
+
+  const warnings: string[] = [];
+  const updates: Record<string, unknown>[] = [];
+  for (const t of matched) {
+    const { update, warnings: w, changed } = buildTokenUpdate(t, args);
+    warnings.push(...w);
+    if (changed) updates.push(update);
+  }
+
+  if (updates.length > 0) await scene.updateEmbeddedDocuments('Token', updates);
+
+  const summarize = (t: any) => ({
+    id: t.id,
+    name: t.name,
+    actorId: t.actorId || undefined,
+    rotation: t.rotation,
+    scale: t.texture?.scaleX,
+    elevation: t.elevation,
+    hidden: t.hidden,
+    lockRotation: t.lockRotation,
+    x: t.x,
+    y: t.y,
+  });
+
+  const unmatched: { tokenIds?: string[]; actorIds?: string[] } = {};
+  if (unmatchedTokenIds.length > 0) unmatched.tokenIds = unmatchedTokenIds;
+  if (unmatchedActorIds.length > 0) unmatched.actorIds = unmatchedActorIds;
+
+  return {
+    success: true,
+    matched: matched.length,
+    updated: updates.length,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    tokens: matched.map((t: any) => summarize(scene.tokens.get(t.id))),
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(Object.keys(unmatched).length > 0 ? { unmatched } : {}),
+  };
+}
+
 /**
  * Prepare the page to screenshot a scene: VIEW it, wait for the WebGL canvas to draw THIS scene, fit
  * the whole map into the viewport (unless fit:false → keep the saved camera), and — when mark:true —
