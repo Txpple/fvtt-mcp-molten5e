@@ -672,6 +672,10 @@ export async function updateScene(
     gridSize?: number;
     gridType?: number;
     padding?: number;
+    environment?: Record<string, unknown>;
+    fog?: Record<string, unknown>;
+    initial?: Record<string, unknown>;
+    flags?: Record<string, unknown>;
   } & SceneFieldArgs
 ): Promise<unknown> {
   if (!args?.sceneIdentifier) {
@@ -696,7 +700,16 @@ export async function updateScene(
   // Shared fields (dot-paths apply directly to scene.update()).
   Object.assign(update, buildSceneFields(args));
 
-  const hasDocUpdate = Object.keys(update).length > 0;
+  // Modern mood objects (environment/fog) + saved camera (initial) + flags are deep-MERGED onto the
+  // existing scene — parity with createScene, so a scene authored elsewhere can be re-mooded, re-framed,
+  // or re-flagged in place instead of delete-and-recreate. See applyMoodMerge for the collision-safe
+  // application (a whole-object key and a `darkness`→`environment.darknessLevel` dot-path must not clash).
+  const moodKeys = (['environment', 'fog', 'initial'] as const).filter(
+    k => args[k] && typeof args[k] === 'object'
+  );
+  const hasFlags = !!(args.flags && typeof args.flags === 'object');
+
+  const hasDocUpdate = Object.keys(update).length > 0 || moodKeys.length > 0 || hasFlags;
   const hasBackground =
     typeof args.backgroundPath === 'string' && args.backgroundPath.trim().length > 0;
 
@@ -704,14 +717,14 @@ export async function updateScene(
     throw new Error(
       'Provide at least one field to update (name, navName, navigation, backgroundPath, width, ' +
         'height, gridSize, gridType, gridDistance, gridUnits, padding, tokenVision, fogMode, ' +
-        'darkness, globalLight, weather, playlist, journal)'
+        'darkness, globalLight, weather, playlist, journal, environment, fog, initial, flags)'
     );
   }
 
   try {
     // KEEP+WARN: a map/thumbnail has no sensible substitute — apply the path but warn on a 404.
     const warnings: string[] = [];
-    if (hasDocUpdate) await scene.update(update);
+    if (hasDocUpdate) await scene.update(applyMoodMerge(update, args, moodKeys, hasFlags));
     if (hasBackground) {
       const bg = normalizeAssetPath(args.backgroundPath!);
       if (bg && !(await imgResolves(bg)))
@@ -1023,6 +1036,25 @@ export function teleportDestUuid(sceneId: string, regionId: string): string {
 }
 
 /**
+ * Read a `teleportToken` behavior's destination UUID(s) from its `system`. Foundry v14.364's
+ * `teleportToken` uses a `destinations` field holding SEVERAL endpoints (a region can offer a choice
+ * when `choice:true`). It is a `SetField`, so the LIVE model value is a **Set** (an array only via
+ * `toObject()`); older data used a singular `system.destination` string. This tolerates a Set, an
+ * Array, OR the legacy singular, drops empty/non-string entries, and returns [] for a non-teleport
+ * behavior. Pure/exported for unit testing — the ONE place that normalizes all three shapes, so every
+ * read (dumpRegion, remap) goes through it.
+ */
+export function teleportDestinationsOf(system: any): string[] {
+  const raw = system?.destinations;
+  const clean = (arr: unknown[]) =>
+    arr.filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
+  if (raw instanceof Set) return clean([...raw]);
+  if (Array.isArray(raw)) return clean(raw);
+  const single = system?.destination;
+  return typeof single === 'string' && single.trim() !== '' ? [single] : [];
+}
+
+/**
  * Build a v14 rectangle region-shape from a CENTER point (canvas px) sized in whole grid cells,
  * optionally snapped so the rectangle aligns to the scene's grid. Snapping anchors on the grid cell
  * the center sits in and expands symmetrically (odd cell counts center exactly; even counts bias
@@ -1068,7 +1100,7 @@ function dumpRegion(region: any): {
   id: string;
   name: string;
   shapes: Array<Record<string, unknown>>;
-  behaviors: Array<{ type: string; destination?: string }>;
+  behaviors: Array<{ type: string; destinations?: string[] }>;
 } {
   return {
     id: region.id,
@@ -1079,10 +1111,10 @@ function dumpRegion(region: any): {
       ...(s.width !== undefined ? { width: s.width, height: s.height } : {}),
       ...(s.radiusX !== undefined ? { radiusX: s.radiusX, radiusY: s.radiusY } : {}),
     })),
-    behaviors: (region.behaviors?.contents ?? region.behaviors ?? []).map((b: any) => ({
-      type: b.type,
-      ...(b.system?.destination ? { destination: b.system.destination } : {}),
-    })),
+    behaviors: (region.behaviors?.contents ?? region.behaviors ?? []).map((b: any) => {
+      const destinations = teleportDestinationsOf(b.system);
+      return { type: b.type, ...(destinations.length ? { destinations } : {}) };
+    }),
   };
 }
 
@@ -1188,12 +1220,14 @@ export async function createSceneTeleporter(args: {
     { name: args.toName ?? `Teleporter → ${fromScene.name}`, color, shapes: [toShape] },
   ]);
 
-  // 2) Wire the teleportToken behavior(s), each pointing at the OTHER region.
+  // 2) Wire the teleportToken behavior(s), each pointing at the OTHER region. v14.364 stores the
+  // destination in a `destinations` ARRAY (not a singular `destination`) — a single-element array is
+  // the 1:1 teleporter; the field is plural because `choice:true` teleporters offer several exits.
   await regA.createEmbeddedDocuments('RegionBehavior', [
     {
       name: `Teleport to ${toScene.name}`,
       type: 'teleportToken',
-      system: { destination: teleportDestUuid(toScene.id, regB.id), choice: false },
+      system: { destinations: [teleportDestUuid(toScene.id, regB.id)], choice: false },
     },
   ]);
   if (twoWay) {
@@ -1201,7 +1235,7 @@ export async function createSceneTeleporter(args: {
       {
         name: `Teleport to ${fromScene.name}`,
         type: 'teleportToken',
-        system: { destination: teleportDestUuid(fromScene.id, regA.id), choice: false },
+        system: { destinations: [teleportDestUuid(fromScene.id, regA.id)], choice: false },
       },
     ]);
   }
@@ -1680,6 +1714,38 @@ function buildSceneFields(args: SceneFieldArgs): Record<string, unknown> {
   return flat;
 }
 
+/**
+ * Fold the deep-merged mood/camera/flags objects into a scene update payload WITHOUT colliding with the
+ * flat dot-path knobs. updateScene builds a dot-path map (e.g. `environment.darknessLevel` from the
+ * `darkness` knob); a whole `environment` object key in the SAME update() call would clash with that
+ * dot-path. So when any mood/flags object is present, expand the dot-paths to nested form first, then
+ * deep-merge the whole objects on top (the explicit object wins — matching createScene's precedence).
+ * When none is present, the dot-path map is returned untouched (preserves the existing update contract).
+ */
+function applyMoodMerge(
+  update: Record<string, unknown>,
+  args: {
+    environment?: Record<string, unknown>;
+    fog?: Record<string, unknown>;
+    initial?: Record<string, unknown>;
+    flags?: Record<string, unknown>;
+  },
+  moodKeys: ReadonlyArray<'environment' | 'fog' | 'initial'>,
+  hasFlags: boolean
+): Record<string, unknown> {
+  if (moodKeys.length === 0 && !hasFlags) return update;
+  const payload: any = foundryUtils?.expandObject
+    ? foundryUtils.expandObject(update)
+    : { ...update };
+  for (const k of moodKeys) {
+    const v = args[k];
+    if (foundryUtils?.mergeObject) foundryUtils.mergeObject(payload, { [k]: v });
+    else payload[k] = { ...(payload[k] ?? {}), ...(v as object) };
+  }
+  if (hasFlags) payload.flags = { ...(payload.flags ?? {}), ...args.flags };
+  return payload;
+}
+
 /** Normalize a weather key against the live CONFIG.weatherEffects registry. */
 function validateWeather(key: string): string {
   const keys = Object.keys((globalThis as any).CONFIG?.weatherEffects ?? {});
@@ -1846,7 +1912,7 @@ async function importScenePlaceables(
 /**
  * Rewrite cross-scene teleporter destinations after a scene-pack import (M3 pass 2).
  * The import creates scenes + regions with FRESH ids, so each `teleportToken`
- * behavior's `system.destination` (Scene.<old>.Region.<old>) is stale. This pass
+ * behavior's `system.destinations[]` (each Scene.<old>.Region.<old>) is stale. This pass
  * reconstructs origId→newId maps from the provenance flags both carry
  * (flags[TOM_CARTOS_FLAG_SCOPE].{sourceModule,sourceId}), then updates every
  * teleport destination via `region.updateEmbeddedDocuments('RegionBehavior', …)`.
@@ -1864,8 +1930,13 @@ export async function remapSceneTeleporters(args: { sourceModule: string }): Pro
 }> {
   if (!args?.sourceModule) throw new Error('sourceModule is required');
   const scope = TOM_CARTOS_FLAG_SCOPE;
+  // Read the provenance flag by DIRECT property access — never `doc.getFlag(scope, …)`, which THROWS
+  // ("Flag scope is not valid or not currently active") for any document lacking the flag when `scope`
+  // is not a registered module id. This filter runs over EVERY scene in the world, most of which have
+  // no tom-cartos flag, so getFlag would abort the whole remap. Flags are stored under `doc.flags[scope]`
+  // verbatim (that is how the import stamps them), so the direct read is both safe and sufficient.
   const flagOf = (doc: any, key: string): string | undefined => {
-    const v = doc?.flags?.[scope]?.[key] ?? doc?.getFlag?.(scope, key);
+    const v = doc?.flags?.[scope]?.[key];
     return typeof v === 'string' ? v : undefined;
   };
 
@@ -1885,7 +1956,9 @@ export async function remapSceneTeleporters(args: { sourceModule: string }): Pro
     }
   }
 
-  // Pass 2 — rewrite + persist each teleport destination.
+  // Pass 2 — rewrite + persist each teleport destination. v14.364 stores destinations in a
+  // `system.destinations` ARRAY, so each entry is remapped independently and the whole array is written
+  // back when any entry changed (per-destination counting preserves the single-destination semantics).
   let rewritten = 0;
   let unchanged = 0;
   const unresolved: string[] = [];
@@ -1895,19 +1968,24 @@ export async function remapSceneTeleporters(args: { sourceModule: string }): Pro
       const updates: Array<Record<string, unknown>> = [];
       for (const behavior of region.behaviors ?? []) {
         behaviorsScanned++;
-        const res = remapTeleportDestination(
-          behavior?.system?.destination,
-          sceneIdMap,
-          regionIdMap
-        );
-        if (res.status === 'rewritten')
-          updates.push({ _id: behavior.id, 'system.destination': res.dest });
-        else if (res.status === 'unchanged') unchanged++;
-        else if (res.status === 'unresolved') unresolved.push(`${s.name}: ${res.reason}`);
+        const dests = teleportDestinationsOf(behavior?.system);
+        if (dests.length === 0) continue; // non-teleport behavior / unset destination
+        let changed = false;
+        const newDests = dests.map(d => {
+          const res = remapTeleportDestination(d, sceneIdMap, regionIdMap);
+          if (res.status === 'rewritten') {
+            changed = true;
+            rewritten++;
+            return res.dest as string;
+          }
+          if (res.status === 'unchanged') unchanged++;
+          else if (res.status === 'unresolved') unresolved.push(`${s.name}: ${res.reason}`);
+          return d;
+        });
+        if (changed) updates.push({ _id: behavior.id, 'system.destinations': newDests });
       }
       if (updates.length > 0) {
         await region.updateEmbeddedDocuments('RegionBehavior', updates);
-        rewritten += updates.length;
       }
     }
   }

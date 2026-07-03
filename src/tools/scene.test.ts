@@ -905,6 +905,29 @@ describe('handleUpdateScene', () => {
     });
   });
 
+  it('forwards the mood/camera/flags objects (parity with create-scene)', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      sceneName: 'C',
+      sceneId: 'sc1',
+      background: 'b',
+    });
+    await tools.handleUpdateScene({
+      sceneIdentifier: 'sc1',
+      environment: { darknessLevel: 0.6, globalLight: { enabled: false } },
+      fog: { exploration: true },
+      initial: { x: 1200, y: 800, scale: 0.5 },
+      flags: { 'tom-cartos-import': { sourceModule: 'mod-x' } },
+    });
+    expect(calls[0][0]).toBe('updateScene');
+    expect(calls[0][1]).toMatchObject({
+      environment: { darknessLevel: 0.6, globalLight: { enabled: false } },
+      fog: { exploration: true },
+      initial: { x: 1200, y: 800, scale: 0.5 },
+      flags: { 'tom-cartos-import': { sourceModule: 'mod-x' } },
+    });
+  });
+
   it('rejects an invalid fogMode', async () => {
     const { tools } = build();
     await expect(
@@ -982,14 +1005,14 @@ describe('handleCreateTeleporter', () => {
         sceneName: 'Bridge',
         id: 'rA',
         name: 'A',
-        behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }],
+        behaviors: [{ type: 'teleportToken', destinations: ['Scene.s2.Region.rB'] }],
       },
       to: {
         sceneId: 's2',
         sceneName: 'Cave',
         id: 'rB',
         name: 'B',
-        behaviors: [{ type: 'teleportToken', destination: 'Scene.s1.Region.rA' }],
+        behaviors: [{ type: 'teleportToken', destinations: ['Scene.s1.Region.rA'] }],
       },
     });
     const out = await tools.handleCreateTeleporter({
@@ -1015,7 +1038,7 @@ describe('handleCreateTeleporter', () => {
         sceneName: 'Bridge',
         id: 'rA',
         name: 'A',
-        behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }],
+        behaviors: [{ type: 'teleportToken', destinations: ['Scene.s2.Region.rB'] }],
       },
       to: { sceneId: 's2', sceneName: 'Cave', id: 'rB', name: 'B', behaviors: [] },
     });

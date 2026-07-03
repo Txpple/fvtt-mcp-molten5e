@@ -20,6 +20,7 @@ import {
   TOM_CARTOS_FLAG_SCOPE,
   gridRectShape,
   teleportDestUuid,
+  teleportDestinationsOf,
   buildTokenUpdate,
 } from './scenes.js';
 
@@ -400,6 +401,49 @@ describe('remapTeleportDestination', () => {
 describe('teleportDestUuid', () => {
   it('builds a v12+ region teleport destination UUID', () => {
     expect(teleportDestUuid('sABC', 'rXYZ')).toBe('Scene.sABC.Region.rXYZ');
+  });
+});
+
+describe('teleportDestinationsOf', () => {
+  it('reads the LIVE `destinations` SET (v14.364 SetField model value)', () => {
+    // The teleportToken `destinations` field is a SetField: the live model exposes a Set (an array
+    // only via toObject()). dumpRegion/remap read the live doc, so a Set must be handled.
+    expect(teleportDestinationsOf({ destinations: new Set(['Scene.a.Region.b']) })).toEqual([
+      'Scene.a.Region.b',
+    ]);
+  });
+
+  it('reads the v14.364 `destinations` ARRAY', () => {
+    expect(
+      teleportDestinationsOf({
+        destinations: ['Scene.a.Region.b', 'Scene.c.Region.d'],
+        choice: true,
+      })
+    ).toEqual(['Scene.a.Region.b', 'Scene.c.Region.d']);
+  });
+
+  it('falls back to a singular `destination` for pre-migration data', () => {
+    expect(teleportDestinationsOf({ destination: 'Scene.a.Region.b' })).toEqual([
+      'Scene.a.Region.b',
+    ]);
+  });
+
+  it('prefers the array when both are present (post-migration shape)', () => {
+    expect(
+      teleportDestinationsOf({
+        destinations: ['Scene.a.Region.b'],
+        destination: 'Scene.legacy.Region.x',
+      })
+    ).toEqual(['Scene.a.Region.b']);
+  });
+
+  it('drops empty / non-string entries and returns [] for a non-teleport behavior', () => {
+    expect(teleportDestinationsOf({ destinations: ['Scene.a.Region.b', '', 42, null] })).toEqual([
+      'Scene.a.Region.b',
+    ]);
+    expect(teleportDestinationsOf({})).toEqual([]);
+    expect(teleportDestinationsOf(undefined)).toEqual([]);
+    expect(teleportDestinationsOf({ destination: '' })).toEqual([]);
   });
 });
 

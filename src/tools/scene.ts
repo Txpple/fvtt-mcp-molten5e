@@ -168,8 +168,8 @@ const RegionSidecarSchema = z
       )
       .optional()
       .describe(
-        'Region behaviors carried whole — incl. teleportToken whose system.destination ' +
-          '(Scene.<id>.Region.<id>) is rewritten post-import by remap-teleporters.'
+        'Region behaviors carried whole — incl. teleportToken whose system.destinations[] ' +
+          '(each Scene.<id>.Region.<id>) are rewritten post-import by remap-teleporters.'
       ),
     _id: z
       .string()
@@ -201,6 +201,31 @@ const SceneInitialSchema = z
     scale: z.number().optional(),
   })
   .passthrough();
+
+// Modern scene MOOD / saved-camera / flags fields shared by BOTH create-scene and update-scene (one
+// source of truth so the two schemas can't drift). Each is deep-merged onto the scene on both paths —
+// a partial patch layers on rather than replacing — which is what lets update-scene re-mood, re-frame,
+// or re-flag a scene authored elsewhere (the create⊂update gap these close).
+const sceneMoodFields = {
+  environment: SceneEnvironmentSchema.optional().describe(
+    "A v12+ scene's full environment{} mood object, carried whole (darknessLevel, globalLight{...}, " +
+      'cycle, base, dark{hue,luminosity}…). Deep-merged, so a partial mood patch layers onto the scene; ' +
+      'prefer this over the flat darkness/globalLight knobs when importing or re-mooding a pack scene.'
+  ),
+  fog: SceneFogSchema.optional().describe(
+    "A v12+ scene's full fog{} object (exploration, overlay, colors), carried whole (deep-merged)."
+  ),
+  initial: SceneInitialSchema.optional().describe(
+    'The saved initial camera view {x,y,scale} to restore on scene load (deep-merged).'
+  ),
+  flags: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Document flags namespaced by scope — e.g. {"tom-cartos-import":{sourceModule,sourceId}} for ' +
+        'import provenance/dedup. Deep-merged over any existing flags (re-stampable on update).'
+    ),
+};
 
 const CreateSceneSchema = z.object({
   name: z.string().min(1).describe('Scene name.'),
@@ -266,24 +291,7 @@ const CreateSceneSchema = z.object({
       'Whether the scene appears in the player navigation bar. Set false for a DM-only scene ' +
         '(keeps it off the nav bar). Omit for Foundry default.'
     ),
-  flags: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe(
-      'Document flags to stamp on the new scene, namespaced by scope — e.g. ' +
-        '{"tom-cartos-import":{sourceModule,sourceId}} for import provenance/dedup. Merged verbatim.'
-    ),
-  environment: SceneEnvironmentSchema.optional().describe(
-    "A v12+ scene's full environment{} mood object, carried whole (darknessLevel, globalLight{...}, " +
-      'cycle, base, dark{hue,luminosity}…). Prefer this over the flat darkness/globalLight knobs when ' +
-      'importing a pack so the authored day/night mood round-trips.'
-  ),
-  fog: SceneFogSchema.optional().describe(
-    "A v12+ scene's full fog{} object (exploration, overlay, colors), carried whole."
-  ),
-  initial: SceneInitialSchema.optional().describe(
-    'The saved initial camera view {x,y,scale} to restore on scene load.'
-  ),
+  ...sceneMoodFields,
   ...sceneCommonFields,
 });
 
@@ -315,6 +323,7 @@ const UpdateSceneSchema = z.object({
     .optional()
     .describe('Foundry grid type (0 gridless, 1 square, 2+ hex).'),
   padding: z.number().min(0).max(0.5).optional().describe('Scene padding fraction (0–0.5).'),
+  ...sceneMoodFields,
   ...sceneCommonFields,
 });
 
@@ -473,8 +482,8 @@ const CreateRegionSchema = z.object({
           .array(RegionBehaviorSchema)
           .optional()
           .describe(
-            'Region behaviors carried whole. A teleportToken here needs system.destination already a ' +
-              '"Scene.<id>.Region.<id>" UUID — for a two-NEW-region teleporter use create-teleporter.'
+            'Region behaviors carried whole. A teleportToken here needs system.destinations already an ' +
+              'array of "Scene.<id>.Region.<id>" UUIDs — for a two-NEW-region teleporter use create-teleporter.'
           ),
       })
     )
@@ -714,9 +723,10 @@ export class SceneTools {
           'Update an existing Scene document — rename, swap its background image (Data-relative path), ' +
           'toggle navigation, set the navigation label, change dimensions/grid (size/type/distance/' +
           'units)/padding, token vision, fog mode, lighting (darkness, global light), weather, a nav ' +
-          'thumbnail, or the linked playlist/journal ("" clears a link). Scene-document only: never ' +
-          'touches placeables ' +
-          '(walls/lights/tokens) and never activates the scene. GM-only.',
+          'thumbnail, or the linked playlist/journal ("" clears a link). Also (parity with create-scene) ' +
+          'deep-merges a full environment{}/fog{} mood object, re-points the saved camera (initial{x,y,' +
+          'scale}), or re-stamps document flags on an existing scene. Scene-document only: never touches ' +
+          'placeables (walls/lights/tokens) and never activates the scene. GM-only.',
         inputSchema: toInputSchema(UpdateSceneSchema),
       },
       {
@@ -805,7 +815,7 @@ export class SceneTools {
           'Create one or more Regions on an EXISTING scene (the general primitive behind create-' +
           'teleporter). Each region carries its v14 `shapes` whole (rectangle/ellipse/polygon in canvas ' +
           'px) plus optional color/visibility/behaviors. Behaviors pass through verbatim: a teleportToken ' +
-          'here must already have system.destination = "Scene.<id>.Region.<id>" (use create-teleporter ' +
+          'here must already have system.destinations = ["Scene.<id>.Region.<id>"] (use create-teleporter ' +
           'for the two-new-region convenience). Returns the created region ids. GM-only.',
         inputSchema: toInputSchema(CreateRegionSchema),
       },
@@ -1024,7 +1034,8 @@ export class SceneTools {
     if (result?.notFound) {
       return `Scene not found: "${result.notFound}". No teleporter created.`;
     }
-    const dest = (r: any) => r?.behaviors?.find((b: any) => b.destination)?.destination ?? '(none)';
+    const dest = (r: any) =>
+      r?.behaviors?.find((b: any) => b.destinations?.length)?.destinations?.[0] ?? '(none)';
     const dir = result?.twoWay ? '⇄' : '→';
     return (
       `Created ${result?.twoWay ? 'two-way' : 'one-way'} teleporter:\n` +
