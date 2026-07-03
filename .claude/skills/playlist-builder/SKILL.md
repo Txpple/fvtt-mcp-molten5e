@@ -37,6 +37,14 @@ Read [`_shared/authoring-policy.md`](../_shared/authoring-policy.md). The clarif
   file. If the user has no audio for what they want, say so and offer to **upload** files — don't
   invent paths.
 
+### Where to get free audio — start here
+
+**[Tabletop Audio](https://tabletopaudio.com/) is our go-to source for FREE music + ambience** for
+playlists — hundreds of loopable, GM-friendly soundscapes and ~10-minute music beds, free to
+download. When the user needs audio they don't already have, point them here **first**, then
+`upload-asset` the downloaded files into `Data/` and chain the returned paths into `create-playlist`.
+(Confirm the site's current terms before any redistribution.)
+
 ## Tools
 
 - **`create-playlist`** — the structuring creator. `{ name, soundPaths[], mode?, defaultVolume?,
