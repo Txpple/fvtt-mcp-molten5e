@@ -1416,6 +1416,30 @@ export async function updateActor(params: any): Promise<unknown> {
     update['prototypeToken.texture.scaleY'] = params.tokenScale;
     applied.push('tokenScale');
   }
+  // Rotation — the prototype's default facing, matching update-token for placed tokens. (elevation /
+  // hidden / x / y are DELIBERATELY not here: Foundry's PrototypeToken schema excludes them — they only
+  // exist on a placed TokenDocument, so update-token owns those.) The lockRotation gotcha below mirrors
+  // buildTokenUpdate (src/page/placeables/token.ts) — keep the two in step.
+  if (typeof params.tokenRotation === 'number') {
+    update['prototypeToken.rotation'] = params.tokenRotation;
+    applied.push('tokenRotation');
+    // A lock-rotation prototype hides a set facing. If the caller isn't also setting tokenAutoRotate,
+    // auto-unlock so the angle shows (the same rule update-token applies to placed tokens).
+    const settingAutoRotate = typeof params.tokenAutoRotate === 'boolean';
+    const willBeLocked = settingAutoRotate
+      ? params.tokenAutoRotate === false
+      : actor.prototypeToken?.lockRotation === true;
+    if (willBeLocked && settingAutoRotate) {
+      warnings.push(
+        'prototype token: rotation set but tokenAutoRotate:false (lockRotation) will hide it visually.'
+      );
+    } else if (willBeLocked) {
+      update['prototypeToken.lockRotation'] = false;
+      warnings.push(
+        'prototype token: auto-unlocked rotation (lockRotation was true, which would have hidden the facing).'
+      );
+    }
+  }
 
   // --- details ---
   if (params.size !== undefined) {

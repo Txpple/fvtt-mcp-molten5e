@@ -130,6 +130,43 @@ try {
   assert(toggled.lockRotation === true, 'tokenAutoRotate:false locked rotation');
 
   console.log(
+    '\n# prototype-token placed-parity: rotation + scale + lockRotation auto-unlock (elevation/hidden are placement-only)'
+  );
+  // The dragon is lockRotation:true right now (tokenAutoRotate:false above). Setting a rotation WITHOUT
+  // tokenAutoRotate must AUTO-UNLOCK so the facing shows — the update-token gotcha, on a prototype.
+  const protoRes = await f.call('updateActor', {
+    actorIdentifier: actorId,
+    tokenRotation: 90,
+    tokenScale: 1.5,
+  });
+  const proto = await f.evaluate(id => {
+    const pt = globalThis.game.actors.get(id)?.prototypeToken;
+    return {
+      rotation: pt?.rotation,
+      lockRotation: pt?.lockRotation,
+      scaleX: pt?.texture?.scaleX,
+      // PrototypeToken schema excludes these — assert they stay absent so a future regression that
+      // silently "adds" a no-op elevation/hidden field to update-actor gets caught here.
+      hasElevation: 'elevation' in pt,
+      hasHidden: 'hidden' in pt,
+    };
+  }, actorId);
+  assert(proto.rotation === 90, `prototype facing set (got ${proto.rotation})`);
+  assert(proto.scaleX === 1.5, `prototype art scale set (got ${proto.scaleX})`);
+  assert(
+    proto.lockRotation === false,
+    `rotation auto-unlocked the locked prototype (lockRotation now ${proto.lockRotation})`
+  );
+  assert(
+    (protoRes?.warnings ?? []).some(w => /auto-unlocked/.test(w)),
+    'update-actor warned that it auto-unlocked rotation'
+  );
+  assert(
+    proto.hasElevation === false && proto.hasHidden === false,
+    'prototype token has no elevation/hidden fields (they are placement-only — update-token owns them)'
+  );
+
+  console.log(
     '\n# a neutral townsfolk copy (caller disposition overrides the npc→hostile default)'
   );
   const out2 = await f.call('createActorFromCompendium', {

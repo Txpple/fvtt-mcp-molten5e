@@ -76,6 +76,16 @@ const UpdateActorSchema = z.object({
         "Scales only the art within the token's grid footprint; it does NOT change the token's " +
         'size (grid spaces).'
     ),
+  tokenRotation: z
+    .number()
+    .optional()
+    .describe(
+      'Prototype-token facing in degrees (0–359) — the default angle a dropped token faces. Same ' +
+        'behavior as update-token for placed tokens: a lock-rotation prototype (tokenAutoRotate ' +
+        'false) HIDES the angle, so setting a rotation without also setting tokenAutoRotate ' +
+        'AUTO-UNLOCKS rotation (and warns) so the facing shows. (elevation / hidden / x / y are ' +
+        'PLACEMENT-only — a prototype has no such fields; set those on a dropped token with update-token.)'
+    ),
 
   // details (most NPC-only)
   size: z
@@ -283,7 +293,10 @@ export class DnD5eUpdateActorTool {
         name: 'update-actor',
         description:
           "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
-          '• identity — name, img, disposition (token friend/foe), tokenAutoRotate (face movement), tokenRing (dynamic ring), tokenScale (token art size)\n' +
+          '• identity + prototype token — name, img, disposition (friend/foe), tokenAutoRotate ' +
+          '(face movement / lockRotation), tokenRing (dynamic ring), tokenScale (art size), ' +
+          'tokenRotation (facing) — the PROTOTYPE-token editor. (elevation / hidden / x / y are ' +
+          'placement-only: edit those on a dropped token with update-token)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
           '• vitals — hp, ac, initiative\n' +

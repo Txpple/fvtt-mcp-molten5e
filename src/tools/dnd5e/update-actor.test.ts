@@ -97,6 +97,28 @@ describe('handleUpdateActor', () => {
     await expect(tool.handleUpdateActor({ actorIdentifier: 'X', tokenScale: 0 })).rejects.toThrow();
   });
 
+  it('forwards the prototype-token facing (tokenRotation)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Hobgoblin Archer', type: 'npc' },
+      applied: ['tokenRotation'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Hobgoblin Archer',
+      tokenRotation: 90,
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].tokenRotation).toBe(90);
+  });
+
+  it('rejects a non-numeric tokenRotation', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', tokenRotation: 'sideways' })
+    ).rejects.toThrow();
+  });
+
   it('applies the default replace mode to Set fields', async () => {
     const { tool, calls } = makeTool({
       success: true,
