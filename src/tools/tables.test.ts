@@ -265,6 +265,92 @@ describe('handleUpdateRollTable', () => {
   });
 });
 
+describe('handleUpdateRollTable — editResults (targeted per-entry edits)', () => {
+  it('forwards edits and reports the edited-in-place count', async () => {
+    const { tools, calls } = build({
+      tableName: 'Travellers',
+      tableId: 't1',
+      resultCount: 12,
+      edited: 1,
+    });
+    const out = await tools.handleUpdateRollTable({
+      identifier: 't1',
+      editResults: [{ roll: 7, text: 'GM note: the Dreamer stirs.' }],
+    });
+    expect(calls[0][0]).toBe('updateRollTable');
+    expect(calls[0][1]).toMatchObject({
+      identifier: 't1',
+      editResults: [{ roll: 7, text: 'GM note: the Dreamer stirs.' }],
+    });
+    expect(out).toBe(
+      'Updated roll table "Travellers" (t1) — 12 result(s), 1 entry edited in place.'
+    );
+  });
+
+  it('surfaces isolated edit errors and layout warnings from the page result', async () => {
+    const { tools } = build({
+      tableName: 'Travellers',
+      tableId: 't1',
+      resultCount: 12,
+      edited: 1,
+      errors: ['editResults[0]: no entry covers roll 99 (see get-rolltable for the ranges)'],
+      warnings: [
+        'ranges overlap after this edit: [1-2] and [2-3] — rolls in the overlap match two entries',
+      ],
+    });
+    const out = await tools.handleUpdateRollTable({
+      identifier: 't1',
+      editResults: [
+        { roll: 99, text: 'x' },
+        { roll: 2, range: [1, 2] },
+      ],
+    });
+    expect(out).toContain('1 entry edited in place');
+    expect(out).toContain('⚠ editResults[0]: no entry covers roll 99');
+    expect(out).toContain('ranges overlap');
+  });
+
+  it('accepts resultId targeting with weight/range-only patches', async () => {
+    const { tools, calls } = build({ tableName: 'T', tableId: 't1', resultCount: 3, edited: 1 });
+    await tools.handleUpdateRollTable({
+      identifier: 't1',
+      editResults: [{ resultId: 'rC', weight: 2, range: [4, 5] }],
+    });
+    expect(calls[0][1].editResults[0]).toEqual({ resultId: 'rC', weight: 2, range: [4, 5] });
+  });
+
+  it('rejects an edit with BOTH roll and resultId, or NEITHER (refine)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateRollTable({
+        identifier: 't1',
+        editResults: [{ roll: 3, resultId: 'rA', text: 'x' }],
+      })
+    ).rejects.toThrow();
+    await expect(
+      tools.handleUpdateRollTable({ identifier: 't1', editResults: [{ text: 'x' }] })
+    ).rejects.toThrow();
+  });
+
+  it('rejects an edit with no editable field (refine)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateRollTable({ identifier: 't1', editResults: [{ roll: 3 }] })
+    ).rejects.toThrow();
+  });
+
+  it('rejects results + editResults together (mutually exclusive modes)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateRollTable({
+        identifier: 't1',
+        results: [{ text: 'whole new set' }],
+        editResults: [{ roll: 1, text: 'targeted' }],
+      })
+    ).rejects.toThrow(/not both/);
+  });
+});
+
 describe('handleRollOnTable', () => {
   it('forwards a valid roll and formats the drawn results', async () => {
     const { tools, calls } = build({

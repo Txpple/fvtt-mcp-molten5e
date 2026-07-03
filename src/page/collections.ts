@@ -425,6 +425,146 @@ async function buildTableResults(results: RollTableResultInput[]): Promise<
   return out;
 }
 
+// One TARGETED result edit, with its description already resolved (uuid → enricher) by
+// buildResultDescription. `description: undefined` means "leave the entry's content alone" —
+// a weight/range-only patch never touches the text. `index` is the edit's position in the
+// CALLER's editResults array, so error labels stay accurate even when an earlier edit was
+// dropped during content resolution.
+export interface ResolvedResultEdit {
+  index?: number;
+  roll?: number;
+  resultId?: string;
+  description?: string;
+  weight?: number;
+  range?: [number, number];
+}
+
+/**
+ * PURE: build the `updateEmbeddedDocuments("TableResult", …)` patches for a batch of TARGETED
+ * per-entry edits — the surgical alternative to the destructive whole-set replace. Exported for unit
+ * testing (collections.test.ts); the page fn resolves descriptions first, then delegates here.
+ *
+ * Targeting: each edit names exactly one of `resultId` (a TableResult id, unambiguous) or `roll`
+ * (a die face — matches the entry whose [low, high] range covers it, the way a GM says "entry 07").
+ * Bad targets are ERRORS, isolated per edit (the good edits still apply): a roll no entry covers, a
+ * roll two entries cover (overlapping ranges — retarget by resultId), an unknown id, or two edits
+ * aiming at the same entry (last-write ambiguity is never silent).
+ *
+ * Patch shaping: only supplied fields are written — `description`, `weight` (floored, ≥1), `range`
+ * ([low ≤ high] ints, else an error). UNTOUCHED entries get NO patch at all, so their stored data —
+ * ranges, weights, @UUID links — stays byte-identical.
+ *
+ * Warnings (never blocking — the GM may be mid-rearrangement): when any range was edited, the FINAL
+ * layout is interval-checked and overlaps / coverage gaps are reported.
+ */
+export function buildResultEditPatches(
+  existing: Array<{ id: string; range?: number[] }>,
+  edits: ResolvedResultEdit[]
+): { patches: Array<Record<string, unknown>>; errors: string[]; warnings: string[] } {
+  const patches: Array<Record<string, unknown>> = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const targeted = new Map<string, number>(); // result id -> edit index that claimed it
+  const newRanges = new Map<string, [number, number]>();
+
+  for (let i = 0; i < edits.length; i++) {
+    const e = edits[i] ?? {};
+    const label = `editResults[${e.index ?? i}]`;
+
+    // -- resolve the target to ONE existing result --
+    let target: { id: string; range?: number[] } | undefined;
+    if (typeof e.resultId === 'string' && e.resultId.trim() !== '') {
+      target = existing.find(r => r.id === e.resultId);
+      if (!target) {
+        errors.push(`${label}: no result with id "${e.resultId}" (see get-rolltable)`);
+        continue;
+      }
+    } else if (typeof e.roll === 'number' && Number.isFinite(e.roll)) {
+      const hits = existing.filter(
+        r =>
+          Array.isArray(r.range) &&
+          r.range.length === 2 &&
+          e.roll! >= r.range[0] &&
+          e.roll! <= r.range[1]
+      );
+      if (hits.length === 0) {
+        errors.push(`${label}: no entry covers roll ${e.roll} (see get-rolltable for the ranges)`);
+        continue;
+      }
+      if (hits.length > 1) {
+        errors.push(
+          `${label}: roll ${e.roll} is ambiguous — ${hits.length} entries overlap it; target by resultId`
+        );
+        continue;
+      }
+      target = hits[0];
+    } else {
+      errors.push(`${label}: provide roll (a die face) or resultId to target an entry`);
+      continue;
+    }
+
+    const prior = targeted.get(target.id);
+    if (prior !== undefined) {
+      errors.push(`${label}: duplicate target — editResults[${prior}] already edits this entry`);
+      continue;
+    }
+
+    // -- shape the patch (only supplied fields; never anything else) --
+    const patch: Record<string, unknown> = { _id: target.id };
+    if (typeof e.description === 'string') patch.description = e.description;
+    if (typeof e.weight === 'number' && e.weight > 0) patch.weight = Math.floor(e.weight);
+    if (e.range !== undefined) {
+      const r = e.range;
+      if (
+        !Array.isArray(r) ||
+        r.length !== 2 ||
+        !Number.isInteger(r[0]) ||
+        !Number.isInteger(r[1]) ||
+        r[0] > r[1]
+      ) {
+        errors.push(`${label}: range must be [low, high] integers with low <= high`);
+        continue;
+      }
+      patch.range = [r[0], r[1]];
+      newRanges.set(target.id, [r[0], r[1]]);
+    }
+    if (Object.keys(patch).length === 1) {
+      errors.push(`${label}: nothing to change (provide text/uuid, weight, and/or range)`);
+      continue;
+    }
+    targeted.set(target.id, e.index ?? i);
+    patches.push(patch);
+  }
+
+  // -- layout check (warn-only), run only when a range actually changed --
+  if (newRanges.size > 0) {
+    const layout = existing
+      .map(r => {
+        const nr = newRanges.get(r.id);
+        const range = nr ?? (Array.isArray(r.range) && r.range.length === 2 ? r.range : null);
+        return range ? { id: r.id, lo: range[0], hi: range[1] } : null;
+      })
+      .filter((x): x is { id: string; lo: number; hi: number } => x !== null)
+      .sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+    for (let i = 1; i < layout.length; i++) {
+      const prev = layout[i - 1];
+      const cur = layout[i];
+      if (cur.lo <= prev.hi) {
+        warnings.push(
+          `ranges overlap after this edit: [${prev.lo}-${prev.hi}] and [${cur.lo}-${cur.hi}] — ` +
+            'rolls in the overlap match two entries'
+        );
+      } else if (cur.lo > prev.hi + 1) {
+        warnings.push(
+          `coverage gap after this edit: rolls ${prev.hi + 1}–${cur.lo - 1} match no entry`
+        );
+      }
+    }
+  }
+
+  return { patches, errors, warnings };
+}
+
 // Create a RollTable from text results. Ranges auto-assign from weights and the
 // formula defaults to 1d<maxRange> unless an explicit formula is supplied.
 export async function createRollTable(args: {
@@ -472,9 +612,21 @@ export async function createRollTable(args: {
   };
 }
 
-// Update a RollTable's fields and/or replace its entire result set. Supplying
-// results deletes existing TableResult children and recreates them with
-// auto-assigned ranges. Returns updated:false / notFound when unresolved.
+// One TARGETED result edit as it arrives over the bridge (text/uuid not yet resolved).
+interface RollTableResultEditInput extends RollTableResultInput {
+  roll?: number;
+  resultId?: string;
+}
+
+// Update a RollTable's fields, and its results in one of two modes:
+//   - `results`     — REPLACE the whole set (destructive): existing TableResult children are
+//                     deleted and recreated with auto-assigned ranges.
+//   - `editResults` — TARGETED per-entry patches (surgical): each edit names one entry (by roll
+//                     face or result id) and patches only the supplied fields via ONE
+//                     updateEmbeddedDocuments call. Untouched entries — their ranges, weights,
+//                     and @UUID item links — are never rewritten (a one-word typo fix must not
+//                     force re-authoring a tuned d12). Bad edits are isolated + reported.
+// Returns updated:false / notFound when unresolved.
 export async function updateRollTable(args: {
   identifier: string;
   name?: string;
@@ -483,6 +635,7 @@ export async function updateRollTable(args: {
   replacement?: boolean;
   displayRoll?: boolean;
   results?: RollTableResultInput[];
+  editResults?: RollTableResultEditInput[];
 }): Promise<unknown> {
   const table = resolveStrict(game.tables, args.identifier);
   if (!table) {
@@ -498,9 +651,15 @@ export async function updateRollTable(args: {
   if (typeof args.displayRoll === 'boolean') update.displayRoll = args.displayRoll;
 
   const replacingResults = Array.isArray(args.results) && args.results.length > 0;
-  if (Object.keys(update).length === 0 && !replacingResults) {
+  const editingResults = Array.isArray(args.editResults) && args.editResults.length > 0;
+  if (replacingResults && editingResults) {
     throw new Error(
-      'Provide at least one field to update (name, description, formula, replacement, displayRoll, results)'
+      'Provide results (replace the WHOLE set) or editResults (targeted per-entry edits), not both'
+    );
+  }
+  if (Object.keys(update).length === 0 && !replacingResults && !editingResults) {
+    throw new Error(
+      'Provide at least one field to update (name, description, formula, replacement, displayRoll, results, editResults)'
     );
   }
 
@@ -516,12 +675,62 @@ export async function updateRollTable(args: {
     await table.createEmbeddedDocuments('TableResult', newResults);
   }
 
+  // Targeted per-entry edits: resolve each edit's content first (same uuid→enricher machinery +
+  // SRD guard as create, per-edit error isolation), then build the patches PURELY and apply them
+  // in one batched call. Entries no edit targets are never written.
+  let edited = 0;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (editingResults) {
+    const resolved: ResolvedResultEdit[] = [];
+    for (let i = 0; i < args.editResults!.length; i++) {
+      const e = args.editResults![i] ?? {};
+      const wantsContent = e.text !== undefined || e.uuid !== undefined;
+      let description: string | undefined;
+      if (wantsContent) {
+        try {
+          description = await buildResultDescription({
+            ...(e.text !== undefined ? { text: e.text } : {}),
+            ...(e.uuid !== undefined ? { uuid: e.uuid } : {}),
+            ...(e.name !== undefined ? { name: e.name } : {}),
+          });
+        } catch (err: any) {
+          errors.push(`editResults[${i}]: ${err?.message ?? err}`);
+          continue;
+        }
+      }
+      resolved.push({
+        index: i,
+        ...(e.roll !== undefined ? { roll: e.roll } : {}),
+        ...(e.resultId !== undefined ? { resultId: e.resultId } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(typeof e.weight === 'number' ? { weight: e.weight } : {}),
+        ...(e.range !== undefined ? { range: e.range } : {}),
+      });
+    }
+
+    const existing = (table.results?.contents ?? []).map((r: any) => ({
+      id: r.id as string,
+      range: r.range as number[],
+    }));
+    const built = buildResultEditPatches(existing, resolved);
+    errors.push(...built.errors);
+    warnings.push(...built.warnings);
+    if (built.patches.length > 0) {
+      await table.updateEmbeddedDocuments('TableResult', built.patches);
+      edited = built.patches.length;
+    }
+  }
+
   return {
     success: true,
     updated: true,
     tableId: table.id,
     tableName: table.name,
     resultCount: table.results?.size ?? 0,
+    ...(editingResults ? { edited } : {}),
+    ...(errors.length > 0 ? { errors } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 

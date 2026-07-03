@@ -83,15 +83,96 @@ const CreateRollTableSchema = z.object({
 
 const ListRollTablesSchema = z.object({});
 
-const UpdateRollTableSchema = z.object({
-  identifier: z.string().min(1).describe('Table id or exact name.'),
-  name: z.string().min(1).optional().describe('New table name.'),
-  description: z.string().optional().describe('New description.'),
-  formula: z.string().min(1).optional().describe('New roll formula.'),
-  replacement: z.boolean().optional().describe('Draw with replacement.'),
-  displayRoll: z.boolean().optional().describe('Show the roll when drawing.'),
-  results: z.array(resultSchema).optional().describe('If provided, replaces ALL existing results.'),
-});
+// One TARGETED per-entry edit: name the entry by `roll` (die face) or `resultId`, then patch only
+// the supplied fields. text/uuid/name REBUILD that entry's content with create-rolltable's exact
+// semantics (uuid → validated @UUID link, {{link}} placeholder, SRD refused) — they replace the
+// entry's current text, so re-send any @UUID enricher you want kept (get-rolltable shows the raw
+// stored text to copy from). weight/range write verbatim; nothing rebalances other entries.
+const resultEditSchema = z
+  .object({
+    roll: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Target the entry whose roll range covers this die face (e.g. 7 = "entry 07" on a d12). ' +
+          'Errors if no entry — or more than one — covers it. Provide roll OR resultId.'
+      ),
+    resultId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Target the entry by TableResult id (from get-rolltable) — always unambiguous.'),
+    text: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "REPLACE this entry's text (HTML / @UUID enrichers allowed — the raw current text is in " +
+          'get-rolltable; copy it and change only what you need). Combine with `uuid` via {{link}}.'
+      ),
+    uuid: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Re-link the entry to a REAL item by compendium/world UUID (premium-book only, SRD ' +
+          'refused) — rendered as a clickable @UUID link, alone or into a {{link}} placeholder in `text`.'
+      ),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Display label for the `uuid` link (default: the resolved document name).'),
+    weight: z.number().int().positive().optional().describe('New relative weight for this entry.'),
+    range: z
+      .tuple([z.number().int(), z.number().int()])
+      .optional()
+      .describe(
+        'New explicit [low, high] roll range for THIS entry only — other entries are untouched ' +
+          '(an introduced overlap/gap is warned, not blocked).'
+      ),
+  })
+  .refine(e => (e.roll !== undefined) !== (e.resultId !== undefined), {
+    message: 'target each edit with exactly one of roll or resultId',
+  })
+  .refine(
+    e =>
+      e.text !== undefined ||
+      e.uuid !== undefined ||
+      e.weight !== undefined ||
+      e.range !== undefined,
+    { message: 'each edit needs at least one of text, uuid, weight, or range' }
+  );
+
+const UpdateRollTableSchema = z
+  .object({
+    identifier: z.string().min(1).describe('Table id or exact name.'),
+    name: z.string().min(1).optional().describe('New table name.'),
+    description: z.string().optional().describe('New description.'),
+    formula: z.string().min(1).optional().describe('New roll formula.'),
+    replacement: z.boolean().optional().describe('Draw with replacement.'),
+    displayRoll: z.boolean().optional().describe('Show the roll when drawing.'),
+    results: z
+      .array(resultSchema)
+      .optional()
+      .describe(
+        'DESTRUCTIVE: replaces ALL existing results (deleted + recreated with auto-assigned ' +
+          'ranges). To change one entry, use editResults instead.'
+      ),
+    editResults: z
+      .array(resultEditSchema)
+      .min(1)
+      .optional()
+      .describe(
+        "TARGETED per-entry edits — fix one entry's text/link/weight/range in place; every other " +
+          'entry (ranges, weights, @UUID item links) is left byte-identical. Mutually exclusive ' +
+          'with `results`.'
+      ),
+  })
+  .refine(v => !(v.results && v.editResults), {
+    message: 'provide results (replace the whole set) OR editResults (targeted edits), not both',
+  });
 
 const RollOnTableSchema = z.object({
   identifier: z.string().min(1).describe('Table id or exact name.'),
@@ -159,9 +240,15 @@ export class TableTools {
       {
         name: 'update-rolltable',
         description:
-          "Update a RollTable's fields (name, description, formula, replacement, displayRoll) and/or " +
-          'replace its entire result set (results). Supplying results deletes existing entries and ' +
-          'recreates them with auto-assigned ranges. GM-only.',
+          "Update a RollTable's fields (name, description, formula, replacement, displayRoll) " +
+          'and/or its entries, two ways: `editResults` = TARGETED per-entry edits — name an entry ' +
+          'by its roll face (e.g. 7 on a d12) or resultId (from get-rolltable) and patch just its ' +
+          'text, linked uuid, weight, and/or range; every OTHER entry (ranges, weights, @UUID item ' +
+          'links) stays byte-identical — the right way to fix a typo on one entry of a tuned table. ' +
+          "text/uuid REPLACE that entry's content (copy the raw text from get-rolltable and change " +
+          'only what you need). `results` = DESTRUCTIVE whole-set replace (all entries deleted and ' +
+          'recreated with auto-assigned ranges). Bad edits are isolated + reported; an introduced ' +
+          'range overlap/gap is warned. GM-only.',
         inputSchema: toInputSchema(UpdateRollTableSchema),
       },
       {
@@ -226,7 +313,18 @@ export class TableTools {
     if (result?.updated === false) {
       return `Roll table not found: "${result?.notFound ?? parsed.identifier}". Nothing changed.`;
     }
-    return `Updated roll table "${result?.tableName}" (${result?.tableId}) — ${result?.resultCount} result(s).`;
+    let out = `Updated roll table "${result?.tableName}" (${result?.tableId}) — ${result?.resultCount} result(s)`;
+    if (typeof result?.edited === 'number') {
+      out += `, ${result.edited} entr${result.edited === 1 ? 'y' : 'ies'} edited in place`;
+    }
+    out += '.';
+    const errs = Array.isArray(result?.errors) ? result.errors : [];
+    if (errs.length > 0) out += errs.map((e: string) => `\n  ⚠ ${e}`).join('');
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    if (warns.length > 0) {
+      out += `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`;
+    }
+    return out;
   }
 
   async handleRollOnTable(args: any): Promise<string> {

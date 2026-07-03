@@ -52,8 +52,13 @@ SRD · ask-don't-invent). Two table-specific clarifications:
   magic-item table must be imported before you can roll it; its results (and their @UUID item links)
   come along intact. Premium-book packs only. This is the table version of import-item — prefer it over
   hand-rebuilding a book table.
-- **`update-rolltable`** — change table fields and/or **replace the entire result set** (supplying
-  `results` deletes + recreates all entries with fresh ranges). Use to edit a table you built.
+- **`update-rolltable`** — change table fields and/or edit entries, two ways. **To fix ONE entry
+  (a typo, a re-link, a weight), use `editResults`** — target it by `roll` (the die face, e.g. 7 on
+  a d12) or `resultId` (from get-rolltable) and patch just its `text`/`uuid`/`weight`/`range`; the
+  other entries — their ranges and @UUID item links — are left untouched. `text` REPLACES that
+  entry's content: copy the raw text from `get-rolltable`, change only what you need, and keep any
+  `@UUID[...]` enrichers you want preserved. Supplying `results` instead **replaces the entire set**
+  (deletes + recreates all entries with fresh ranges) — right for a full re-theme, wrong for a typo.
 - **`roll-on-table`** — preview a draw on a **world** table (evaluates without marking drawn / posting
   to chat). A drawn loot entry's `@UUID` items come back as **importable** (uuid + label) so you can
   pull them into the world with `import-item` (see physical-item-builder).
@@ -124,7 +129,8 @@ This is the sanctioned path for "roll on the DMG treasure tables and give me the
 2. **Create** with `create-rolltable` (weights, or explicit ranges to match a printed table).
 3. **Preview** with `roll-on-table` a few times to sanity-check the spread; a loot draw reports the
    importable item uuids.
-4. **Refine** with `update-rolltable` (replace the result set) if the weighting feels off.
+4. **Refine** with `update-rolltable` — `editResults` for surgical fixes (one entry's text/link/
+   weight/range), or `results` to replace the whole set when the table needs a full re-cut.
 
 ## Don't
 

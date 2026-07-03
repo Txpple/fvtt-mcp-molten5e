@@ -247,6 +247,105 @@ try {
     () => f.call('importRollTable', { packId: 'dnd5e.tables', itemId: 'whatever00000000' }),
     /SRD/
   );
+
+  // --- 8. editResults: TARGETED per-entry edits (the surgical alternative to whole-set replace) ---
+  // The pain case this exists for: fixing a one-word typo on entry N of a tuned table must NOT
+  // require re-authoring every entry + re-attaching its @UUID links. Proof: raw toObject() JSON of
+  // every UNTOUCHED entry is byte-identical across the edit.
+  console.log('\n# update-rolltable editResults -> surgical per-entry edits');
+  const t8 = await makeTable('Edit Target', [
+    { text: 'Entry one — a GM aside about the Sleeper.' },
+    { text: 'Entry two gives the party {{link}}', uuid: itemA.uuid },
+    { text: 'Entry three — plain filler.' },
+  ]);
+  assert(t8?.resultCount === 3, 'edit-target table created with 3 results (d3, ranges 1/2/3)');
+  const rawSnapshot = () =>
+    f.evaluate(
+      ({ id }) => {
+        const t = game.tables.get(id);
+        return Object.fromEntries(
+          t.results.contents.map(r => [r.id, JSON.stringify(r.toObject())])
+        );
+      },
+      { id: t8.tableId }
+    );
+  const before8 = await f.call('getRollTable', { identifier: t8.tableId });
+  const ids8 = (before8?.results ?? []).map(r => r.id); // sorted by range → rolls 1, 2, 3
+  const snapBefore = await rawSnapshot();
+
+  // 8a — fix ONE word on entry 1 by ROLL FACE; entries 2 (linked) + 3 must not be rewritten.
+  const edit1 = await f.call('updateRollTable', {
+    identifier: t8.tableId,
+    editResults: [{ roll: 1, text: 'Entry one — a GM aside about the Dreamer.' }],
+  });
+  assert(edit1?.edited === 1 && !edit1?.errors, `8a — edited exactly 1 entry (got ${edit1?.edited})`);
+  const snapAfter = await rawSnapshot();
+  assert(
+    snapAfter[ids8[1]] === snapBefore[ids8[1]],
+    '8a — the @UUID-LINKED entry (roll 2) is BYTE-IDENTICAL after the edit'
+  );
+  assert(
+    snapAfter[ids8[2]] === snapBefore[ids8[2]],
+    '8a — entry 3 is BYTE-IDENTICAL after the edit'
+  );
+  const edited8 = JSON.parse(snapAfter[ids8[0]]);
+  assert(
+    edited8.description === 'Entry one — a GM aside about the Dreamer.',
+    `8a — entry 1 text replaced (got ${JSON.stringify(edited8.description).slice(0, 60)})`
+  );
+  assert(
+    edited8.range?.[0] === 1 && edited8.range?.[1] === 1 && edited8.weight === 1,
+    '8a — entry 1 keeps its own range + weight (only the text changed)'
+  );
+  const after8 = await f.call('getRollTable', { identifier: t8.tableId });
+  const linked8 = (after8?.results ?? []).find(r => r.id === ids8[1]);
+  assert(
+    linked8?.links?.length === 1 && linked8.links[0].uuid === itemA.uuid,
+    '8a — the sibling entry still resolves its @UUID item link'
+  );
+
+  // 8b — resultId targeting, weight/range-only patch (text untouched), gap warned not blocked.
+  const edit2 = await f.call('updateRollTable', {
+    identifier: t8.tableId,
+    editResults: [{ resultId: ids8[2], weight: 2, range: [4, 5] }],
+  });
+  assert(edit2?.edited === 1, '8b — resultId-targeted weight/range edit applied');
+  assert(
+    (edit2?.warnings ?? []).some(w => /gap/.test(w)),
+    '8b — the introduced coverage gap (roll 3) is WARNED, not blocked'
+  );
+  const moved8 = JSON.parse((await rawSnapshot())[ids8[2]]);
+  assert(
+    moved8.range?.[0] === 4 && moved8.range?.[1] === 5 && moved8.weight === 2,
+    '8b — range + weight patched verbatim'
+  );
+  assert(
+    moved8.description === 'Entry three — plain filler.',
+    '8b — a weight/range-only edit never touches the text'
+  );
+
+  // 8c — error isolation: a roll nothing covers is reported; the good edit still lands.
+  const edit3 = await f.call('updateRollTable', {
+    identifier: t8.tableId,
+    editResults: [
+      { roll: 99, text: 'never lands' },
+      { roll: 2, weight: 1 },
+    ],
+  });
+  assert(
+    edit3?.edited === 1 && (edit3?.errors ?? []).some(e => /no entry covers roll 99/.test(e)),
+    '8c — bad target isolated + reported; the good edit applied'
+  );
+
+  // 8d — the SRD guard holds on the edit path too (isolated as an error, not a throw).
+  const edit4 = await f.call('updateRollTable', {
+    identifier: t8.tableId,
+    editResults: [{ roll: 1, text: 'now with @UUID[Compendium.dnd5e.items.Item.x]{Sword}' }],
+  });
+  assert(
+    (edit4?.edited ?? 0) === 0 && (edit4?.errors ?? []).some(e => /SRD/.test(e)),
+    '8d — an SRD @UUID in edited text is refused (isolated per-edit)'
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-table] FATAL: ${e?.message || String(e)}`);
