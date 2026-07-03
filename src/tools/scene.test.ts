@@ -976,8 +976,20 @@ describe('handleCreateTeleporter', () => {
     const { tools, calls } = build({
       success: true,
       twoWay: true,
-      from: { sceneId: 's1', sceneName: 'Bridge', id: 'rA', name: 'A', behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }] },
-      to: { sceneId: 's2', sceneName: 'Cave', id: 'rB', name: 'B', behaviors: [{ type: 'teleportToken', destination: 'Scene.s1.Region.rA' }] },
+      from: {
+        sceneId: 's1',
+        sceneName: 'Bridge',
+        id: 'rA',
+        name: 'A',
+        behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }],
+      },
+      to: {
+        sceneId: 's2',
+        sceneName: 'Cave',
+        id: 'rB',
+        name: 'B',
+        behaviors: [{ type: 'teleportToken', destination: 'Scene.s1.Region.rA' }],
+      },
     });
     const out = await tools.handleCreateTeleporter({
       from: { sceneIdentifier: 'Bridge', x: 100, y: 200 },
@@ -997,7 +1009,13 @@ describe('handleCreateTeleporter', () => {
     const { tools } = build({
       success: true,
       twoWay: false,
-      from: { sceneId: 's1', sceneName: 'Bridge', id: 'rA', name: 'A', behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }] },
+      from: {
+        sceneId: 's1',
+        sceneName: 'Bridge',
+        id: 'rA',
+        name: 'A',
+        behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }],
+      },
       to: { sceneId: 's2', sceneName: 'Cave', id: 'rB', name: 'B', behaviors: [] },
     });
     const out = await tools.handleCreateTeleporter({
@@ -1041,7 +1059,9 @@ describe('handleCreateRegion', () => {
     });
     const out = await tools.handleCreateRegion({
       sceneIdentifier: 'Cave',
-      regions: [{ name: 'Trap', shapes: [{ type: 'rectangle', x: 0, y: 0, width: 140, height: 140 }] }],
+      regions: [
+        { name: 'Trap', shapes: [{ type: 'rectangle', x: 0, y: 0, width: 140, height: 140 }] },
+      ],
     });
     const call = calls.find(([n]) => n === 'createSceneRegions');
     expect(call?.[1].regions[0].name).toBe('Trap');
@@ -1073,7 +1093,12 @@ describe('handleUpdateRegion', () => {
       updated: true,
       sceneId: 's1',
       sceneName: 'Cave',
-      region: { id: 'r1', name: 'Trap', shapes: [{ type: 'rectangle', x: 700, y: 840, width: 420, height: 140 }], behaviors: [] },
+      region: {
+        id: 'r1',
+        name: 'Trap',
+        shapes: [{ type: 'rectangle', x: 700, y: 840, width: 420, height: 140 }],
+        behaviors: [],
+      },
     });
     const out = await tools.handleUpdateRegion({
       sceneIdentifier: 'Cave',
@@ -1095,7 +1120,11 @@ describe('handleUpdateRegion', () => {
 
   it('reports region-not-found', async () => {
     const { tools } = build({ success: true, updated: false, notFound: 'rZ' });
-    const out = await tools.handleUpdateRegion({ sceneIdentifier: 'Cave', regionId: 'rZ', name: 'x' });
+    const out = await tools.handleUpdateRegion({
+      sceneIdentifier: 'Cave',
+      regionId: 'rZ',
+      name: 'x',
+    });
     expect(out).toContain('Region not found');
   });
 });
@@ -1109,7 +1138,10 @@ describe('handleDeleteRegion / handleListRegions', () => {
       deleted: 1,
       notFoundIds: ['rZ'],
     });
-    const out = await tools.handleDeleteRegion({ sceneIdentifier: 'Cave', regionIds: ['r1', 'rZ'] });
+    const out = await tools.handleDeleteRegion({
+      sceneIdentifier: 'Cave',
+      regionIds: ['r1', 'rZ'],
+    });
     expect(calls.find(([n]) => n === 'deleteSceneRegions')).toBeTruthy();
     expect(out).toContain('Deleted 1 region');
     expect(out).toContain('rZ');
@@ -1122,7 +1154,12 @@ describe('handleDeleteRegion / handleListRegions', () => {
   });
 
   it('list-regions passes through the region list', async () => {
-    const { tools } = build({ found: true, sceneId: 's1', sceneName: 'Cave', regions: [{ id: 'r1', name: 'Trap', shapes: [], behaviors: [] }] });
+    const { tools } = build({
+      found: true,
+      sceneId: 's1',
+      sceneName: 'Cave',
+      regions: [{ id: 'r1', name: 'Trap', shapes: [], behaviors: [] }],
+    });
     const out = await tools.handleListRegions({ sceneIdentifier: 'Cave' });
     expect(out.regions[0].id).toBe('r1');
   });

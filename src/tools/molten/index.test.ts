@@ -162,7 +162,11 @@ describe('world-DB write refusal (corruption guard)', () => {
   });
 
   it('move-asset creates the destination parents before MOVE (Apache 500s on a missing collection)', async () => {
-    davInstance.stat.mockResolvedValue({ path: 'assets/a.png', name: 'a.png', isCollection: false });
+    davInstance.stat.mockResolvedValue({
+      path: 'assets/a.png',
+      name: 'a.png',
+      isCollection: false,
+    });
     davInstance.exists.mockResolvedValue(false);
     const out = await build().handleMoveAsset({
       fromPath: 'assets/a.png',
@@ -177,7 +181,11 @@ describe('world-DB write refusal (corruption guard)', () => {
   });
 
   it('copy-asset creates the destination parents before COPY', async () => {
-    davInstance.stat.mockResolvedValue({ path: 'assets/a.png', name: 'a.png', isCollection: false });
+    davInstance.stat.mockResolvedValue({
+      path: 'assets/a.png',
+      name: 'a.png',
+      isCollection: false,
+    });
     davInstance.exists.mockResolvedValue(false);
     const out = await build().handleCopyAsset({
       fromPath: 'assets/a.png',

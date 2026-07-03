@@ -68,7 +68,7 @@ const CreateActorFromCompendiumSchema = z.object({
     .enum(['friendly', 'neutral', 'hostile', 'secret'])
     .optional()
     .describe(
-      "Prototype-token disposition for the created copies — YOUR judgment call (shared " +
+      'Prototype-token disposition for the created copies — YOUR judgment call (shared ' +
         "authoring-policy house token rules): 'neutral' for civilians/townsfolk/bystanders, " +
         "'friendly' for allies, 'hostile' for enemies. Omit to default by source type (copied PC " +
         'pregen → friendly, copied monster → hostile).'

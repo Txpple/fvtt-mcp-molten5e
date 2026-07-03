@@ -1020,9 +1020,7 @@ export async function createActorFromCompendium(request: {
         tokenDefaults({
           disposition: resolveDisposition(
             request.disposition,
-            sourceData.type === 'character'
-              ? TOKEN_DISPOSITION.friendly
-              : TOKEN_DISPOSITION.hostile
+            sourceData.type === 'character' ? TOKEN_DISPOSITION.friendly : TOKEN_DISPOSITION.hostile
           ),
           darkvision: readDarkvision(sourceData.system?.attributes?.senses),
           ring: actorData.prototypeToken.ring,

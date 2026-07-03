@@ -129,7 +129,9 @@ try {
   assert(toggled.ringEnabled === true, 'tokenRing:true re-enabled the ring');
   assert(toggled.lockRotation === true, 'tokenAutoRotate:false locked rotation');
 
-  console.log('\n# a neutral townsfolk copy (caller disposition overrides the npc→hostile default)');
+  console.log(
+    '\n# a neutral townsfolk copy (caller disposition overrides the npc→hostile default)'
+  );
   const out2 = await f.call('createActorFromCompendium', {
     packId: 'dnd-monster-manual.actors',
     itemId: 'mmCommoner000000',

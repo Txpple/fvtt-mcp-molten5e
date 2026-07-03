@@ -712,7 +712,7 @@ export class JournalTools {
           '\n\n⚠️ ' +
           warns.length +
           ' warning(s):\n' +
-          warns.map((w: string) => '- ' + w).join('\n');
+          warns.map((w: string) => `- ${w}`).join('\n');
       }
 
       return {

@@ -1276,7 +1276,9 @@ export async function updateSceneRegion(args: {
     ];
   }
   if (Object.keys(patch).length === 0) {
-    throw new Error('provide at least one field to update (name, color, visibility, shapes, or rect)');
+    throw new Error(
+      'provide at least one field to update (name, color, visibility, shapes, or rect)'
+    );
   }
 
   await region.update(patch);

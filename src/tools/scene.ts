@@ -486,7 +486,9 @@ const TeleporterEndpointSchema = z.object({
   sceneIdentifier: z.string().min(1).describe('Scene id or exact name.'),
   x: z
     .number()
-    .describe('Trigger CENTER x in canvas px (see get-scene-dimensions for the padding-aware math).'),
+    .describe(
+      'Trigger CENTER x in canvas px (see get-scene-dimensions for the padding-aware math).'
+    ),
   y: z.number().describe('Trigger CENTER y in canvas px.'),
 });
 
@@ -531,7 +533,10 @@ const UpdateRegionSchema = z
       .describe('Region id (from create-region / create-teleporter / list-regions).'),
     name: z.string().optional().describe('New region label.'),
     color: z.string().optional().describe('New region tint hex.'),
-    visibility: z.number().optional().describe('New visibility mode (0 layer / 1 gamemaster / 2 always).'),
+    visibility: z
+      .number()
+      .optional()
+      .describe('New visibility mode (0 layer / 1 gamemaster / 2 always).'),
     shapes: z
       .array(RegionShapeSchema)
       .optional()
@@ -540,8 +545,18 @@ const UpdateRegionSchema = z
       .object({
         x: z.number().describe('Rectangle CENTER x in canvas px.'),
         y: z.number().describe('Rectangle CENTER y in canvas px.'),
-        widthCells: z.number().int().positive().optional().describe('Width in grid cells (default 1).'),
-        heightCells: z.number().int().positive().optional().describe('Height in grid cells (default 1).'),
+        widthCells: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Width in grid cells (default 1).'),
+        heightCells: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Height in grid cells (default 1).'),
         snapToGrid: z.boolean().optional().describe('Snap to the grid (default true).'),
       })
       .optional()
@@ -718,7 +733,7 @@ export class SceneTools {
       {
         name: 'list-regions',
         description:
-          'List every Region on a scene — id, name, each shape\'s bounds, and any teleporter ' +
+          "List every Region on a scene — id, name, each shape's bounds, and any teleporter " +
           'destinations. Read-only; use it to find region ids for update-region / delete-region.',
         inputSchema: toInputSchema(ListRegionsSchema),
       },
@@ -727,7 +742,7 @@ export class SceneTools {
         description:
           'Update ONE region by id: rename, recolor, change visibility, replace its `shapes` whole, or ' +
           'reshape to a single grid rectangle via the `rect` convenience (center px + cells + snap — the ' +
-          'move/resize you\'d do reviewing a teleporter). Patches only what you pass; behaviors are left ' +
+          "move/resize you'd do reviewing a teleporter). Patches only what you pass; behaviors are left " +
           'untouched. GM-only.',
         inputSchema: toInputSchema(UpdateRegionSchema),
       },
@@ -795,7 +810,7 @@ export class SceneTools {
       placeableErrs +
       formatSceneSettings(result?.settings) +
       (warns.length
-        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
         : '')
     );
   }
@@ -848,7 +863,7 @@ export class SceneTools {
       noteLines +
       errs +
       (warns.length
-        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
         : '')
     );
   }
@@ -858,7 +873,7 @@ export class SceneTools {
     const result = await this.foundry.call('updateSceneNote', parsed);
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     const warnLine = warns.length
-      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
       : '';
     if (result?.updated === false) {
       // A dropped-only bad icon resolves the note but changes nothing — report the warning, not "not found".
@@ -1000,7 +1015,7 @@ export class SceneTools {
       `Updated scene "${result?.sceneName}" (${result?.sceneId})\n  background: ${result?.background}` +
       formatSceneSettings(result?.settings) +
       (warns.length
-        ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+        ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
         : '')
     );
   }

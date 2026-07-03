@@ -143,8 +143,7 @@ const AddToActorSchema = z.object({
 function surfaceWarnings(result: any): any {
   const warns = Array.isArray(result?.warnings) ? result.warnings : [];
   if (warns.length === 0) return result;
-  const warnSection =
-    '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n');
+  const warnSection = `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`;
   return { ...result, message: (result?.message ?? '') + warnSection };
 }
 

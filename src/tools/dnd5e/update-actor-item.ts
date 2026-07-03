@@ -112,7 +112,7 @@ export class DnD5eUpdateActorItemTool {
       `**Changed:** ${keys.join(', ') || '(none)'}`,
     ].join('\n');
     const warningSection = warns.length
-      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
       : '';
     return {
       summary,

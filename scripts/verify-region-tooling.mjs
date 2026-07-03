@@ -53,10 +53,22 @@ try {
 
   console.log('# create two throwaway scenes (A: no padding, B: 0.05 padding)');
   const a = await f.call('createScene', {
-    name: `${TAG} A`, backgroundPath: BG, width: 3080, height: 2380, gridSize: 140, padding: 0, navigation: false,
+    name: `${TAG} A`,
+    backgroundPath: BG,
+    width: 3080,
+    height: 2380,
+    gridSize: 140,
+    padding: 0,
+    navigation: false,
   });
   const b = await f.call('createScene', {
-    name: `${TAG} B`, backgroundPath: BG, width: 4760, height: 4620, gridSize: 140, padding: 0.05, navigation: false,
+    name: `${TAG} B`,
+    backgroundPath: BG,
+    width: 4760,
+    height: 4620,
+    gridSize: 140,
+    padding: 0.05,
+    navigation: false,
   });
   const aId = a?.sceneId ?? a?.id;
   const bId = b?.sceneId ?? b?.id;
@@ -74,27 +86,49 @@ try {
   assert(!!fromId && !!toId, 'both endpoint regions created');
   const fromDest = tp?.from?.behaviors?.find(x => x.destination)?.destination;
   const toDest = tp?.to?.behaviors?.find(x => x.destination)?.destination;
-  assert(fromDest === `Scene.${bId}.Region.${toId}`, `A→B teleport points at B's region (${fromDest})`);
-  assert(toDest === `Scene.${aId}.Region.${fromId}`, `B→A teleport points at A's region (${toDest})`);
+  assert(
+    fromDest === `Scene.${bId}.Region.${toId}`,
+    `A→B teleport points at B's region (${fromDest})`
+  );
+  assert(
+    toDest === `Scene.${aId}.Region.${fromId}`,
+    `B→A teleport points at A's region (${toDest})`
+  );
   const fs = tp?.from?.shapes?.[0];
-  assert(fs?.x === 840 && fs?.y === 1680 && fs?.width === 140 && fs?.height === 140,
-    `A trigger snaps to cell (840,1680,140,140) — got (${fs?.x},${fs?.y},${fs?.width},${fs?.height})`);
+  assert(
+    fs?.x === 840 && fs?.y === 1680 && fs?.width === 140 && fs?.height === 140,
+    `A trigger snaps to cell (840,1680,140,140) — got (${fs?.x},${fs?.y},${fs?.width},${fs?.height})`
+  );
   const ts = tp?.to?.shapes?.[0];
-  assert(ts?.x === 840 && ts?.y === 840 && ts?.width === 140 && ts?.height === 140,
-    `B trigger snaps padding-aware to (840,840,140,140) — got (${ts?.x},${ts?.y},${ts?.width},${ts?.height})`);
+  assert(
+    ts?.x === 840 && ts?.y === 840 && ts?.width === 140 && ts?.height === 140,
+    `B trigger snaps padding-aware to (840,840,140,140) — got (${ts?.x},${ts?.y},${ts?.width},${ts?.height})`
+  );
 
   console.log('\n# update-region: widen B trigger to 3 cells (centered on its cell)');
   const up = await f.call('updateSceneRegion', {
-    sceneIdentifier: bId, regionId: toId, rect: { x: 910, y: 910, widthCells: 3 },
+    sceneIdentifier: bId,
+    regionId: toId,
+    rect: { x: 910, y: 910, widthCells: 3 },
   });
   const us = up?.region?.shapes?.[0];
-  assert(us?.x === 700 && us?.width === 420 && us?.y === 840 && us?.height === 140,
-    `resized to 3 cells wide (700,840,420,140) — got (${us?.x},${us?.y},${us?.width},${us?.height})`);
+  assert(
+    us?.x === 700 && us?.width === 420 && us?.y === 840 && us?.height === 140,
+    `resized to 3 cells wide (700,840,420,140) — got (${us?.x},${us?.y},${us?.width},${us?.height})`
+  );
 
   console.log('\n# create-region: a plain rectangle region on A');
   const cr = await f.call('createSceneRegions', {
     sceneIdentifier: aId,
-    regions: [{ name: `${TAG} Trap`, color: '#ff3333', shapes: [{ type: 'rectangle', x: 100, y: 100, width: 280, height: 280, rotation: 0, hole: false }] }],
+    regions: [
+      {
+        name: `${TAG} Trap`,
+        color: '#ff3333',
+        shapes: [
+          { type: 'rectangle', x: 100, y: 100, width: 280, height: 280, rotation: 0, hole: false },
+        ],
+      },
+    ],
   });
   assert(cr?.created === 1, 'created 1 plain region');
   const trapId = cr?.regions?.[0]?.id;
@@ -102,15 +136,27 @@ try {
 
   console.log('\n# list-regions: A now has the teleporter + the trap');
   const list = await f.call('listSceneRegions', { sceneIdentifier: aId });
-  assert(Array.isArray(list?.regions) && list.regions.length === 2, `A lists 2 regions (got ${list?.regions?.length})`);
-  assert(list.regions.some(r => r.id === trapId), 'list includes the trap region');
-  assert(list.regions.some(r => r.id === fromId), 'list includes the teleporter region');
+  assert(
+    Array.isArray(list?.regions) && list.regions.length === 2,
+    `A lists 2 regions (got ${list?.regions?.length})`
+  );
+  assert(
+    list.regions.some(r => r.id === trapId),
+    'list includes the trap region'
+  );
+  assert(
+    list.regions.some(r => r.id === fromId),
+    'list includes the teleporter region'
+  );
 
   console.log('\n# delete-region: remove the trap, teleporter remains');
   const del = await f.call('deleteSceneRegions', { sceneIdentifier: aId, regionIds: [trapId] });
   assert(del?.deleted === 1, 'deleted 1 region');
   const list2 = await f.call('listSceneRegions', { sceneIdentifier: aId });
-  assert(list2?.regions?.length === 1 && list2.regions[0].id === fromId, 'only the teleporter remains');
+  assert(
+    list2?.regions?.length === 1 && list2.regions[0].id === fromId,
+    'only the teleporter remains'
+  );
 
   console.log('\n# one-way teleporter (twoWay:false) leaves no return link');
   const one = await f.call('createSceneTeleporter', {

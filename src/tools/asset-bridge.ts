@@ -148,7 +148,7 @@ export class AssetBridgeTools {
     }
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     const warnSection = warns.length
-      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
       : '';
     return (
       `Set art for actor "${result?.actorName}" (${result?.actorId}) → ${result?.img}` +
@@ -165,7 +165,7 @@ export class AssetBridgeTools {
     }
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     const warnSection = warns.length
-      ? '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => '- ' + w).join('\n')
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
       : '';
     return (
       `Added image page "${result?.pageName}" (${result?.pageId}) to journal ` +
