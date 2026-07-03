@@ -7,8 +7,12 @@
 //   rule 7 — GM-fudge / pretend-reskin language in a description or biography ("treat its X as Y",
 //            "reflavor", "deals necrotic in place of bludgeoning", "pretend", "is really <type>").
 //   rule 9 — a magic item on an NPC with no matching world-Item loot twin.
-// The scanners (findFudgeLanguage + the imported isPlaceholderIcon / isMagicItemDoc) are PURE and
-// unit-tested in content-audit.test.ts; auditContent gathers the live docs and applies them.
+//   rule 12 — GM-only content leaked into a PLAYER-VISIBLE item description ("GM:" asides, "the DM",
+//            "fill in the …", "ready-made hook", "to suit your table") — players can read an item's
+//            description on sight, so a secret/meta-note there is a silent spoiler. ITEM descriptions
+//            only (an NPC biography is GM-facing, so its GM notes are fine — not scanned for rule 12).
+// The scanners (findFudgeLanguage / findGmLeakLanguage + the imported isPlaceholderIcon / isMagicItemDoc)
+// are PURE and unit-tested in content-audit.test.ts; auditContent gathers the live docs and applies them.
 
 import { resolveActorFuzzy, toSource } from '../_shared.js';
 import { isPlaceholderIcon } from './icons.js';
@@ -37,12 +41,37 @@ export function findFudgeLanguage(text: string | null | undefined): string[] {
   return out;
 }
 
+/**
+ * GM-note / spoiler leak in a player-visible description (rule 12). An item's description is read by a
+ * player the moment they see the item, so GM-only asides and DM-directed meta belong in a GM journal,
+ * never here. High-precision arms — each is language that essentially never appears in in-world item
+ * flavor: a "GM:" / "DM:" / "GM —" / "GM," label, "GM note", a direct address to the GM/DM/Dungeon
+ * Master/Game Master, "your table/campaign/players/group", or the ready-made-hook meta ("fill in the",
+ * "ready-made", "to suit your", "as you see fit"). Bounded so a match stays inside one clause.
+ */
+export const GM_LEAK_PATTERN =
+  /\b(?:GM|DM)\s*[:—,]|\b(?:GM|DM)\s+note\b|\bthe\s+(?:GM|DM|dungeon\s+master|game\s+master)\b|\byour\s+(?:table|campaign|players|group)\b|\bready-?made\b|\bfill\s+in\s+the\b|\bto\s+suit\s+your\b|\bas\s+you\s+see\s+fit\b/gi;
+
+/** Return up to 5 GM-leak snippets found in a (possibly HTML) string. PURE — unit-tested. */
+export function findGmLeakLanguage(text: string | null | undefined): string[] {
+  if (!text || typeof text !== 'string') return [];
+  const plain = text.replace(/<[^>]*>/g, ' ');
+  const re = new RegExp(GM_LEAK_PATTERN.source, 'gi');
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+  while ((m = re.exec(plain)) !== null && out.length < 5) {
+    out.push(m[0].trim().replace(/\s+/g, ' '));
+  }
+  return out;
+}
+
 // dnd5e physical-item types that can be loot (so rule 9 applies). Feats/spells are not gear.
 const LOOTABLE_TYPES = new Set(['weapon', 'equipment', 'consumable', 'tool', 'loot', 'container']);
 
 export interface AuditFinding {
-  rule: 7 | 8 | 9;
-  issue: 'placeholder-icon' | 'fudge-language' | 'unlootable-magic';
+  rule: 7 | 8 | 9 | 12;
+  issue: 'placeholder-icon' | 'fudge-language' | 'unlootable-magic' | 'gm-note-leak';
   docType: 'actor' | 'item';
   id: string;
   name: string;
@@ -117,6 +146,7 @@ export async function auditContent(args?: AuditArgs): Promise<unknown> {
     doc: any,
     docType: 'actor' | 'item',
     descText: string | undefined,
+    itemType?: string,
     owner?: string
   ) => {
     if (isPlaceholderIcon(doc.img)) {
@@ -141,6 +171,22 @@ export async function auditContent(args?: AuditArgs): Promise<unknown> {
         detail: `fudge language: "${snip}"`,
       });
     }
+    // rule 12 — GM-note / spoiler in a PLAYER-VISIBLE description. Lootable GEAR only: a player can read
+    // a piece of loot's description on sight. An NPC biography, and an NPC's feats/traits/spells, are
+    // GM-facing (not player-loot), so their GM notes are legitimate and are NOT scanned for rule 12.
+    if (docType === 'item' && typeof itemType === 'string' && LOOTABLE_TYPES.has(itemType)) {
+      for (const snip of findGmLeakLanguage(descText)) {
+        findings.push({
+          rule: 12,
+          issue: 'gm-note-leak',
+          docType,
+          id: doc.id ?? '',
+          name: doc.name ?? '',
+          ...(owner ? { owner } : {}),
+          detail: `GM-note / spoiler in a player-visible description: "${snip}"`,
+        });
+      }
+    }
   };
 
   // --- Scan actors + their embedded items ---
@@ -148,7 +194,7 @@ export async function auditContent(args?: AuditArgs): Promise<unknown> {
     flagDoc(actor, 'actor', actor.system?.details?.biography?.value);
     for (const item of actor.items ?? []) {
       const src = toSource(item);
-      flagDoc(item, 'item', src.system?.description?.value, actor.name);
+      flagDoc(item, 'item', src.system?.description?.value, item.type, actor.name);
       // rule 9 — a magic item on an NPC needs a world-Item loot twin.
       if (
         actor.type === 'npc' &&
@@ -171,17 +217,22 @@ export async function auditContent(args?: AuditArgs): Promise<unknown> {
 
   // --- Scan world items ---
   for (const item of worldItems.values()) {
-    flagDoc(item, 'item', toSource(item).system?.description?.value);
+    flagDoc(item, 'item', toSource(item).system?.description?.value, item.type);
   }
 
-  const byRule = { 7: 0, 8: 0, 9: 0 } as Record<number, number>;
+  const byRule = { 7: 0, 8: 0, 9: 0, 12: 0 } as Record<number, number>;
   for (const fnd of findings) byRule[fnd.rule]++;
 
   return {
     ok: findings.length === 0,
     scope: noTarget ? 'full-sweep (all NPCs + all world items)' : 'targeted',
     scanned: { actors: actors.length, worldItems: worldItems.size },
-    counts: { rule7_fudge: byRule[7], rule8_icon: byRule[8], rule9_loot: byRule[9] },
+    counts: {
+      rule7_fudge: byRule[7],
+      rule8_icon: byRule[8],
+      rule9_loot: byRule[9],
+      rule12_leak: byRule[12],
+    },
     findings,
     ...(notFound.length > 0 ? { notFound } : {}),
   };

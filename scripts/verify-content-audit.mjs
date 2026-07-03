@@ -1,12 +1,14 @@
-// Live verification for tool-hardening ③ — the content-audit finishing check (rules 7/8/9 safety net).
+// Live verification for tool-hardening ③ — the content-audit finishing check (rules 7/8/9/12 safety net).
 //
 // Drives a real headless Foundry session (fresh dist/, no CC restart). On a throwaway NPC it INJECTS
-// one violation per rule, then asserts auditContent flags exactly those — and does NOT flag a magic
-// item that DOES have a loot twin:
+// one violation per rule, then asserts auditContent flags exactly those — and does NOT flag the controls:
 //   rule 8 — a feature given a placeholder icon.
 //   rule 7 — a feature whose description contains GM-fudge language.
 //   rule 9 — a magic weapon on the NPC with no loot twin (lootCopy:false).
-//   (control) a magic weapon WITH a loot twin (lootCopy:true) → not flagged.
+//   rule 12 — a piece of LOOT whose description leaks a GM note / spoiler.
+//   (control) a magic weapon WITH a loot twin (lootCopy:true) → not flagged (rule 9).
+//   (control) a loot item with an innocuous in-world description → not flagged (rule 12).
+//   (control) a GM-facing NPC feature (a feat, not player-loot) → not flagged (rule 12).
 // Cleaned up in `finally`.
 //
 // Build first: npm run build. Run: node scripts/verify-content-audit.mjs
@@ -98,8 +100,22 @@ try {
     lootCopy: true, // magic, HAS a twin — control (not flagged)
     lootCopyFolder: LOOT_FOLDER,
   });
+  await f.call('addItem', {
+    actorIdentifier: actorId,
+    itemType: 'loot',
+    name: `${TAG} Leaky Letter`,
+    description: 'GM: fill in the name and the news to suit your table.', // rule 12
+  });
+  await f.call('addItem', {
+    actorIdentifier: actorId,
+    itemType: 'loot',
+    name: `${TAG} Clean Letter`,
+    // control — innocuous in-world flavor, must NOT be flagged rule 12
+    description:
+      'A folded letter addressed to someone in Daggerford; the writer hoped to be home before first frost.',
+  });
   console.log(
-    '  (added: blank-icon feature, fudge feature, orphan magic weapon, looted magic weapon)'
+    '  (added: blank-icon feature, fudge feature, orphan magic weapon, looted magic weapon, leaky letter, clean letter)'
   );
 
   // Audit the actor.
@@ -112,9 +128,18 @@ try {
   assert(has(7, 'Fudge Trait'), 'rule 7 — flags the GM-fudge description');
   assert(has(9, 'Orphan Blade'), 'rule 9 — flags the magic weapon with no loot twin');
   assert(!has(9, 'Looted Blade'), 'rule 9 — does NOT flag the magic weapon that has a loot twin');
+  assert(has(12, 'Leaky Letter'), 'rule 12 — flags the GM-note leaked into a loot description');
+  assert(
+    !has(12, 'Clean Letter'),
+    'rule 12 — does NOT flag an innocuous in-world loot description'
+  );
+  assert(
+    !has(12, 'Fudge Trait'),
+    'rule 12 — does NOT flag a GM-facing NPC feature (not player-loot)'
+  );
   assert(audit?.ok === false, 'audit reports ok:false when violations exist');
   console.log(
-    `        counts: fudge=${audit?.counts?.rule7_fudge} icon=${audit?.counts?.rule8_icon} loot=${audit?.counts?.rule9_loot}`
+    `        counts: fudge=${audit?.counts?.rule7_fudge} icon=${audit?.counts?.rule8_icon} loot=${audit?.counts?.rule9_loot} leak=${audit?.counts?.rule12_leak}`
   );
 } catch (e) {
   fails++;

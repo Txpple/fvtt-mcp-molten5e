@@ -170,6 +170,13 @@ them — and **pull an approximating icon from the compendium** (see House rules
   it. When authoring body armor with `add-item`, pass `wireAc: true` to switch the actor to armor-based
   AC. (A copied armor item is just an item — set the actor's AC calc with `update-actor` if needed; a
   shield's bonus applies under any calc.)
+- **The description is PLAYER-VISIBLE and NOT audited — keep it innocuous (shared-policy rule 12).** A
+  player can read an item's `system.description` the instant they see it, and `content-audit` doesn't
+  scan description prose, so nothing catches a leak for you. **Never** bake a GM note, spoiler, or
+  `GM: …` meta-aside into the description — write in-world flavor only, written as if a player reads it
+  first. If the item is a hook (a letter, a mysterious note, a treasure map), keep its own text
+  innocuous and put the GM's intent — the name to fill in, the secret, the payoff — in a **GM-only
+  journal** and link it. Don't write the DM's plan into the loot.
 
 ## Coins and containers
 

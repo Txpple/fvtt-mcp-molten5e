@@ -6,11 +6,12 @@ import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
- * content-audit — the finishing-check safety net for authoring rules 7/8/9. A read-only scan the skill
- * runs BEFORE declaring a build "done": it flags placeholder icons (rule 8), GM-fudge / pretend-reskin
- * language in descriptions/biographies (rule 7), and magic items on an NPC with no world-Item loot twin
- * (rule 9) — catching violations no matter which handler or hand edit produced them. The page layer
- * (auditContent) owns the gathering + the pure scanners.
+ * content-audit — the finishing-check safety net for authoring rules 7/8/9/12. A read-only scan the
+ * skill runs BEFORE declaring a build "done": it flags placeholder icons (rule 8), GM-fudge /
+ * pretend-reskin language in descriptions/biographies (rule 7), magic items on an NPC with no world-Item
+ * loot twin (rule 9), and GM-note / spoiler leaks in a player-visible item description (rule 12) —
+ * catching violations no matter which handler or hand edit produced them. The page layer (auditContent)
+ * owns the gathering + the pure scanners.
  */
 const ContentAuditSchema = z.object({
   actorIdentifiers: z
@@ -53,17 +54,21 @@ export class DnD5eContentAuditTool {
       {
         name: 'content-audit',
         description:
-          '[D&D 5e only] Finishing check for authored content — scan documents for the three strict ' +
+          '[D&D 5e only] Finishing check for authored content — scan documents for the four strict ' +
           'authoring-quality rules and report violations to fix (read-only; never mutates):\n' +
           '• rule 8 — placeholder icons (icons/svg/...) on an actor, item, or authored feature.\n' +
           '• rule 7 — GM-fudge / pretend-reskin language in a description or biography ("treat its X ' +
           'as Y", "reflavor", "deals necrotic in place of bludgeoning", "pretend", "is really <type>").\n' +
-          '• rule 9 — a magic item on an NPC with no matching world-Item loot twin.\n\n' +
+          '• rule 9 — a magic item on an NPC with no matching world-Item loot twin.\n' +
+          '• rule 12 — a GM-note / spoiler leaked into a PLAYER-VISIBLE item description ("GM:" asides, ' +
+          '"the DM", "fill in the …", "ready-made hook", "to suit your table"). Item descriptions only — ' +
+          'an NPC biography is GM-facing, so it is not scanned for this.\n\n' +
           'RUN THIS before declaring a build done. Target what you built: actorIdentifiers (NPCs, with ' +
           'their gear/features), itemFolders (your loot folder), and/or worldItemIds. With NO target it ' +
           'runs a full sweep of every NPC + every world Item. Fix each finding (set a real icon via ' +
           'update-actor-item/update-item/set-actor-art; replace fudge with real mechanics; mint the ' +
-          'missing loot copy) then re-run until clean.',
+          'missing loot copy; rewrite the item description to innocuous in-world flavor and move the GM ' +
+          'note to a GM-only journal) then re-run until clean.',
         inputSchema: toInputSchema(ContentAuditSchema),
       },
     ];
@@ -93,12 +98,17 @@ export class DnD5eContentAuditTool {
 
     let body: string;
     if (findings.length === 0) {
-      body = `✅ No rule 7/8/9 violations found (${result?.scope}). Scanned ${result?.scanned?.actors ?? 0} actor(s) + ${result?.scanned?.worldItems ?? 0} world item(s).`;
+      body = `✅ No rule 7/8/9/12 violations found (${result?.scope}). Scanned ${result?.scanned?.actors ?? 0} actor(s) + ${result?.scanned?.worldItems ?? 0} world item(s).`;
     } else {
       const groups: Array<[number, string, string]> = [
         [8, 'icons/svg', '🖼️ Rule 8 — placeholder icons (set a real compendium icon)'],
         [7, 'fudge', '🎭 Rule 7 — GM-fudge / pretend-reskin (use real mechanics instead)'],
         [9, 'loot', '💰 Rule 9 — NPC magic with no loot twin (mint a world Item)'],
+        [
+          12,
+          'gm-leak',
+          '🤫 Rule 12 — GM note / spoiler in a player-visible description (rewrite innocuous; move the note to a GM-only journal)',
+        ],
       ];
       const sections = groups
         .map(([rule, , heading]) => {

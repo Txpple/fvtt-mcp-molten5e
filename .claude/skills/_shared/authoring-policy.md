@@ -78,3 +78,15 @@
     language (rule 7), and magic NPC item with no loot twin (rule 9). Fix each finding and re-run until
     it reports clean — these rules are enforced at the tool floor, and this is the belt-and-suspenders
     check that nothing slipped through a hand edit.
+
+12. **Descriptions are PLAYER-FACING and un-audited — keep them in-world and innocuous; secrets go in a
+    GM-only journal.** An item's `system.description` (and any player-visible page/handout) can be read
+    by a player the moment they see the thing, and `content-audit` does **not** scan description prose —
+    so a leak here is silent. **Never** put GM-only content in a description: no `GM:` asides, no plot
+    reveals or spoilers, no meta-instructions to the DM (*"fill in the name"*, *"a ready-made hook"*), no
+    naming of the twist / answer / hidden loot. Write **only what the fiction shows in-world**, and keep
+    it innocuous — assume a player reads it first. Anything the GM needs (the hook, the secret, the
+    intended payoff) belongs in a **GM-only journal** (see [`journal-builder`], page visibility GM-only)
+    or the encounter's GM key, linked from there — not in the item. A "sealed letter" / mysterious note
+    is the classic trap: keep the item's own text innocuous and put the intent in a GM note elsewhere.
+    (Same spirit as rule 7's no-fudge note, but about SECRECY leaking to players, not mechanics.)
