@@ -1408,6 +1408,14 @@ export async function updateActor(params: any): Promise<unknown> {
     update['prototypeToken.ring.enabled'] = params.tokenRing;
     applied.push('tokenRing');
   }
+  if (typeof params.tokenScale === 'number' && params.tokenScale > 0) {
+    // Prototype-token art scale — the "Scale (Ratio)" slider on the token's Appearance tab. Sets
+    // texture.scaleX and scaleY together so the art grows/shrinks within its grid footprint; the
+    // token's size (grid spaces) is untouched.
+    update['prototypeToken.texture.scaleX'] = params.tokenScale;
+    update['prototypeToken.texture.scaleY'] = params.tokenScale;
+    applied.push('tokenScale');
+  }
 
   // --- details ---
   if (params.size !== undefined) {

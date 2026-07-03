@@ -66,6 +66,16 @@ const UpdateActorSchema = z.object({
       'Prototype-token dynamic ring: false = plain token (the house default; new creations ' +
         'already get it), true = re-enable the ring (its colors/subject config is preserved).'
     ),
+  tokenScale: z
+    .number()
+    .positive()
+    .optional()
+    .describe(
+      'Prototype-token art scale — the "Scale (Ratio)" slider on the token Appearance tab ' +
+        '(sets texture.scaleX and scaleY together). 1 = normal, 1.5 = 50% larger, 2 = double. ' +
+        "Scales only the art within the token's grid footprint; it does NOT change the token's " +
+        'size (grid spaces).'
+    ),
 
   // details (most NPC-only)
   size: z
@@ -273,7 +283,7 @@ export class DnD5eUpdateActorTool {
         name: 'update-actor',
         description:
           "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
-          '• identity — name, img, disposition (token friend/foe), tokenAutoRotate (face movement), tokenRing (dynamic ring)\n' +
+          '• identity — name, img, disposition (token friend/foe), tokenAutoRotate (face movement), tokenRing (dynamic ring), tokenScale (token art size)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
           '• vitals — hp, ac, initiative\n' +

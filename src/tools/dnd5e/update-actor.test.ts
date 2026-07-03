@@ -77,6 +77,26 @@ describe('handleUpdateActor', () => {
     ).rejects.toThrow();
   });
 
+  it('forwards the prototype-token art scale', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Ettercap Broodmother', type: 'npc' },
+      applied: ['tokenScale'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Ettercap Broodmother',
+      tokenScale: 2,
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].tokenScale).toBe(2);
+  });
+
+  it('rejects a non-positive token scale', async () => {
+    const { tool } = makeTool();
+    await expect(tool.handleUpdateActor({ actorIdentifier: 'X', tokenScale: 0 })).rejects.toThrow();
+  });
+
   it('applies the default replace mode to Set fields', async () => {
     const { tool, calls } = makeTool({
       success: true,
