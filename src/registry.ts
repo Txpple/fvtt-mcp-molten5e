@@ -275,6 +275,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'update-note': args => sceneTools.handleUpdateNote(args),
     'delete-note': args => sceneTools.handleDeleteNote(args),
     'screenshot-scene': args => sceneTools.handleScreenshotScene(args),
+    'create-teleporter': args => sceneTools.handleCreateTeleporter(args),
+    'create-region': args => sceneTools.handleCreateRegion(args),
+    'list-regions': args => sceneTools.handleListRegions(args),
+    'update-region': args => sceneTools.handleUpdateRegion(args),
+    'delete-region': args => sceneTools.handleDeleteRegion(args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

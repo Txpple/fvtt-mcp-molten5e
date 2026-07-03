@@ -1007,6 +1007,323 @@ export async function deleteSceneNotes(args: {
   };
 }
 
+// --- region / teleporter authoring (on an EXISTING scene) --------------------
+//
+// The import path (create-scene) can carry regions in its payload, and remap-teleporters
+// fixes their cross-scene destinations. But nothing let you add a region — least of all a
+// working teleporter — to a scene that ALREADY exists. These fns fill that gap: create /
+// list / update / delete regions, plus a two-way-teleporter convenience that creates BOTH
+// endpoint regions and cross-links their teleportToken behaviors in ONE call. That last is
+// the chicken-and-egg the live session hit: each destination UUID needs the OTHER region's
+// id, so both regions must exist before either behavior can be wired.
+
+/** A v12+ teleporter destination UUID for a region. Pure/exported for unit testing. */
+export function teleportDestUuid(sceneId: string, regionId: string): string {
+  return `Scene.${sceneId}.Region.${regionId}`;
+}
+
+/**
+ * Build a v14 rectangle region-shape from a CENTER point (canvas px) sized in whole grid cells,
+ * optionally snapped so the rectangle aligns to the scene's grid. Snapping anchors on the grid cell
+ * the center sits in and expands symmetrically (odd cell counts center exactly; even counts bias
+ * right/down), reproducing the by-hand snap the live session did. Pure/exported for unit testing —
+ * pass the plain grid geometry, not a live Scene.
+ */
+export function gridRectShape(
+  grid: { size: number; sceneX: number; sceneY: number },
+  centerX: number,
+  centerY: number,
+  widthCells: number,
+  heightCells: number,
+  snap: boolean
+): Record<string, unknown> {
+  const gs = grid.size > 0 ? grid.size : 100;
+  const wc = Math.max(1, Math.round(widthCells));
+  const hc = Math.max(1, Math.round(heightCells));
+  const width = wc * gs;
+  const height = hc * gs;
+  let x = centerX - width / 2;
+  let y = centerY - height / 2;
+  if (snap) {
+    const col = Math.floor((centerX - grid.sceneX) / gs);
+    const row = Math.floor((centerY - grid.sceneY) / gs);
+    x = grid.sceneX + (col - Math.floor((wc - 1) / 2)) * gs;
+    y = grid.sceneY + (row - Math.floor((hc - 1) / 2)) * gs;
+  }
+  return { type: 'rectangle', x, y, width, height, rotation: 0, hole: false };
+}
+
+/** Read a scene's grid geometry for the snap math (live-Scene → the plain shape gridRectShape wants). */
+function sceneGrid(scene: any): { size: number; sceneX: number; sceneY: number } {
+  const d: any = scene.dimensions ?? {};
+  return {
+    size: d.size ?? scene.grid?.size ?? 100,
+    sceneX: d.sceneX ?? 0,
+    sceneY: d.sceneY ?? 0,
+  };
+}
+
+/** Serialize a region for read-back: id, name, its shapes' bounds, and any teleport destinations. */
+function dumpRegion(region: any): {
+  id: string;
+  name: string;
+  shapes: Array<Record<string, unknown>>;
+  behaviors: Array<{ type: string; destination?: string }>;
+} {
+  return {
+    id: region.id,
+    name: region.name,
+    shapes: (region.shapes ?? []).map((s: any) => ({
+      type: s.type,
+      ...(s.x !== undefined ? { x: s.x, y: s.y } : {}),
+      ...(s.width !== undefined ? { width: s.width, height: s.height } : {}),
+      ...(s.radiusX !== undefined ? { radiusX: s.radiusX, radiusY: s.radiusY } : {}),
+    })),
+    behaviors: (region.behaviors?.contents ?? region.behaviors ?? []).map((b: any) => ({
+      type: b.type,
+      ...(b.system?.destination ? { destination: b.system.destination } : {}),
+    })),
+  };
+}
+
+/**
+ * Create one or more regions on an existing scene. Each region carries its v14 `shapes` whole
+ * (rectangle/ellipse/polygon, in canvas px — same "don't cherry-pick" rule as the import path) plus
+ * optional `color`/`visibility`/`behaviors` (behaviors passthrough — a teleportToken here needs its
+ * `system.destination` already a `Scene.<id>.Region.<id>` UUID; use createSceneTeleporter for the
+ * two-new-regions convenience). Returns the created region ids. Scene resolved strict (id → exact
+ * name); returns `notFound` rather than throwing when it doesn't resolve.
+ */
+export async function createSceneRegions(args: {
+  sceneIdentifier: string;
+  regions: Array<{
+    name?: string;
+    color?: string;
+    visibility?: number;
+    shapes: Record<string, unknown>[];
+    behaviors?: Record<string, unknown>[];
+  }>;
+}): Promise<{
+  success: boolean;
+  sceneId?: string;
+  sceneName?: string;
+  notFound?: string;
+  created: number;
+  regions?: Array<{ id: string; name: string }>;
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!Array.isArray(args.regions) || args.regions.length === 0) {
+    throw new Error('regions array is required and must contain at least one entry');
+  }
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, created: 0, notFound: args.sceneIdentifier };
+
+  const data = args.regions.map((r, i) => {
+    if (!Array.isArray(r.shapes) || r.shapes.length === 0) {
+      throw new Error(`region ${i}: at least one shape is required`);
+    }
+    const doc: Record<string, unknown> = { name: r.name ?? `Region ${i + 1}`, shapes: r.shapes };
+    if (typeof r.color === 'string' && r.color.trim() !== '') doc.color = r.color;
+    if (typeof r.visibility === 'number') doc.visibility = r.visibility;
+    if (Array.isArray(r.behaviors) && r.behaviors.length > 0) doc.behaviors = r.behaviors;
+    return doc;
+  });
+
+  const made = await scene.createEmbeddedDocuments('Region', data);
+  return {
+    success: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    created: made?.length ?? 0,
+    regions: (made ?? []).map((r: any) => ({ id: r.id, name: r.name })),
+  };
+}
+
+/**
+ * Two-way (or one-way) teleporter between two points — the killer convenience. Creates a rectangle
+ * region at each end (sized in whole grid cells, snapped to the grid by default) and wires a
+ * `teleportToken` behavior on each pointing at the OTHER region. Both regions are created BEFORE
+ * either behavior so the cross-linked destination UUIDs resolve. `from`/`to` give a CENTER point in
+ * canvas px on each scene (may be the same scene). Returns both created region ids + their final
+ * shapes/destinations for verification.
+ */
+export async function createSceneTeleporter(args: {
+  from: { sceneIdentifier: string; x: number; y: number };
+  to: { sceneIdentifier: string; x: number; y: number };
+  widthCells?: number;
+  heightCells?: number;
+  twoWay?: boolean;
+  snapToGrid?: boolean;
+  fromName?: string;
+  toName?: string;
+  color?: string;
+}): Promise<{
+  success: boolean;
+  notFound?: string;
+  twoWay?: boolean;
+  from?: ReturnType<typeof dumpRegion> & { sceneId: string; sceneName: string };
+  to?: ReturnType<typeof dumpRegion> & { sceneId: string; sceneName: string };
+}> {
+  if (!args?.from?.sceneIdentifier || !args?.to?.sceneIdentifier) {
+    throw new Error('both from.sceneIdentifier and to.sceneIdentifier are required');
+  }
+  const fromScene = resolveSceneStrict(args.from.sceneIdentifier);
+  if (!fromScene) return { success: true, notFound: args.from.sceneIdentifier };
+  const toScene = resolveSceneStrict(args.to.sceneIdentifier);
+  if (!toScene) return { success: true, notFound: args.to.sceneIdentifier };
+
+  const wc = args.widthCells ?? 1;
+  const hc = args.heightCells ?? 1;
+  const snap = args.snapToGrid !== false;
+  const twoWay = args.twoWay !== false;
+  const color = typeof args.color === 'string' && args.color.trim() !== '' ? args.color : '#3fb0ff';
+  const fromShape = gridRectShape(sceneGrid(fromScene), args.from.x, args.from.y, wc, hc, snap);
+  const toShape = gridRectShape(sceneGrid(toScene), args.to.x, args.to.y, wc, hc, snap);
+
+  // 1) Create both regions first (no behaviors) so both ids exist for the cross-links.
+  const [regA] = await fromScene.createEmbeddedDocuments('Region', [
+    { name: args.fromName ?? `Teleporter → ${toScene.name}`, color, shapes: [fromShape] },
+  ]);
+  const [regB] = await toScene.createEmbeddedDocuments('Region', [
+    { name: args.toName ?? `Teleporter → ${fromScene.name}`, color, shapes: [toShape] },
+  ]);
+
+  // 2) Wire the teleportToken behavior(s), each pointing at the OTHER region.
+  await regA.createEmbeddedDocuments('RegionBehavior', [
+    {
+      name: `Teleport to ${toScene.name}`,
+      type: 'teleportToken',
+      system: { destination: teleportDestUuid(toScene.id, regB.id), choice: false },
+    },
+  ]);
+  if (twoWay) {
+    await regB.createEmbeddedDocuments('RegionBehavior', [
+      {
+        name: `Teleport to ${fromScene.name}`,
+        type: 'teleportToken',
+        system: { destination: teleportDestUuid(fromScene.id, regA.id), choice: false },
+      },
+    ]);
+  }
+
+  // Re-fetch fresh so the read-back includes the just-added behaviors.
+  const freshA = fromScene.regions.get(regA.id);
+  const freshB = toScene.regions.get(regB.id);
+  return {
+    success: true,
+    twoWay,
+    from: { sceneId: fromScene.id, sceneName: fromScene.name, ...dumpRegion(freshA) },
+    to: { sceneId: toScene.id, sceneName: toScene.name, ...dumpRegion(freshB) },
+  };
+}
+
+/** List every region on a scene (id, name, shape bounds, teleport destinations). Read-only. */
+export function listSceneRegions(args: { sceneIdentifier: string }): unknown {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { found: false, notFound: args.sceneIdentifier };
+  return {
+    found: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    regions: scene.regions.map((r: any) => dumpRegion(r)),
+  };
+}
+
+/**
+ * Update ONE existing region by id: rename, recolor, change visibility, replace its `shapes` whole,
+ * OR reshape to a grid rectangle via the `rect` convenience (center px + cells + snap — the resize/
+ * move the live session did by hand). Patches only what's supplied; leaves behaviors untouched.
+ */
+export async function updateSceneRegion(args: {
+  sceneIdentifier: string;
+  regionId: string;
+  name?: string;
+  color?: string;
+  visibility?: number;
+  shapes?: Record<string, unknown>[];
+  rect?: { x: number; y: number; widthCells?: number; heightCells?: number; snapToGrid?: boolean };
+}): Promise<{
+  success: boolean;
+  updated: boolean;
+  notFound?: string;
+  sceneId?: string;
+  sceneName?: string;
+  region?: ReturnType<typeof dumpRegion>;
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!args?.regionId) throw new Error('regionId is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, updated: false, notFound: args.sceneIdentifier };
+  const region = scene.regions?.get?.(args.regionId);
+  if (!region) return { success: true, updated: false, notFound: args.regionId };
+
+  const patch: Record<string, unknown> = {};
+  if (typeof args.name === 'string' && args.name.trim() !== '') patch.name = args.name.trim();
+  if (typeof args.color === 'string' && args.color.trim() !== '') patch.color = args.color;
+  if (typeof args.visibility === 'number') patch.visibility = args.visibility;
+  if (Array.isArray(args.shapes) && args.shapes.length > 0) patch.shapes = args.shapes;
+  else if (args.rect) {
+    patch.shapes = [
+      gridRectShape(
+        sceneGrid(scene),
+        args.rect.x,
+        args.rect.y,
+        args.rect.widthCells ?? 1,
+        args.rect.heightCells ?? 1,
+        args.rect.snapToGrid !== false
+      ),
+    ];
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new Error('provide at least one field to update (name, color, visibility, shapes, or rect)');
+  }
+
+  await region.update(patch);
+  return {
+    success: true,
+    updated: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    region: dumpRegion(scene.regions.get(args.regionId)),
+  };
+}
+
+/** Delete one or more regions from a scene by id. Missing ids are reported, never fatal. */
+export async function deleteSceneRegions(args: {
+  sceneIdentifier: string;
+  regionIds: string[];
+}): Promise<{
+  success: boolean;
+  deleted: number;
+  notFound?: string;
+  notFoundIds?: string[];
+  sceneId?: string;
+  sceneName?: string;
+}> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!Array.isArray(args.regionIds) || args.regionIds.length === 0) {
+    throw new Error('regionIds array is required and must contain at least one entry');
+  }
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, deleted: 0, notFound: args.sceneIdentifier };
+
+  const present = args.regionIds.filter(id => scene.regions?.get?.(id));
+  const notFoundIds = args.regionIds.filter(id => !scene.regions?.get?.(id));
+  let deleted = 0;
+  if (present.length > 0) {
+    const made = await scene.deleteEmbeddedDocuments('Region', present);
+    deleted = made?.length ?? present.length;
+  }
+  return {
+    success: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    deleted,
+    ...(notFoundIds.length > 0 ? { notFoundIds } : {}),
+  };
+}
+
 /**
  * Prepare the page to screenshot a scene: VIEW it, wait for the WebGL canvas to draw THIS scene, fit
  * the whole map into the viewport (unless fit:false → keep the saved camera), and — when mark:true —

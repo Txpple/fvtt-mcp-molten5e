@@ -30,17 +30,22 @@ describe('SceneTools.getToolDefinitions', () => {
       .sort();
     expect(names).toEqual(
       [
+        'create-region',
         'create-scene',
         'create-scene-notes',
+        'create-teleporter',
         'delete-note',
+        'delete-region',
         'delete-scene',
         'get-current-scene',
         'get-scene-dimensions',
         'get-world-info',
+        'list-regions',
         'list-scenes',
         'remap-teleporters',
         'screenshot-scene',
         'update-note',
+        'update-region',
         'update-scene',
       ].sort()
     );
@@ -963,5 +968,162 @@ describe('handleDeleteScene', () => {
   it('rejects an identifier that is an empty string', async () => {
     const { tools } = build();
     await expect(tools.handleDeleteScene({ identifiers: [''] })).rejects.toThrow();
+  });
+});
+
+describe('handleCreateTeleporter', () => {
+  it('forwards from/to + defaults (twoWay, cells, snap) and reports both regions', async () => {
+    const { tools, calls } = build({
+      success: true,
+      twoWay: true,
+      from: { sceneId: 's1', sceneName: 'Bridge', id: 'rA', name: 'A', behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }] },
+      to: { sceneId: 's2', sceneName: 'Cave', id: 'rB', name: 'B', behaviors: [{ type: 'teleportToken', destination: 'Scene.s1.Region.rA' }] },
+    });
+    const out = await tools.handleCreateTeleporter({
+      from: { sceneIdentifier: 'Bridge', x: 100, y: 200 },
+      to: { sceneIdentifier: 'Cave', x: 300, y: 400 },
+    });
+    const call = calls.find(([n]) => n === 'createSceneTeleporter');
+    expect(call?.[1].from).toEqual({ sceneIdentifier: 'Bridge', x: 100, y: 200 });
+    expect(call?.[1].twoWay).toBe(true);
+    expect(call?.[1].widthCells).toBe(1);
+    expect(call?.[1].snapToGrid).toBe(true);
+    expect(out).toContain('two-way teleporter');
+    expect(out).toContain('rA');
+    expect(out).toContain('Scene.s2.Region.rB');
+  });
+
+  it('reports a one-way teleporter with no return link', async () => {
+    const { tools } = build({
+      success: true,
+      twoWay: false,
+      from: { sceneId: 's1', sceneName: 'Bridge', id: 'rA', name: 'A', behaviors: [{ type: 'teleportToken', destination: 'Scene.s2.Region.rB' }] },
+      to: { sceneId: 's2', sceneName: 'Cave', id: 'rB', name: 'B', behaviors: [] },
+    });
+    const out = await tools.handleCreateTeleporter({
+      from: { sceneIdentifier: 'Bridge', x: 1, y: 2 },
+      to: { sceneIdentifier: 'Cave', x: 3, y: 4 },
+      twoWay: false,
+    });
+    expect(out).toContain('one-way teleporter');
+    expect(out).toContain('no return link');
+  });
+
+  it('reports scene-not-found without claiming a teleporter was made', async () => {
+    const { tools } = build({ success: true, notFound: 'Nowhere' });
+    const out = await tools.handleCreateTeleporter({
+      from: { sceneIdentifier: 'Nowhere', x: 1, y: 2 },
+      to: { sceneIdentifier: 'Cave', x: 3, y: 4 },
+    });
+    expect(out).toContain('Scene not found');
+    expect(out).toContain('No teleporter created');
+  });
+
+  it('rejects a non-numeric endpoint coordinate', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateTeleporter({
+        from: { sceneIdentifier: 'Bridge', x: 'here', y: 2 },
+        to: { sceneIdentifier: 'Cave', x: 3, y: 4 },
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleCreateRegion', () => {
+  it('forwards regions and lists created ids', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 's1',
+      sceneName: 'Cave',
+      created: 1,
+      regions: [{ id: 'r1', name: 'Trap' }],
+    });
+    const out = await tools.handleCreateRegion({
+      sceneIdentifier: 'Cave',
+      regions: [{ name: 'Trap', shapes: [{ type: 'rectangle', x: 0, y: 0, width: 140, height: 140 }] }],
+    });
+    const call = calls.find(([n]) => n === 'createSceneRegions');
+    expect(call?.[1].regions[0].name).toBe('Trap');
+    expect(out).toContain('Created 1 region');
+    expect(out).toContain('r1 — Trap');
+  });
+
+  it('rejects a region with no shapes', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateRegion({ sceneIdentifier: 'Cave', regions: [{ name: 'X', shapes: [] }] })
+    ).rejects.toThrow();
+  });
+
+  it('reports scene-not-found', async () => {
+    const { tools } = build({ success: true, created: 0, notFound: 'Nowhere' });
+    const out = await tools.handleCreateRegion({
+      sceneIdentifier: 'Nowhere',
+      regions: [{ shapes: [{ type: 'rectangle', x: 0, y: 0, width: 1, height: 1 }] }],
+    });
+    expect(out).toContain('Scene not found');
+  });
+});
+
+describe('handleUpdateRegion', () => {
+  it('forwards the rect convenience and reports the new shape', async () => {
+    const { tools, calls } = build({
+      success: true,
+      updated: true,
+      sceneId: 's1',
+      sceneName: 'Cave',
+      region: { id: 'r1', name: 'Trap', shapes: [{ type: 'rectangle', x: 700, y: 840, width: 420, height: 140 }], behaviors: [] },
+    });
+    const out = await tools.handleUpdateRegion({
+      sceneIdentifier: 'Cave',
+      regionId: 'r1',
+      rect: { x: 910, y: 910, widthCells: 3 },
+    });
+    const call = calls.find(([n]) => n === 'updateSceneRegion');
+    expect(call?.[1].rect.widthCells).toBe(3);
+    expect(out).toContain('Updated region r1');
+    expect(out).toContain('420×140px');
+  });
+
+  it('rejects an update with no fields (refine)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateRegion({ sceneIdentifier: 'Cave', regionId: 'r1' })
+    ).rejects.toThrow();
+  });
+
+  it('reports region-not-found', async () => {
+    const { tools } = build({ success: true, updated: false, notFound: 'rZ' });
+    const out = await tools.handleUpdateRegion({ sceneIdentifier: 'Cave', regionId: 'rZ', name: 'x' });
+    expect(out).toContain('Region not found');
+  });
+});
+
+describe('handleDeleteRegion / handleListRegions', () => {
+  it('deletes by id and reports missing ids', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 's1',
+      sceneName: 'Cave',
+      deleted: 1,
+      notFoundIds: ['rZ'],
+    });
+    const out = await tools.handleDeleteRegion({ sceneIdentifier: 'Cave', regionIds: ['r1', 'rZ'] });
+    expect(calls.find(([n]) => n === 'deleteSceneRegions')).toBeTruthy();
+    expect(out).toContain('Deleted 1 region');
+    expect(out).toContain('rZ');
+  });
+
+  it('list-regions surfaces a not-found scene as a message', async () => {
+    const { tools } = build({ found: false, notFound: 'Nope' });
+    const out = await tools.handleListRegions({ sceneIdentifier: 'Nope' });
+    expect(out).toContain('Scene not found');
+  });
+
+  it('list-regions passes through the region list', async () => {
+    const { tools } = build({ found: true, sceneId: 's1', sceneName: 'Cave', regions: [{ id: 'r1', name: 'Trap', shapes: [], behaviors: [] }] });
+    const out = await tools.handleListRegions({ sceneIdentifier: 'Cave' });
+    expect(out.regions[0].id).toBe('r1');
   });
 });

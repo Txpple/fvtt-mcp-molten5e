@@ -18,6 +18,8 @@ import {
   sidecarRegionToV14,
   remapTeleportDestination,
   TOM_CARTOS_FLAG_SCOPE,
+  gridRectShape,
+  teleportDestUuid,
 } from './scenes.js';
 
 describe('fogModeToNumber', () => {
@@ -391,5 +393,44 @@ describe('remapTeleportDestination', () => {
     expect(
       remapTeleportDestination('Scene.oldSceneA.Region.gone', sceneIdMap, regionIdMap).status
     ).toBe('unresolved');
+  });
+});
+
+describe('teleportDestUuid', () => {
+  it('builds a v12+ region teleport destination UUID', () => {
+    expect(teleportDestUuid('sABC', 'rXYZ')).toBe('Scene.sABC.Region.rXYZ');
+  });
+});
+
+describe('gridRectShape', () => {
+  // A padded cave: 140px cells, background inset 280px from the padded-canvas origin.
+  const grid = { size: 140, sceneX: 280, sceneY: 280 };
+
+  it('centers an un-snapped rectangle on the given point', () => {
+    const s = gridRectShape(grid, 1000, 1000, 1, 1, false);
+    expect(s).toMatchObject({ type: 'rectangle', width: 140, height: 140, x: 930, y: 930 });
+  });
+
+  it('snaps a 1x1 to the grid cell the center sits in (padding-aware)', () => {
+    // center (851,881): col=floor((851-280)/140)=4, row=4 → cell top-left (840,840)
+    const s = gridRectShape(grid, 851, 881, 1, 1, true);
+    expect(s).toMatchObject({ x: 840, y: 840, width: 140, height: 140 });
+  });
+
+  it('grows a 3-wide trigger symmetrically around the center cell', () => {
+    // center cell col 4 (x0 840) → one cell left (col 3, x 700), 3 cells wide (420px)
+    const s = gridRectShape(grid, 851, 881, 3, 1, true);
+    expect(s).toMatchObject({ x: 700, y: 840, width: 420, height: 140 });
+  });
+
+  it('sizes by whole cells and never smaller than 1 cell', () => {
+    const s = gridRectShape(grid, 500, 500, 2, 0, false);
+    expect(s.width).toBe(280); // 2 cells
+    expect(s.height).toBe(140); // clamped up to 1 cell
+  });
+
+  it('falls back to a 100px cell when the grid size is missing', () => {
+    const s = gridRectShape({ size: 0, sceneX: 0, sceneY: 0 }, 50, 50, 1, 1, false);
+    expect(s).toMatchObject({ width: 100, height: 100, x: 0, y: 0 });
   });
 });

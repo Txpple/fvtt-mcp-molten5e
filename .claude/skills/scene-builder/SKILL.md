@@ -24,6 +24,15 @@ Tools used: `create-scene`, `update-scene`, `list-scenes`, `list-assets`, `uploa
 attach, hand off to the **`playlist-builder`** / **`journal-builder`** skill — scene-builder wires the
 link onto the scene; those skills author the content.
 
+**Regions & teleporters (on an existing scene).** To connect two maps — stairs, a cave mouth, a
+portal — use **`create-teleporter`**: give a center point (canvas px, via `get-scene-dimensions` for
+the padding math) on each scene and it drops a grid-snapped trigger at each end and cross-links them
+two-way (or `twoWay:false` for one-directional). For arbitrary regions/behaviors use **`create-region`**
+(raw v14 shapes + behaviors), and **`list-regions`** / **`update-region`** (rename, recolor, or the
+`rect` reshape/resize) / **`delete-region`** to tune them. (`remap-teleporters` is import-only — it
+relinks a scene-pack's own teleporters after a Tom Cartos import; the `create-*` tools are for
+authoring new ones.)
+
 ## Step 0 — Get a map (don't proceed without one)
 
 A scene without a background is rarely what the user wants. If no image was given:

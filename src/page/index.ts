@@ -21,6 +21,11 @@ import {
   createSceneNotes,
   updateSceneNote,
   deleteSceneNotes,
+  createSceneRegions,
+  createSceneTeleporter,
+  listSceneRegions,
+  updateSceneRegion,
+  deleteSceneRegions,
   prepareSceneShot,
 } from './scenes.js';
 import {
@@ -127,6 +132,11 @@ const api = {
   createSceneNotes,
   updateSceneNote,
   deleteSceneNotes,
+  createSceneRegions,
+  createSceneTeleporter,
+  listSceneRegions,
+  updateSceneRegion,
+  deleteSceneRegions,
   prepareSceneShot,
   // actors / characters
   listActors,
