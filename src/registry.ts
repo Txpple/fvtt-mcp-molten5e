@@ -290,6 +290,12 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'list-tiles': args => placeableTools.handleListTiles(args),
     'update-tiles': args => placeableTools.handleUpdateTiles(args),
     'delete-tiles': args => placeableTools.handleDeleteTiles(args),
+    'create-lights': args => placeableTools.handleCreateLights(args),
+    'list-lights': args => placeableTools.handleListLights(args),
+    'update-lights': args => placeableTools.handleUpdateLights(args),
+    'delete-lights': args => placeableTools.handleDeleteLights(args),
+    'list-tokens': args => placeableTools.handleListTokens(args),
+    'list-notes': args => placeableTools.handleListNotes(args),
 
     // Playlists
     'create-playlist': args => playlistTools.handleCreatePlaylist(args),

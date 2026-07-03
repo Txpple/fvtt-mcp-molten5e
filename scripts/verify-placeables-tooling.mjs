@@ -46,6 +46,7 @@ const f = new Foundry({
 });
 
 let sceneId;
+let journalId;
 
 try {
   console.log('[verify-tiles] connecting…');
@@ -160,16 +161,136 @@ try {
   assert(deleted?.notFoundIds?.includes('ghostTile00'), 'D — missing id reported');
   const remaining = await f.call('listSceneTiles', { sceneIdentifier: sceneId });
   assert(remaining?.count === 0, `D — 0 tiles remain (got ${remaining?.count})`);
+
+  // --- E: AmbientLight CRUD (config nesting; torch flicker; darkness range) ---
+  console.log('\n# E: light CRUD (config nesting + animation + darkness range)');
+  const litE = await f.call('createSceneLights', {
+    sceneIdentifier: sceneId,
+    items: [
+      {
+        x: 500,
+        y: 500,
+        dim: 40,
+        bright: 20,
+        color: '#fcd674',
+        animationType: 'torch',
+        animationSpeed: 5,
+        animationIntensity: 5,
+        darknessMin: 0.1,
+      },
+      { x: 900, y: 500 /* no config — a default point light */ },
+    ],
+  });
+  assert(litE?.created === 2, `E — created 2 lights (got ${litE?.created})`);
+  const lightIds = (litE?.items ?? []).map(l => l.id);
+  const liveLight = await f.evaluate(
+    ({ sId, lId }) => {
+      const l = game.scenes.get(sId).lights.get(lId);
+      return {
+        dim: l.config?.dim,
+        color: l.config?.color,
+        anim: l.config?.animation?.type,
+        dMin: l.config?.darkness?.min,
+      };
+    },
+    { sId: sceneId, lId: lightIds[0] }
+  );
+  assert(
+    liveLight.dim === 40 && liveLight.color === '#fcd674',
+    `E — emission nested under config (dim ${liveLight.dim})`
+  );
+  assert(
+    liveLight.anim === 'torch' && liveLight.dMin === 0.1,
+    'E — animation + darkness range persisted in config'
+  );
+
+  const listedLights = await f.call('listSceneLights', { sceneIdentifier: sceneId });
+  assert(listedLights?.count === 2, `E — lists 2 lights (count ${listedLights?.count})`);
+
+  const updL = await f.call('updateSceneLights', {
+    sceneIdentifier: sceneId,
+    patches: [{ id: lightIds[0], dim: 60, animationType: 'flame' }],
+  });
+  assert(updL?.updated === 1, 'E — updated 1 light');
+  const afterL = await f.evaluate(
+    ({ sId, lId }) => {
+      const l = game.scenes.get(sId).lights.get(lId);
+      return {
+        dim: l.config?.dim,
+        bright: l.config?.bright,
+        anim: l.config?.animation?.type,
+        color: l.config?.color,
+      };
+    },
+    { sId: sceneId, lId: lightIds[0] }
+  );
+  assert(
+    afterL.dim === 60 && afterL.anim === 'flame',
+    'E — config.dim + config.animation.type patched'
+  );
+  assert(
+    afterL.bright === 20 && afterL.color === '#fcd674',
+    'E — partial patch PRESERVED the un-touched config fields'
+  );
+
+  const delL = await f.call('deleteSceneLights', { sceneIdentifier: sceneId, ids: lightIds });
+  assert(delL?.deleted === 2, `E — deleted 2 lights (got ${delL?.deleted})`);
+
+  // --- F: read-only list-tokens / list-notes (need existing placeables) ---
+  console.log('\n# F: list-tokens / list-notes (read-only inspect layer)');
+  const fx = await f.evaluate(
+    async ({ sId }) => {
+      const j = await JournalEntry.create({ name: 'ZZ Probe Journal' });
+      const scene = game.scenes.get(sId);
+      const [tk] = await scene.createEmbeddedDocuments('Token', [
+        {
+          name: 'Probe Token',
+          x: 100,
+          y: 100,
+          width: 1,
+          height: 1,
+          disposition: -1,
+          texture: { src: 'icons/svg/mystery-man.svg', scaleX: 1.5 },
+        },
+      ]);
+      const [nt] = await scene.createEmbeddedDocuments('Note', [
+        { entryId: j.id, x: 200, y: 200, text: 'Probe Note' },
+      ]);
+      return { journalId: j.id, tokenId: tk.id, noteId: nt.id };
+    },
+    { sId: sceneId }
+  );
+  journalId = fx.journalId;
+
+  const tokens = await f.call('listSceneTokens', { sceneIdentifier: sceneId });
+  const tk = (tokens?.items ?? []).find(t => t.id === fx.tokenId);
+  assert(tokens?.found === true && tk, 'F — list-tokens finds the placed token');
+  assert(
+    tk?.disposition === 'hostile' && tk?.scale === 1.5,
+    `F — token disposition mapped to name + art scale (${tk?.disposition}, ${tk?.scale})`
+  );
+
+  const notes = await f.call('listSceneNotes', { sceneIdentifier: sceneId });
+  const nt = (notes?.items ?? []).find(n => n.id === fx.noteId);
+  assert(notes?.found === true && nt, 'F — list-notes finds the pin');
+  assert(
+    nt?.entryId === fx.journalId && nt?.text === 'Probe Note',
+    'F — note reports the linked journal + label'
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-tiles] FATAL: ${e?.stack || e?.message || String(e)}`);
 } finally {
-  if (sceneId) {
+  if (sceneId || journalId) {
     try {
-      await f.evaluate(async id => {
-        await game.scenes.get(id)?.delete();
-      }, sceneId);
-      console.log('\n[verify-tiles] cleaned up fixture scene');
+      await f.evaluate(
+        async ({ sId, jId }) => {
+          if (sId) await game.scenes.get(sId)?.delete();
+          if (jId) await game.journal.get(jId)?.delete();
+        },
+        { sId: sceneId, jId: journalId }
+      );
+      console.log('\n[verify-tiles] cleaned up fixture scene + journal');
     } catch (e) {
       console.log(`\n[verify-tiles] cleanup note: ${e?.message || e}`);
     }

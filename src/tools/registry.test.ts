@@ -57,7 +57,9 @@ describe('tool registry', () => {
     // + get-rolltable (deterministic roll-table entry reader)
     // + update-token (placed-token instance editor: rotation/scale/elevation/hidden/lockRotation/x/y/name)
     // + create-tiles/list-tiles/update-tiles/delete-tiles (Tile CRUD over the placeable kernel)
-    expect(names.length).toBe(109);
+    // + create-lights/list-lights/update-lights/delete-lights (AmbientLight CRUD)
+    // + list-tokens + list-notes (read-only inspect layer; token/note mutation stays in their own tools)
+    expect(names.length).toBe(115);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -123,10 +125,21 @@ describe('tool registry', () => {
     expect(typeof handlers['update-token']).toBe('function');
   });
 
-  it('registers the Tile placeable CRUD tools (over the shared placeable kernel)', () => {
+  it('registers the placeable CRUD tools (Tile + Light full CRUD, Token/Note list) over the kernel', () => {
     const { tools, handlers } = build();
     const names = new Set(tools.map(t => t.name));
-    for (const name of ['create-tiles', 'list-tiles', 'update-tiles', 'delete-tiles']) {
+    for (const name of [
+      'create-tiles',
+      'list-tiles',
+      'update-tiles',
+      'delete-tiles',
+      'create-lights',
+      'list-lights',
+      'update-lights',
+      'delete-lights',
+      'list-tokens',
+      'list-notes',
+    ]) {
       expect(names.has(name)).toBe(true);
       expect(typeof handlers[name]).toBe('function');
     }

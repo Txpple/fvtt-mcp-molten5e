@@ -36,6 +36,14 @@ import {
   deleteSceneTiles,
 } from './placeables/tile.js';
 import {
+  createSceneLights,
+  listSceneLights,
+  updateSceneLights,
+  deleteSceneLights,
+} from './placeables/light.js';
+import { listSceneTokens } from './placeables/token.js';
+import { listSceneNotes } from './placeables/note.js';
+import {
   listActors,
   getCharacterInfo,
   getCharacterEntity,
@@ -152,6 +160,12 @@ const api = {
   listSceneTiles,
   updateSceneTiles,
   deleteSceneTiles,
+  createSceneLights,
+  listSceneLights,
+  updateSceneLights,
+  deleteSceneLights,
+  listSceneTokens,
+  listSceneNotes,
   // actors / characters
   listActors,
   getCharacterInfo,

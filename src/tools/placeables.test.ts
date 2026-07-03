@@ -18,13 +18,24 @@ function build(response: any = {}) {
 }
 
 describe('PlaceableTools.getToolDefinitions', () => {
-  it('exposes the four Tile CRUD tools', () => {
+  it('exposes Tile + Light full CRUD and the read-only list-tokens / list-notes', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['create-tiles', 'delete-tiles', 'list-tiles', 'update-tiles']);
+    expect(names).toEqual([
+      'create-lights',
+      'create-tiles',
+      'delete-lights',
+      'delete-tiles',
+      'list-lights',
+      'list-notes',
+      'list-tiles',
+      'list-tokens',
+      'update-lights',
+      'update-tiles',
+    ]);
   });
 });
 
@@ -185,5 +196,90 @@ describe('handleDeleteTiles', () => {
     await expect(
       tools.handleDeleteTiles({ sceneIdentifier: 'Cave', tileIds: [] })
     ).rejects.toThrow();
+  });
+});
+
+describe('light handlers', () => {
+  it('create-lights forwards {sceneIdentifier, items} and formats', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Tavern',
+      created: 1,
+      items: [{ id: 'l1' }],
+    });
+    const out = await tools.handleCreateLights({
+      sceneIdentifier: 'Tavern',
+      lights: [{ x: 100, y: 100, dim: 40, bright: 20, animationType: 'torch' }],
+    });
+    expect(calls[0][0]).toBe('createSceneLights');
+    expect(calls[0][1]).toMatchObject({
+      sceneIdentifier: 'Tavern',
+      items: [{ x: 100, y: 100, dim: 40, animationType: 'torch' }],
+    });
+    expect(out).toContain('Created 1 light(s) on "Tavern" (sc1)');
+  });
+
+  it('update-lights forwards {sceneIdentifier, patches}', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Tavern',
+      matched: 1,
+      updated: 1,
+    });
+    await tools.handleUpdateLights({
+      sceneIdentifier: 'Tavern',
+      lights: [{ id: 'l1', dim: 60, animationType: 'flame' }],
+    });
+    expect(calls[0][0]).toBe('updateSceneLights');
+    expect(calls[0][1]).toMatchObject({
+      sceneIdentifier: 'Tavern',
+      patches: [{ id: 'l1', dim: 60, animationType: 'flame' }],
+    });
+  });
+
+  it('delete-lights forwards lightIds as {ids}', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 'sc1',
+      sceneName: 'Tavern',
+      deleted: 2,
+    });
+    const out = await tools.handleDeleteLights({ sceneIdentifier: 'Tavern', lightIds: ['a', 'b'] });
+    expect(calls[0][0]).toBe('deleteSceneLights');
+    expect(calls[0][1]).toMatchObject({ sceneIdentifier: 'Tavern', ids: ['a', 'b'] });
+    expect(out).toContain('Deleted 2 light(s)');
+  });
+
+  it('rejects a light create missing a center coordinate', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleCreateLights({ sceneIdentifier: 'Tavern', lights: [{ x: 100, dim: 40 }] })
+    ).rejects.toThrow();
+  });
+
+  it('rejects a light patch with no field beyond id', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateLights({ sceneIdentifier: 'Tavern', lights: [{ id: 'l1' }] })
+    ).rejects.toThrow();
+  });
+});
+
+describe('read-only list-tokens / list-notes', () => {
+  it('list-tokens calls listSceneTokens and passes the structured result through', async () => {
+    const result = { found: true, sceneId: 'sc1', count: 1, items: [{ id: 'tk1', name: 'Guard' }] };
+    const { tools, calls } = build(result);
+    const out = await tools.handleListTokens({ sceneIdentifier: 'Bridge' });
+    expect(calls[0][0]).toBe('listSceneTokens');
+    expect(out).toEqual(result);
+  });
+
+  it('list-notes calls listSceneNotes and reports a not-found scene', async () => {
+    const { tools, calls } = build({ found: false, notFound: 'Ghost' });
+    const out = await tools.handleListNotes({ sceneIdentifier: 'Ghost' });
+    expect(calls[0][0]).toBe('listSceneNotes');
+    expect(out).toBe('Scene not found: "Ghost" (no notes).');
   });
 });
