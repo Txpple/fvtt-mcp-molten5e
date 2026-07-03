@@ -14,16 +14,40 @@
 > - ✅ **Phase 0b (`update-scene` parity) — DONE + live-verified.** `environment`/`fog`/`initial`/`flags`
 >   now editable on an existing scene, deep-merged (a partial patch layers on).
 > - ✅ **Phase 1 (shared kernel) — DONE.** `src/page/_placeables.ts` (kernel) + `src/utils/placeable-format.ts`
->   (formatter) + `src/tools/placeables.ts` (per-type tools, split out of scene.ts). Region/Note NOT yet
->   retrofitted onto the kernel (additive for now — a later DRY cleanup).
+>   (formatter) + per-type tools split out of scene.ts. ~~Region/Note NOT yet retrofitted onto the
+>   kernel (additive for now — a later DRY cleanup).~~ Retrofit landed 2026-07-03 (see below).
 > - ✅ **THE FOCUS SET — DONE + live-verified (28/28, `scripts/verify-placeables-tooling.mjs`).** Owner
 >   scoped placeable editing to **tokens / tiles / lights / notes**: **Tile full CRUD**
 >   (create/list/update/delete-tiles), **AmbientLight full CRUD** (create/list/update/delete-lights),
 >   and read-only **list-tokens** + **list-notes** (the inspect layer that makes the existing
 >   update-token / *-note editing loops usable). Tokens are update+read-only, notes keep their existing
 >   create/update/delete — both by owner decision. 115 tools total; the 10 new ones need a CC restart.
-> - **Wall CRUD: DEFERRED** to the Foundry in-app UI per owner decision (§6, Q1).
-> - **Drawings / AmbientSounds / MeasuredTemplates: DROPPED** from the near-term plan (out of the focus set).
+> - ~~**Wall CRUD: DEFERRED** to the Foundry in-app UI per owner decision (§6, Q1).~~
+> - ~~**Drawings / AmbientSounds / MeasuredTemplates: DROPPED** from the near-term plan (out of the focus set).~~
+>
+> **✅ THE LIBRARY COMPLETION (2026-07-03) — DONE + live-verified (43/43,
+> `scripts/verify-placeables-library.mjs`, plus 17/17 + 28/28 regressions).** Owner reversed the
+> demand-gating: dogfooding kept hitting "the tool doesn't exist yet," so the library is now COMPLETE
+> for world-building — every main placeable type has the same per-type CRUD family, with edit/delete
+> first-class and create skeletal-but-correct (placement usually happens in the app; editing is where
+> the agent lives). What landed:
+> - **AmbientSound / Drawing / Wall full CRUD** (12 tools). Walls exist for the edit loop the app is
+>   slow at — door/secret/lock state, sight fixes, surgical add/delete — with a `doorsOnly` list
+>   filter (a populated scene carries hundreds of plain walls). The Q1 deferral is REVERSED.
+> - **place-tokens / delete-tokens** (2 tools) — batch encounter prep via `actor.getTokenDocument()`
+>   (prototype-carried house defaults, per-copy disposition/hidden overrides); delete removes the map
+>   instance only. `update-token` stays bespoke (actor→all-copies + the lockRotation gotcha).
+> - **Region + Note RETROFIT onto the kernel** — same tool names/schemas, ~700 lines of pre-kernel
+>   bespoke skeleton deleted from `scenes.ts`/`scene.ts`; `delete-region` now warns when a surviving
+>   teleporter points at a just-deleted region (§5.2's orphan trap, implemented).
+> - **Package split** — ALL placeable tools live in `src/tools/placeables/**` (one module per type:
+>   schemas + defs + handlers keyed by tool name; the facade asserts def↔handler drift at
+>   construction) over per-type descriptors in `src/page/placeables/**`. `scene.ts`/`scenes.ts` are
+>   scene-DOCUMENT-only (§4.1's split, now physical). Kernel hooks gained a `ctx` ({scene, index})
+>   for grid-snap math and indexed defaults.
+> - **129 tools total; the 14 new ones (and all moved internals) need a CC restart.**
+> - **MeasuredTemplate is the ONLY remaining type** — deferred to Phase 2 (combat ephemera, not
+>   world-building); the §3.6 recipe makes it a cheap add when session tooling starts.
 
 ---
 
@@ -55,11 +79,29 @@ bug into the shared core. Fix it first, as its own Phase 0.
 
 ## 2. Current state
 
-### 2.1 Coverage matrix (what exists today)
+### 2.1 Coverage matrix
 
-Nine v14 placeable types. Coverage is **sporadic** — each existing write path was hand-rolled for the
-one feature that needed it (map notes for legend pins, tokens for the corpse-rotation dogfood, regions
-for teleporters).
+> **As-built (2026-07-03):** the library is COMPLETE for world-building. Every row but
+> MeasuredTemplate has the full per-type family over the shared kernel; the historical matrix below
+> is kept for the record of what motivated the work.
+
+| Placeable (`docName`) | Create | Read / List | Update | Delete | Notes |
+| --- | :---: | :---: | :---: | :---: | --- |
+| **Tile** | ✅ `create-tiles` | ✅ `list-tiles` | ✅ `update-tiles` | ✅ `delete-tiles` | width/height IS the size; texture.scaleX zooms the image |
+| **AmbientLight** | ✅ `create-lights` | ✅ `list-lights` | ✅ `update-lights` | ✅ `delete-lights` | emission under `config.*` dot-paths |
+| **AmbientSound** | ✅ `create-sounds` | ✅ `list-sounds` | ✅ `update-sounds` | ✅ `delete-sounds` | radius in grid-distance units; darkness/effects dot-paths |
+| **Drawing** | ✅ `create-drawings` | ✅ `list-drawings` | ✅ `update-drawings` | ✅ `delete-drawings` | shapeType→enum; points relative to origin; shape.* dot-paths |
+| **Wall** | ✅ `create-walls` | ✅ `list-walls` (+`doorsOnly`) | ✅ `update-walls` | ✅ `delete-walls` | segment-only; strict v14 enums; never half-moves |
+| **Token** | ✅ `place-tokens`⁴ | ✅ `list-tokens` | ✅ `update-token` (bespoke) | ✅ `delete-tokens` | placed instance only; prototype carries house defaults |
+| **Note** | ✅ `create-scene-notes` | ✅ `list-notes` | ✅ `update-note` | ✅ `delete-note` | kernel-retrofit; strict journal resolve; icon drop policy |
+| **Region** | ✅ `create-region` | ✅ `list-regions` | ✅ `update-region` | ✅ `delete-region`⁵ | kernel-retrofit + `create-teleporter` / `remap-teleporters` |
+| **MeasuredTemplate** | ❌ | ❌ | ❌ | ❌ | Phase-2 combat ephemera — §3.6 recipe when needed |
+
+⁴ Placement is skeletal by design — the GM usually drags; `place-tokens` exists for batch encounter
+prep and rides `actor.getTokenDocument()` so prototype/house defaults carry. ⁵ `delete-region` scans
+surviving teleport destinations and warns on orphans (§5.2).
+
+<details><summary>Historical pre-library matrix (what motivated the work)</summary>
 
 | Placeable (`docName`) | Create | Read / List | Update | Delete | Where |
 | --- | :---: | :---: | :---: | :---: | --- |
@@ -78,6 +120,8 @@ notes shallowly. There is **no per-placeable read** for anything but Region (`li
 `dumpRegion`). ² Tokens are created by dragging an actor / `create-actor-from-compendium`; their
 lifecycle is the actor's, so no `create-token` / `delete-token`. ³ Walls/lights are created only inside
 `create-scene`'s `importScenePlaceables`, never on an existing scene.
+
+</details>
 
 ### 2.2 The core problem
 
@@ -484,14 +528,24 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
   the v14 shape, so standalone create is nearly free once the kernel exists.)
 - **Effort:** medium (Lights are the nested-`config` outlier). **Restart:** yes.
 
-### Phase 4 — Drawing + AmbientSound (DROPPED from the near-term plan — outside the focus set)
+### Phase 4 — Drawing + AmbientSound + Wall + token lifecycle + Region/Note retrofit (✅ DONE 2026-07-03, live-verified 43/43)
 
-- `create-drawings` / … (GM annotations, secret-area boxes) and `create-sounds` / … (positional audio,
-  composes with `playlist-builder`). Build **only when a skill needs them** — the descriptor makes each
-  a cheap add.
-- **Effort:** small each. **Restart:** yes.
+> Originally "dropped/deferred pending demand" — the owner reversed that: dogfooding kept hitting
+> missing tools, so the library was completed in one pass ("build the tool library so I don't keep
+> going back and forth"). Everything below landed together; see the status block at the top.
 
-### Phase 5 — MeasuredTemplate (Phase-2 combat; deferred)
+- `create/list/update/delete-sounds` — positional audio (composes with `playlist-builder`);
+  `create/list/update/delete-drawings` — GM annotations, secret-area boxes;
+  `create/list/update/delete-walls` — the door/sight edit loop (+`doorsOnly` list filter);
+  `place-tokens` / `delete-tokens` — placed-token lifecycle (update stays bespoke).
+- Region + Note retrofitted onto the kernel behind unchanged tool names; placeable tools split into
+  `src/tools/placeables/**`; `scene.ts`/`scenes.ts` are scene-document-only; kernel hooks gained
+  `ctx` ({scene, index}); `delete-region` orphan warning (§5.2) implemented.
+- **Verified:** `verify-placeables-library.mjs` 43/43 + regressions `verify-region-tooling.mjs`
+  17/17 (updated to the kernel bridge contract) + `verify-placeables-tooling.mjs` 28/28.
+- **Restart:** yes (14 new tools → 129 total).
+
+### Phase 5 — MeasuredTemplate (Phase-2 combat; deferred — THE ONLY REMAINING TYPE)
 
 - `create-templates` / … for spell/ability AoE areas during live play. `distance` in grid units via the
   geometry layer. Belongs with §8 session assistance, not authoring — defer until Phase-2 work starts.
@@ -503,10 +557,12 @@ first). Every phase is behavior-preserving behind the existing tests + the 17/17
 
 ## 7. Open questions for the user
 
-1. ~~**Standalone Wall editing — build it, or lean on the Foundry UI?**~~ **RESOLVED (2026-07-02):
-   defer to the Foundry UI.** Walls are drawn in-app / shipped by a pack; not built now. Revisit only
-   if a real skill needs programmatic wall editing. (`wallSegment()` still lands in the geometry layer
-   so the option stays cheap.)
+1. ~~**Standalone Wall editing — build it, or lean on the Foundry UI?**~~ **RE-RESOLVED (2026-07-03):
+   BUILT.** The 2026-07-02 deferral assumed wall edits would stay in-app; the owner's
+   complete-the-library directive reversed it. Bulk wall DRAWING still belongs in the app / pack
+   imports — the tools exist for the edit loop the app is slow at (door/secret/lock state in batch,
+   sight fixes, surgical add/delete). `wallSegment()` lives in the Wall descriptor
+   (`src/page/placeables/wall.ts`).
 
 2. **Should the geometry layer accept cell-based convenience inputs on create/update (e.g.
    `cell:{col,row}` + `widthCells`), or only absolute pixels?** Cell inputs make skills speak in grid
