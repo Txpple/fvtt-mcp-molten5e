@@ -70,6 +70,26 @@ describe('handleUpdateActor', () => {
     expect(call?.[1].tokenRing).toBe(false);
   });
 
+  it('forwards the prototype-token nameplate (tokenName)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Morgash the Gravemaker', type: 'character' },
+      applied: ['tokenName'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Morgash the Gravemaker',
+      tokenName: 'Morgash',
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].tokenName).toBe('Morgash');
+  });
+
+  it('rejects an empty tokenName', async () => {
+    const { tool } = makeTool();
+    await expect(tool.handleUpdateActor({ actorIdentifier: 'X', tokenName: '' })).rejects.toThrow();
+  });
+
   it('rejects a non-boolean token toggle', async () => {
     const { tool } = makeTool({});
     await expect(

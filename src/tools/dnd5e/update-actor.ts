@@ -49,6 +49,16 @@ const UpdateActorSchema = z.object({
 
   // identity
   name: z.string().min(1).optional().describe('Rename the actor.'),
+  tokenName: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Prototype-token nameplate, decoupled from the actor name — e.g. actor \"Morgash the Gravemaker\" " +
+        'whose dropped tokens read just "Morgash". A plain `name` rename keeps the two in lockstep; ' +
+        'pass tokenName (alone or alongside name) to make them differ. Placed tokens keep their own ' +
+        'name — retitle those with update-token.'
+    ),
   img: z.string().optional().describe('Portrait image path or URL.'),
   disposition: z
     .enum(['hostile', 'neutral', 'friendly', 'secret'])
@@ -298,7 +308,8 @@ export class DnD5eUpdateActorTool {
         name: 'update-actor',
         description:
           "[D&D 5e only] Edit an EXISTING actor's own stat-block fields. Supply only the groups you want to change:\n" +
-          '• identity + prototype token — name, img, disposition (friend/foe), tokenAutoRotate ' +
+          '• identity + prototype token — name, tokenName (prototype nameplate ≠ actor name), img, ' +
+          'disposition (friend/foe), tokenAutoRotate ' +
           '(face movement / lockRotation), tokenRing (dynamic ring), tokenScale (art size), ' +
           'tokenRotation (facing) — the PROTOTYPE-token editor. (elevation / hidden / x / y are ' +
           'placement-only: edit those on a dropped token with update-token)\n' +

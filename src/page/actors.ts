@@ -1326,7 +1326,8 @@ export async function removeActorItems(params: {
  * are handled by updateActorItem / add-feature). Resolves the actor fuzzily, then builds ONE
  * `actor.update()` patch from whichever field groups the caller supplied:
  *
- *  - identity:   name, img, disposition, tokenAutoRotate (= !lockRotation), tokenRing (ring.enabled)
+ *  - identity:   name, tokenName (prototype nameplate ≠ actor name), img, disposition,
+ *                tokenAutoRotate (= !lockRotation), tokenRing (ring.enabled)
  *  - details:    size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source
  *  - abilities:  abilities.<ab>, savingThrows (replace), skills (merge)
  *  - vitals:     hp, ac, initiative
@@ -1374,6 +1375,13 @@ export async function updateActor(params: any): Promise<unknown> {
     // same on any token dragged from it (and in the combat tracker), not the pre-rename name.
     update['prototypeToken.name'] = params.name.trim();
     applied.push('name');
+  }
+  if (typeof params.tokenName === 'string' && params.tokenName.trim()) {
+    // Decouple the prototype nameplate from the actor name (e.g. actor "Morgash the Gravemaker",
+    // tokens just "Morgash"). Deliberately after the `name` lockstep write so tokenName wins when
+    // both are passed.
+    update['prototypeToken.name'] = params.tokenName.trim();
+    applied.push('tokenName');
   }
   if (typeof params.img === 'string' && params.img.trim()) {
     // Rule 8 — never write a broken (404) portrait. A supplied path is honored only if it resolves on
