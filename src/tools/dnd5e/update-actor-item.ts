@@ -16,7 +16,12 @@ const UpdateActorItemSchema = z.object({
   actorIdentifier: z
     .string()
     .min(1)
-    .describe('Name or id of the actor that owns the item (partial name match supported).'),
+    .describe(
+      'Name or id of the actor that owns the item (partial name match supported). Also accepts a placed ' +
+        "TOKEN id (from list-tokens): the edit then lands on that token INSTANCE's own delta, not the base " +
+        'actor — the way to re-gear ONE placed copy of an unlinked NPC (base-actor edits never reach ' +
+        'tokens already on a scene).'
+    ),
   itemIdentifier: z
     .string()
     .min(1)

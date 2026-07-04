@@ -33,7 +33,11 @@ const ManageEffectSchema = z.object({
   actorIdentifier: z
     .string()
     .optional()
-    .describe('Actor that owns the effects (or owns the item when itemIdentifier is also set).'),
+    .describe(
+      'Actor that owns the effects (or owns the item when itemIdentifier is also set). Also accepts a ' +
+        "placed TOKEN id (from list-tokens) — the effect then lands on that token INSTANCE's own delta, " +
+        'not the base actor.'
+    ),
   itemIdentifier: z
     .string()
     .optional()

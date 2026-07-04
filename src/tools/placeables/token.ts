@@ -181,7 +181,11 @@ export const tokenToolModule: PlaceableModuleFactory = foundry => ({
         'List every PLACED TOKEN on a scene (by id or exact name — any scene, not just the active ' +
         'one) — id, name, position (x/y), size, rotation, elevation, hidden, disposition, actorId, ' +
         'art src + scale, lockRotation. Read-only; the inspect step that feeds update-token / ' +
-        'delete-tokens.',
+        'delete-tokens. The token ids also work as the actorIdentifier of the actor tools (get-actor, ' +
+        'update-actor, update-actor-item, remove-from-actor, add-item/add-feature, import-item, ' +
+        "manage-activity/-effect, apply-condition) — targeting a token id edits THAT instance's own " +
+        'delta, the way to re-gear/wound ONE placed copy of an unlinked NPC (base-actor edits never ' +
+        'reach tokens already on a scene).',
       inputSchema: toInputSchema(ListTokensSchema),
     },
     {

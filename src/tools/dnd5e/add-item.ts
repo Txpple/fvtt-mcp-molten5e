@@ -50,8 +50,9 @@ const AddItemSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Target actor (name or id) to attach the item to (partial match). Omit to create a reusable ' +
-        'world Item in the Items sidebar instead.'
+      'Target actor (name or id) to attach the item to (partial match). Also accepts a placed TOKEN id ' +
+        "(from list-tokens) — the item is then added to that token INSTANCE's own delta, not the base " +
+        'actor. Omit to create a reusable world Item in the Items sidebar instead.'
     ),
   folder: z
     .string()

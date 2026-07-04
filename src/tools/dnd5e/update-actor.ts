@@ -40,7 +40,12 @@ const UpdateActorSchema = z.object({
   actorIdentifier: z
     .string()
     .min(1)
-    .describe('Name or id of the actor to edit (partial name match supported).'),
+    .describe(
+      'Name or id of the actor to edit (partial name match supported). Also accepts a placed TOKEN id ' +
+        "(from list-tokens): the edit then lands on that token INSTANCE's own actor (its delta), not the " +
+        'base actor — the way to edit ONE placed copy of an unlinked NPC, since base-actor edits never ' +
+        'reach tokens already on a scene.'
+    ),
 
   // identity
   name: z.string().min(1).optional().describe('Rename the actor.'),

@@ -15,7 +15,10 @@ const ApplyConditionSchema = z.object({
   actorIdentifier: z
     .string()
     .min(1)
-    .describe('Name or id of the actor (partial name match supported).'),
+    .describe(
+      'Name or id of the actor (partial name match supported). Also accepts a placed TOKEN id (from ' +
+        'list-tokens) — the condition then applies to that token INSTANCE only, not the base actor.'
+    ),
   conditions: z
     .array(z.string().min(1))
     .min(1)

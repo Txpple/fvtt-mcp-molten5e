@@ -85,7 +85,13 @@ const HEAL_TYPE_ENUM = ['healing', 'temphp'] as const;
 
 // Shared per-mode field fragments (reused zod instances — safe across multiple z.object() parents).
 const featureHeaderFields = {
-  actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
+  actorIdentifier: z
+    .string()
+    .min(1, 'actorIdentifier cannot be empty')
+    .describe(
+      'Actor name or id. Also accepts a placed TOKEN id (from list-tokens) — the feature then lands ' +
+        "on that token INSTANCE's own delta, not the base actor."
+    ),
   featureName: z.string().min(1, 'featureName cannot be empty'),
   description: z.string().default(''),
   img: z.string().optional(),

@@ -94,7 +94,10 @@ const RemoveFromActorSchema = z
     actorIdentifier: z
       .string()
       .min(1, 'Actor identifier cannot be empty')
-      .describe('Actor name or ID to remove the items from.'),
+      .describe(
+        'Actor name or ID to remove the items from. Also accepts a placed TOKEN id (from list-tokens) — ' +
+          "the removal then hits that token INSTANCE's own delta, not the base actor."
+      ),
     itemIds: z
       .array(z.string().min(1))
       .optional()

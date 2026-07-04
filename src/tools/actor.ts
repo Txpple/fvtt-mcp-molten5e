@@ -16,7 +16,10 @@ const GetActorSchema = z.object({
   identifier: z
     .string()
     .min(1, 'Character identifier cannot be empty')
-    .describe('Character name or ID to look up'),
+    .describe(
+      'Character name or ID to look up. Also accepts a placed TOKEN id (from list-tokens) to read that ' +
+        "token INSTANCE's live state — an unlinked NPC token can differ from its base actor."
+    ),
 });
 
 const GetActorEntitySchema = z.object({

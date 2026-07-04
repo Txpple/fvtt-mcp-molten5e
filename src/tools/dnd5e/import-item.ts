@@ -31,8 +31,9 @@ const ImportItemSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Target actor (name or id, partial match) to copy the item onto. Omit to copy into the world ' +
-        'Items sidebar instead.'
+      'Target actor (name or id, partial match) to copy the item onto. Also accepts a placed TOKEN id ' +
+        "(from list-tokens) — the copy then lands on that token INSTANCE's own delta, not the base actor. " +
+        'Omit to copy into the world Items sidebar instead.'
     ),
   name: z
     .string()

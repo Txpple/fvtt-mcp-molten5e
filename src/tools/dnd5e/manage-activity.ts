@@ -37,7 +37,11 @@ const ManageActivitySchema = z.object({
   actorIdentifier: z
     .string()
     .optional()
-    .describe('If set, the item is embedded on this actor; omit to target a world (sidebar) item.'),
+    .describe(
+      'If set, the item is embedded on this actor; omit to target a world (sidebar) item. Also accepts ' +
+        "a placed TOKEN id (from list-tokens) — the activity edit then lands on that token INSTANCE's " +
+        'own delta, not the base actor.'
+    ),
   activityId: z
     .string()
     .optional()
