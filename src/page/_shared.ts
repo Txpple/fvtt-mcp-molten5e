@@ -58,6 +58,17 @@ export function basename(p: string): string {
 }
 
 /**
+ * True when an asset path points at a VIDEO file (by extension). Foundry accepts video on a
+ * Token/prototype `texture.src` (categories ["IMAGE","VIDEO"]) but NOT on `actor.img` / `item.img`
+ * (["IMAGE"]) — so an animated token texture must be kept OFF the still-image portrait field, or the
+ * whole document update is rejected. Pure (extension-only), so it unit-tests offline. Mirrors
+ * Foundry's CONST.VIDEO_FILE_EXTENSIONS (mp4, ogg, webm, m4v) plus common ogv/mov.
+ */
+export function isVideoPath(p: string): boolean {
+  return /\.(?:webm|mp4|m4v|ogg|ogv|mov)(?:[?#].*)?$/i.test(p ?? '');
+}
+
+/**
  * Return a Foundry Document's plain SOURCE data (`document.toObject()`), or the value
  * unchanged if it isn't a Document. Use this before serializing a document's `system`
  * for inspection: in dnd5e 5.x `system.activities` is a Map/Collection, and

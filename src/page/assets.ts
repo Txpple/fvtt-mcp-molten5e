@@ -12,7 +12,7 @@
 // no conversion is needed. Writes are best-effort (no rollback). The bridge is
 // always GM, so the permission checks in the oracle are no-ops here.
 
-import { normalizeAssetPath, basename, resolveJournalStrict } from './_shared.js';
+import { normalizeAssetPath, basename, isVideoPath, resolveJournalStrict } from './_shared.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
 import { resolveCreatureIcon } from './dnd5e/icons.js';
 
@@ -114,10 +114,18 @@ export async function relinkAsset(data: {
 
 /**
  * Group D — set an actor's portrait (and, by default, its prototype token art).
+ *
+ * Two Foundry field categories are in play: `actor.img` (the portrait) accepts a STILL IMAGE ONLY,
+ * while `prototypeToken.texture.src` (the token) accepts IMAGE **or** VIDEO. Writing a video to `img`
+ * makes Foundry reject the ENTIRE update — which used to fail silently (the tool reported success but
+ * nothing changed). So a video `imagePath` is kept off the portrait (with a warning), and `tokenImagePath`
+ * lets the token carry an animated `.webm`/`.mp4` while the portrait stays a valid still. When no
+ * `tokenImagePath` is given, the token defaults to `imagePath` (the common "same art on both" call).
  */
 export async function setActorArt(data: {
   actorIdentifier: string;
   imagePath: string;
+  tokenImagePath?: string;
   applyToToken?: boolean;
 }): Promise<unknown> {
   if (!data.actorIdentifier || !data.imagePath) {
@@ -131,15 +139,50 @@ export async function setActorArt(data: {
 
   const applyToToken = data.applyToToken !== false;
   const warnings: string[] = [];
-  let img = normalizeAssetPath(data.imagePath);
-  // SUBSTITUTE: a typo'd portrait/token path 404s; swap in a real creatureType floor icon.
-  if (img && !(await imgResolves(img))) {
+  const creatureType =
+    actor.type === 'npc' ? actor.system?.details?.type?.value || 'humanoid' : 'humanoid';
+
+  // Portrait (actor.img) — IMAGE ONLY. A video path can't live here, so keep it off img (warn) rather
+  // than let it abort the whole update. A 404 still-image path substitutes a real floor icon (rule 8).
+  let img: string | undefined = normalizeAssetPath(data.imagePath);
+  if (isVideoPath(img)) {
+    warnings.push(
+      `Portrait "${img}" is a video — an actor portrait must be a still image, so it was NOT set as ` +
+        'the portrait' +
+        (applyToToken && !data.tokenImagePath ? ' (used only for the token texture).' : '.')
+    );
+    img = undefined; // leave the existing portrait untouched
+  } else if (img && !(await imgResolves(img))) {
     warnings.push(badAssetWarning('imagePath', img, true));
-    const ct = actor.type === 'npc' ? actor.system?.details?.type?.value || 'humanoid' : 'humanoid';
-    img = resolveCreatureIcon(ct);
+    img = resolveCreatureIcon(creatureType);
   }
-  const update: any = { img };
-  if (applyToToken) update['prototypeToken.texture.src'] = img;
+
+  // Token texture (prototypeToken.texture.src) — accepts IMAGE or VIDEO. Defaults to imagePath so the
+  // common call is unchanged; tokenImagePath overrides it (e.g. an animated JB2A webm).
+  let tokenSrc: string | undefined;
+  if (applyToToken) {
+    tokenSrc = normalizeAssetPath(data.tokenImagePath ?? data.imagePath);
+    if (tokenSrc && !(await imgResolves(tokenSrc))) {
+      warnings.push(badAssetWarning(data.tokenImagePath ? 'tokenImagePath' : 'imagePath', tokenSrc, true));
+      tokenSrc = resolveCreatureIcon(creatureType);
+    }
+  }
+
+  const update: any = {};
+  if (img !== undefined) update.img = img;
+  if (tokenSrc !== undefined) update['prototypeToken.texture.src'] = tokenSrc;
+
+  if (Object.keys(update).length === 0) {
+    // Nothing valid to write (e.g. a video imagePath with applyToToken:false).
+    return {
+      success: true,
+      updated: false,
+      actorId: actor.id,
+      actorName: actor.name,
+      ...(warnings.length ? { warnings } : {}),
+    };
+  }
+
   await actor.update(update);
   return {
     success: true,
@@ -147,6 +190,7 @@ export async function setActorArt(data: {
     actorId: actor.id,
     actorName: actor.name,
     img,
+    tokenSrc,
     appliedToToken: applyToToken,
     ...(warnings.length ? { warnings } : {}),
   };

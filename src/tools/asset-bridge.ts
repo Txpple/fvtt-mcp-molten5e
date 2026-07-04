@@ -35,7 +35,20 @@ const RelinkAssetSchema = z.object({
 
 const SetActorArtSchema = z.object({
   actorIdentifier: z.string().min(1).describe('Actor id or exact name.'),
-  imagePath: z.string().min(1).describe('Data-relative path to the image.'),
+  imagePath: z
+    .string()
+    .min(1)
+    .describe(
+      'Data-relative path to the PORTRAIT image. Must be a STILL image — actor.img rejects video. ' +
+        'Also used for the token texture unless tokenImagePath is given.'
+    ),
+  tokenImagePath: z
+    .string()
+    .optional()
+    .describe(
+      'Optional Data-relative path for the prototype TOKEN texture, which (unlike the portrait) ' +
+        'accepts an animated VIDEO (.webm/.mp4/.m4v/.ogg) — e.g. a JB2A effect. Defaults to imagePath.'
+    ),
   applyToToken: z
     .boolean()
     .default(true)
@@ -89,7 +102,9 @@ export class AssetBridgeTools {
         name: 'set-actor-art',
         description:
           "Composition. Set an actor's portrait image, and by default its prototype token art too, " +
-          'from a Data-relative image path. GM-only.',
+          'from a Data-relative path. The portrait (actor.img) must be a STILL image; pass ' +
+          'tokenImagePath to give the prototype TOKEN an animated video (.webm/.mp4) while keeping a ' +
+          'still portrait (the JB2A-effect pattern). GM-only.',
         inputSchema: toInputSchema(SetActorArtSchema),
       },
       {
@@ -143,18 +158,26 @@ export class AssetBridgeTools {
   async handleSetActorArt(args: any): Promise<string> {
     const parsed = SetActorArtSchema.parse(args ?? {});
     const result = await this.foundry.call('setActorArt', parsed);
-    if (result?.updated === false) {
+    if (result?.updated === false && result?.notFound) {
       return `Actor not found: "${result?.notFound ?? parsed.actorIdentifier}". Nothing changed.`;
     }
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     const warnSection = warns.length
       ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
       : '';
-    return (
-      `Set art for actor "${result?.actorName}" (${result?.actorId}) → ${result?.img}` +
-      `${result?.appliedToToken ? ' (portrait + prototype token)' : ' (portrait only)'}.` +
-      warnSection
-    );
+    // Nothing valid was written (e.g. a video portrait with applyToToken:false) — report + warn.
+    if (result?.updated === false) {
+      return `No art applied to actor "${result?.actorName ?? parsed.actorIdentifier}".${warnSection}`;
+    }
+    const img = result?.img;
+    const tokenSrc = result?.tokenSrc;
+    // Distinct portrait vs token art (a still portrait + an animated token) → show both; otherwise
+    // keep the original single-path phrasing.
+    const artDesc =
+      result?.appliedToToken && tokenSrc && tokenSrc !== img
+        ? `portrait ${img ?? '(unchanged)'} · token ${tokenSrc}`
+        : `${img ?? tokenSrc}${result?.appliedToToken ? ' (portrait + prototype token)' : ' (portrait only)'}`;
+    return `Set art for actor "${result?.actorName}" (${result?.actorId}) → ${artDesc}.${warnSection}`;
   }
 
   async handleAddJournalImage(args: any): Promise<string> {

@@ -12,6 +12,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   normalizeAssetPath,
   basename,
+  isVideoPath,
   slugify,
   toSource,
   sanitizeDocData,
@@ -56,6 +57,36 @@ describe('basename', () => {
     expect(basename('a/b/c.png')).toBe('c.png');
     expect(basename('solo.webp')).toBe('solo.webp');
     expect(basename('a/b/')).toBe('b'); // trailing slash ignored
+  });
+});
+
+describe('isVideoPath', () => {
+  it('detects video extensions (case-insensitive), including a query/hash suffix', () => {
+    for (const p of [
+      'modules/JB2A/x/DancingLights_01_Yellow_200x200.webm',
+      'a/b/effect.MP4',
+      'clip.m4v',
+      'loop.ogg',
+      'anim.ogv',
+      'movie.mov',
+      'x/y.webm?v=2',
+      'x/y.mp4#frag',
+    ]) {
+      expect(isVideoPath(p)).toBe(true);
+    }
+  });
+  it('rejects still-image and other paths', () => {
+    for (const p of [
+      'art/goblin.webp',
+      'tokens/x.png',
+      'portrait.jpg',
+      'icon.svg',
+      'DancingLights_01_Yellow_Thumb.webp', // the still poster beside the webm
+      'notavideo.webmx',
+      '',
+    ]) {
+      expect(isVideoPath(p)).toBe(false);
+    }
   });
 });
 
