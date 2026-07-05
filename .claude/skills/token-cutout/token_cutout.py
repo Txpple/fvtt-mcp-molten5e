@@ -37,10 +37,14 @@ def despill(rgb, key):
     """Suppress the key hue's fringe on retained pixels (green/blue screens)."""
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     kr, kg, kb = key
-    if kg >= kr and kg >= kb:            # green screen
+    if kg - max(kr, kb) > 25:            # green screen
         rgb[..., 1] = np.minimum(g, np.maximum(r, b))
-    elif kb >= kr and kb >= kg:          # blue screen
+    elif kb - max(kr, kg) > 25:          # blue screen
         rgb[..., 2] = np.minimum(b, np.maximum(r, g))
+    elif min(kr, kb) - kg > 25:          # magenta screen — spill sits in r AND b
+        spill = np.maximum(np.minimum(r, b) - g, 0.0)
+        rgb[..., 0] = r - spill
+        rgb[..., 2] = b - spill
     return rgb
 
 
@@ -61,8 +65,8 @@ def chroma(src, key=None, keep_shadow=False):
         key = detect_key(a)
     kr, kg, kb = float(key[0]), float(key[1]), float(key[2])
 
-    green = kg >= kr and kg >= kb and kg - min(kr, kb) > 25
-    blue = kb >= kr and kb >= kg and kb - min(kr, kg) > 25
+    green = kg - max(kr, kb) > 25
+    blue = kb - max(kr, kg) > 25
 
     if green or blue:
         # Channel-dominance metric — robust to brightness, so a dark cast shadow
