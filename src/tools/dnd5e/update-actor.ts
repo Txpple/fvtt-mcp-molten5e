@@ -54,7 +54,7 @@ const UpdateActorSchema = z.object({
     .min(1)
     .optional()
     .describe(
-      "Prototype-token nameplate, decoupled from the actor name — e.g. actor \"Morgash the Gravemaker\" " +
+      'Prototype-token nameplate, decoupled from the actor name — e.g. actor "Morgash the Gravemaker" ' +
         'whose dropped tokens read just "Morgash". A plain `name` rename keeps the two in lockstep; ' +
         'pass tokenName (alone or alongside name) to make them differ. Placed tokens keep their own ' +
         'name — retitle those with update-token.'

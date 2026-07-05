@@ -75,7 +75,10 @@ try {
   console.log('# 2) name alone — lockstep still holds');
   await f.call('updateActor', { actorIdentifier: actorId, name: `${TAG} Renamed` });
   n = await NAMES(actorId);
-  assert(n.actor === `${TAG} Renamed` && n.proto === `${TAG} Renamed`, 'actor + prototype in lockstep');
+  assert(
+    n.actor === `${TAG} Renamed` && n.proto === `${TAG} Renamed`,
+    'actor + prototype in lockstep'
+  );
 
   console.log('# 3) name + tokenName together — tokenName wins the nameplate');
   const r3 = await f.call('updateActor', {

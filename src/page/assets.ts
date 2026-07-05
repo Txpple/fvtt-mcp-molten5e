@@ -163,7 +163,9 @@ export async function setActorArt(data: {
   if (applyToToken) {
     tokenSrc = normalizeAssetPath(data.tokenImagePath ?? data.imagePath);
     if (tokenSrc && !(await imgResolves(tokenSrc))) {
-      warnings.push(badAssetWarning(data.tokenImagePath ? 'tokenImagePath' : 'imagePath', tokenSrc, true));
+      warnings.push(
+        badAssetWarning(data.tokenImagePath ? 'tokenImagePath' : 'imagePath', tokenSrc, true)
+      );
       tokenSrc = resolveCreatureIcon(creatureType);
     }
   }

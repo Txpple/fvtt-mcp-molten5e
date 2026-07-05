@@ -153,10 +153,7 @@ try {
   const del = await f.call('deleteSceneRegions', { sceneIdentifier: aId, ids: [trapId] });
   assert(del?.deleted === 1, 'deleted 1 region');
   const list2 = await f.call('listSceneRegions', { sceneIdentifier: aId });
-  assert(
-    list2?.items?.length === 1 && list2.items[0].id === fromId,
-    'only the teleporter remains'
-  );
+  assert(list2?.items?.length === 1 && list2.items[0].id === fromId, 'only the teleporter remains');
 
   console.log('\n# one-way teleporter (twoWay:false) leaves no return link');
   const one = await f.call('createSceneTeleporter', {

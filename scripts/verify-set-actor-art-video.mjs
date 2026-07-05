@@ -80,15 +80,15 @@ try {
   const aState = await f.evaluate(READ, { id: actorId });
   assert(aState.img === STILL, `A — portrait is the STILL image (${aState.img})`);
   assert(aState.tokenSrc === VIDEO, `A — token texture is the VIDEO (${aState.tokenSrc})`);
-  assert(!(a?.warnings?.length), 'A — no warnings for the valid still+video split');
+  assert(!a?.warnings?.length, 'A — no warnings for the valid still+video split');
 
   // --- B: a VIDEO as imagePath is kept OFF the portrait, used for the token, and warns ---
   console.log('# B: imagePath=video (no tokenImagePath)');
   // reset the portrait to a known still first
-  await f.evaluate(
-    async ({ id, still }) => game.actors.get(id).update({ img: still }),
-    { id: actorId, still: STILL }
-  );
+  await f.evaluate(async ({ id, still }) => game.actors.get(id).update({ img: still }), {
+    id: actorId,
+    still: STILL,
+  });
   const b = await f.call('setActorArt', { actorIdentifier: actorId, imagePath: VIDEO });
   assert(b?.updated === true, 'B — reported updated (token applied)');
   assert(
@@ -104,7 +104,10 @@ try {
   const c = await f.call('setActorArt', { actorIdentifier: actorId, imagePath: STILL });
   assert(c?.updated === true, 'C — reported updated');
   const cState = await f.evaluate(READ, { id: actorId });
-  assert(cState.img === STILL && cState.tokenSrc === STILL, 'C — still image on BOTH portrait + token');
+  assert(
+    cState.img === STILL && cState.tokenSrc === STILL,
+    'C — still image on BOTH portrait + token'
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-art-video] FATAL: ${e?.message || String(e)}`);

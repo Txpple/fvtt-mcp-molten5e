@@ -49,7 +49,9 @@ const f = new Foundry({
 /** Snapshot the fixture's 3 views (base actor, token A, token B): item names + hp. */
 const SNAPSHOT = ({ sceneId, actorId, tokA, tokB }) => {
   const dump = a => ({
-    items: a.items.map(i => ({ id: i.id, name: i.name, type: i.type })).sort((x, y) => x.id.localeCompare(y.id)),
+    items: a.items
+      .map(i => ({ id: i.id, name: i.name, type: i.type }))
+      .sort((x, y) => x.id.localeCompare(y.id)),
     hp: a.system?.attributes?.hp?.value ?? null,
   });
   const sc = game.scenes.get(sceneId);
@@ -107,10 +109,15 @@ try {
       itemIds: actor.items.map(i => i.id),
     };
   }, TAG);
-  console.log(`  scene ${fixture.sceneId}, actor ${fixture.actorId}, tokens A=${fixture.tokA} B=${fixture.tokB}\n`);
+  console.log(
+    `  scene ${fixture.sceneId}, actor ${fixture.actorId}, tokens A=${fixture.tokA} B=${fixture.tokB}\n`
+  );
 
   const before = await f.evaluate(SNAPSHOT, fixture);
-  assert(before.a.items.length === 2 && before.b.items.length === 2, 'setup — both tokens surface the 2 prototype items');
+  assert(
+    before.a.items.length === 2 && before.b.items.length === 2,
+    'setup — both tokens surface the 2 prototype items'
+  );
 
   // --- A: updateActorItem by TOKEN id — rename+patch lands on A's delta only ---
   console.log('# A: updateActorItem(actorIdentifier = token A id)');
@@ -122,13 +129,24 @@ try {
   });
   assert(a?.success === true, 'A — call succeeded');
   const afterA = await f.evaluate(SNAPSHOT, fixture);
-  assert(afterA.a.items.some(i => i.name === `${TAG} Longsword`), 'A — token A shows the renamed item');
-  assert(afterA.base.items.some(i => i.name === `${TAG} Blade`), 'A — base actor still has the ORIGINAL name');
-  assert(afterA.b.items.some(i => i.name === `${TAG} Blade`), 'A — sibling token B still has the ORIGINAL name');
+  assert(
+    afterA.a.items.some(i => i.name === `${TAG} Longsword`),
+    'A — token A shows the renamed item'
+  );
+  assert(
+    afterA.base.items.some(i => i.name === `${TAG} Blade`),
+    'A — base actor still has the ORIGINAL name'
+  );
+  assert(
+    afterA.b.items.some(i => i.name === `${TAG} Blade`),
+    'A — sibling token B still has the ORIGINAL name'
+  );
   const dieA = await f.evaluate(
     ({ sceneId, tokA }) =>
-      game.scenes.get(sceneId).tokens.get(tokA).actor.items.find(i => i.type === 'weapon')?.system?.damage?.base
-        ?.denomination,
+      game.scenes
+        .get(sceneId)
+        .tokens.get(tokA)
+        .actor.items.find(i => i.type === 'weapon')?.system?.damage?.base?.denomination,
     fixture
   );
   assert(dieA === 8, `A — dot-path patch persisted on the delta (d8 → d${dieA})`);
@@ -142,8 +160,14 @@ try {
   assert((b?.removed ?? []).length === 1, 'B — reported 1 removal');
   const afterB = await f.evaluate(SNAPSHOT, fixture);
   assert(!afterB.a.items.some(i => i.name === `${TAG} Multiattack`), 'B — gone from token A');
-  assert(afterB.base.items.some(i => i.name === `${TAG} Multiattack`), 'B — base actor still has it');
-  assert(afterB.b.items.some(i => i.name === `${TAG} Multiattack`), 'B — sibling token B still has it');
+  assert(
+    afterB.base.items.some(i => i.name === `${TAG} Multiattack`),
+    'B — base actor still has it'
+  );
+  assert(
+    afterB.b.items.some(i => i.name === `${TAG} Multiattack`),
+    'B — sibling token B still has it'
+  );
 
   // --- C: addActorItems by TOKEN id — creation isolated to B ---
   console.log('# C: addActorItems(actorIdentifier = token B id)');
@@ -153,7 +177,10 @@ try {
   });
   assert((c?.created ?? []).length === 1, 'C — reported 1 creation');
   const afterC = await f.evaluate(SNAPSHOT, fixture);
-  assert(afterC.b.items.some(i => i.name === `${TAG} Venom`), 'C — present on token B');
+  assert(
+    afterC.b.items.some(i => i.name === `${TAG} Venom`),
+    'C — present on token B'
+  );
   assert(!afterC.base.items.some(i => i.name === `${TAG} Venom`), 'C — absent on the base actor');
   assert(!afterC.a.items.some(i => i.name === `${TAG} Venom`), 'C — absent on sibling token A');
 

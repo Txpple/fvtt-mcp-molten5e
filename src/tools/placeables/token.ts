@@ -136,7 +136,11 @@ const UpdateTokenSchema = z
         value: z.number().int().optional().describe('Current hit points.'),
         max: z.number().int().optional().describe('Max hit points.'),
         temp: z.number().int().optional().describe('Temporary hit points.'),
-        tempmax: z.number().int().optional().describe('Max-HP modifier (system.attributes.hp.tempmax).'),
+        tempmax: z
+          .number()
+          .int()
+          .optional()
+          .describe('Max-HP modifier (system.attributes.hp.tempmax).'),
       })
       .optional()
       .describe(

@@ -127,7 +127,12 @@ try {
   const afterSnd = await f.evaluate(
     ({ sId, id }) => {
       const s = game.scenes.get(sId).sounds.get(id);
-      return { volume: s.volume, dMin: s.darkness?.min, dMax: s.darkness?.max, eff: s.effects?.base?.type };
+      return {
+        volume: s.volume,
+        dMin: s.darkness?.min,
+        dMax: s.darkness?.max,
+        eff: s.effects?.base?.type,
+      };
     },
     { sId: sceneId, id: soundId }
   );
@@ -173,8 +178,14 @@ try {
     },
     { sId: sceneId, id: drwIds[0] }
   );
-  assert(liveDrw.type === 'r' && liveDrw.w === 400, 'B — rectangle mapped to shape{type:"r",width}');
-  assert(liveDrw.text === 'Secret Area' && liveDrw.hidden === true, 'B — text label + hidden persisted');
+  assert(
+    liveDrw.type === 'r' && liveDrw.w === 400,
+    'B — rectangle mapped to shape{type:"r",width}'
+  );
+  assert(
+    liveDrw.text === 'Secret Area' && liveDrw.hidden === true,
+    'B — text label + hidden persisted'
+  );
   const drwList = await f.call('listSceneDrawings', { sceneIdentifier: sceneId });
   assert(
     drwList?.count === 2 &&
@@ -198,7 +209,9 @@ try {
   assert(drwDel?.deleted === 2, 'B — deleted both drawings');
 
   // --- C: Wall CRUD ---
-  console.log('\n# C: wall CRUD (door authoring; doorsOnly filter; state patch; full-segment move)');
+  console.log(
+    '\n# C: wall CRUD (door authoring; doorsOnly filter; state patch; full-segment move)'
+  );
   const wallCreate = await f.call('createSceneWalls', {
     sceneIdentifier: sceneId,
     items: [
@@ -303,8 +316,10 @@ try {
     sceneIdentifier: sceneId,
     ids: [...tokenIds, 'ghostToken00'],
   });
-  assert(tkDel?.deleted === 2 && tkDel?.notFoundIds?.includes('ghostToken00'),
-    'D — deleted both copies; missing id reported');
+  assert(
+    tkDel?.deleted === 2 && tkDel?.notFoundIds?.includes('ghostToken00'),
+    'D — deleted both copies; missing id reported'
+  );
   const actorSurvives = await f.evaluate(({ id }) => !!game.actors.get(id), { id: actorId });
   assert(actorSurvives, 'D — the sidebar actor SURVIVES delete-tokens');
 

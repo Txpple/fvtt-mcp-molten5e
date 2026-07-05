@@ -172,7 +172,10 @@ describe('buildTokenUpdate — the pure placed-token patch builder (update-token
   });
 
   it('maps displayName / displayBars friendly keys onto CONST.TOKEN_DISPLAY_MODES numbers', () => {
-    const { update } = buildTokenUpdate({ id: 't1' }, { displayName: 'always', displayBars: 'hover' });
+    const { update } = buildTokenUpdate(
+      { id: 't1' },
+      { displayName: 'always', displayBars: 'hover' }
+    );
     expect(update.displayName).toBe(50); // ALWAYS
     expect(update.displayBars).toBe(30); // HOVER
   });

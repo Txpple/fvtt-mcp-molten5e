@@ -278,7 +278,10 @@ try {
     identifier: t8.tableId,
     editResults: [{ roll: 1, text: 'Entry one — a GM aside about the Dreamer.' }],
   });
-  assert(edit1?.edited === 1 && !edit1?.errors, `8a — edited exactly 1 entry (got ${edit1?.edited})`);
+  assert(
+    edit1?.edited === 1 && !edit1?.errors,
+    `8a — edited exactly 1 entry (got ${edit1?.edited})`
+  );
   const snapAfter = await rawSnapshot();
   assert(
     snapAfter[ids8[1]] === snapBefore[ids8[1]],
