@@ -342,6 +342,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'request-roll': args => chatTools.handleRequestRoll(args),
 
     // Users
+    'list-users': args => userTools.handleListUsers(args),
+    'update-user': args => userTools.handleUpdateUser(args),
     'set-user-avatar': args => userTools.handleSetUserAvatar(args),
 
     // Organization & batch

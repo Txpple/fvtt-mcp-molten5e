@@ -134,7 +134,7 @@ import {
   postItemCard,
   requestRoll,
 } from './chat.js';
-import { setUserAvatar } from './users.js';
+import { setUserAvatar, listUsers, updateUser } from './users.js';
 import {
   listFolders,
   createFolder,
@@ -272,6 +272,8 @@ const api = {
   requestRoll,
   // users
   setUserAvatar,
+  listUsers,
+  updateUser,
   // organization (folders / move / bulk-delete)
   listFolders,
   createFolder,
