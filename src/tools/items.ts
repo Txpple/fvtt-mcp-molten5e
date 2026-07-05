@@ -181,13 +181,13 @@ export class ItemTools {
       {
         name: 'get-item',
         description:
-          'Retrieve a single world-level Item document with its full system data, embedded effects, flags, and flattened description. Resolves by id (most reliable), exact name, or case-insensitive name. Use list-items first to find ids.',
+          'Retrieve a single world-level Item document with its full system data, embedded effects, flags, and flattened description. Resolves by id (most reliable), exact name, or case-insensitive name. Use list-items first to find ids. For an UNIDENTIFIED dnd5e item (system.identified=false) `name` is the mystery mask; the real source name is returned as `trueName`.',
         inputSchema: toInputSchema(GetItemSchema),
       },
       {
         name: 'update-item',
         description:
-          'Update existing world-level Item(s) by id — change name, img, system data, or folder. GM-only.',
+          'Update existing world-level Item(s) by id — change name, img, system data, or folder. GM-only. Renaming an UNIDENTIFIED dnd5e item works on the true source name; the echo shows the mystery-mask `name` plus `trueName` so the rename is visible.',
         inputSchema: toInputSchema(UpdateItemSchema),
       },
       {

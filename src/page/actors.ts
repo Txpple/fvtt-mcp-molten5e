@@ -17,6 +17,7 @@ import {
   resolveActorItem,
   toDeletionKey,
   toSource,
+  unmaskedName,
   sanitizeDocData as sanitize,
 } from './_shared.js';
 import {
@@ -473,12 +474,14 @@ export function getCharacterEntity(args: {
     );
 
     if (entity) {
+      const entityTrueName = unmaskedName(entity);
       return {
         success: true,
         entityType: 'item',
         entity: {
           id: entity.id,
           name: entity.name,
+          ...(entityTrueName !== undefined ? { trueName: entityTrueName } : {}),
           type: entity.type,
           img: entity.img,
           description: entity.system?.description?.value || entity.system?.description || '',
@@ -1813,10 +1816,16 @@ export async function updateActorItem(params: {
   await actor.updateEmbeddedDocuments('Item', [update]);
 
   const updated = actor.items?.get?.(item.id) ?? item;
+  const updatedTrueName = unmaskedName(updated);
   return {
     success: true,
     actor: { id: actor.id, name: actor.name },
-    item: { id: updated.id, name: updated.name, type: updated.type },
+    item: {
+      id: updated.id,
+      name: updated.name,
+      ...(updatedTrueName !== undefined ? { trueName: updatedTrueName } : {}),
+      type: updated.type,
+    },
     appliedKeys,
     ...(warnings.length ? { warnings } : {}),
   };

@@ -113,7 +113,9 @@ export class DnD5eUpdateActorItemTool {
     const summary = `✅ Updated "${result?.item?.name}" on "${result?.actor?.name}" (${keys.length} change${keys.length === 1 ? '' : 's'})`;
     const details = [
       `**Actor:** ${result?.actor?.name} (id: \`${result?.actor?.id}\`)`,
-      `**Item:** ${result?.item?.name} (id: \`${result?.item?.id}\`, type: ${result?.item?.type})`,
+      `**Item:** ${result?.item?.name} (id: \`${result?.item?.id}\`, type: ${result?.item?.type})` +
+        // dnd5e identity mask: while unidentified, `name` above is the mask — show the source name too.
+        (result?.item?.trueName ? ` — unidentified; true name: "${result.item.trueName}"` : ''),
       `**Changed:** ${keys.join(', ') || '(none)'}`,
     ].join('\n');
     const warningSection = warns.length

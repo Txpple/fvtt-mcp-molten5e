@@ -8,7 +8,7 @@
 // createWorldItems @3733-3900 / deleteWorldItems @3900-4018) exactly so the
 // consuming Node tools (src/tools/items.ts) and their tests stay green.
 
-import { toSource, sanitizeDocData as sanitizeData } from './_shared.js';
+import { toSource, unmaskedName, sanitizeDocData as sanitizeData } from './_shared.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
 import { GENERIC_ICON } from './dnd5e/icons.js';
 
@@ -26,10 +26,21 @@ interface ListWorldItemsArgs {
 interface WorldItemSummary {
   id: string;
   name: string;
+  trueName?: string; // unmasked source name when dnd5e identity-masks an unidentified item
   type: string;
   img?: string;
   folderId: string | null;
   folderName: string | null;
+}
+
+/**
+ * `{ trueName }` fragment for spreading into an item read/echo shape — present only while
+ * dnd5e's identity mask is active (see unmaskedName), absent otherwise so the common
+ * (identified) shapes stay byte-identical.
+ */
+function trueNameField(item: any): { trueName?: string } {
+  const trueName = unmaskedName(item);
+  return trueName !== undefined ? { trueName } : {};
 }
 
 /**
@@ -65,6 +76,7 @@ export function listWorldItems(args?: ListWorldItemsArgs): unknown {
     result.push({
       id: item.id ?? '',
       name: item.name ?? '',
+      ...trueNameField(item),
       type: item.type,
       ...(item.img ? { img: item.img } : {}),
       folderId: item.folder?.id ?? null,
@@ -110,6 +122,7 @@ export function getWorldItem(args?: GetWorldItemArgs): unknown {
   return {
     id: item.id ?? '',
     name: item.name ?? '',
+    ...trueNameField(item),
     type: item.type,
     ...(item.img ? { img: item.img } : {}),
     folderId: item.folder?.id ?? null,
@@ -207,6 +220,7 @@ export async function updateWorldItems(args: UpdateWorldItemsArgs): Promise<unkn
     updated: (updated || []).map((doc: any) => ({
       id: doc.id,
       name: doc.name,
+      ...trueNameField(doc),
       type: doc.type,
     })),
     ...(warnings.length ? { warnings } : {}),
@@ -305,6 +319,7 @@ export async function createWorldItems(args: CreateWorldItemsArgs): Promise<unkn
     created: (created || []).map((doc: any) => ({
       id: doc.id,
       name: doc.name,
+      ...trueNameField(doc),
       type: doc.type,
     })),
     ...(warnings.length ? { warnings } : {}),
@@ -329,14 +344,19 @@ export async function deleteWorldItems(args: DeleteWorldItemsArgs): Promise<unkn
     throw new Error('identifiers array is required and must contain at least one entry');
   }
 
-  const deleted: Array<{ id: string; name: string; type: string }> = [];
+  const deleted: Array<{ id: string; name: string; trueName?: string; type: string }> = [];
   const notFound: string[] = [];
 
   for (const identifier of identifiers) {
     // STRICT resolution only — exact id, then exact name.
     const item = game.items?.get(identifier) || game.items?.getName(identifier);
     if (item) {
-      const info = { id: item.id ?? identifier, name: item.name ?? '', type: item.type };
+      const info = {
+        id: item.id ?? identifier,
+        name: item.name ?? '',
+        ...trueNameField(item),
+        type: item.type,
+      };
       await item.delete();
       deleted.push(info);
     } else {

@@ -15,6 +15,7 @@ import {
   isVideoPath,
   slugify,
   toSource,
+  unmaskedName,
   sanitizeDocData,
   importFromCompendium,
   findUnresolvedScaleTokens,
@@ -128,6 +129,60 @@ describe('toSource', () => {
     expect(sanitizeDocData(toSource(doc).system).activities).toEqual({
       a1: { type: 'attack', damage: '1d8' },
     });
+  });
+});
+
+describe('unmaskedName', () => {
+  // dnd5e identity mask: while system.identified === false, item.name (the prepared getter)
+  // returns system.unidentified.name — even to the GM. The true name lives only in _source.
+  const maskedItem = (opts?: { srcName?: any; source?: boolean; toObject?: boolean }) => {
+    const srcName = opts?.srcName ?? 'Dawnthorn';
+    return {
+      name: 'Gilded Scimitar', // the mask (what dnd5e's getter returns)
+      system: { identified: false, unidentified: { name: 'Gilded Scimitar' } },
+      ...(opts?.source === false ? {} : { _source: { name: srcName } }),
+      ...(opts?.toObject ? { toObject: () => ({ name: srcName }) } : {}),
+    };
+  };
+
+  it('returns the source name while the identity mask is active', () => {
+    expect(unmaskedName(maskedItem())).toBe('Dawnthorn');
+  });
+
+  it('REGRESSION: surfaces a rename applied to an unidentified item (mask reads back unchanged)', () => {
+    // The live bug: update-item renamed _source.name to "Dawnthorn", but every read echoed the
+    // mask "Gilded Scimitar" — making the rename look like a silent no-op.
+    const item = maskedItem();
+    expect(item.name).toBe('Gilded Scimitar'); // what reads showed
+    expect(unmaskedName(item)).toBe('Dawnthorn'); // what actually applied
+  });
+
+  it('falls back to toObject().name when _source is absent', () => {
+    expect(unmaskedName(maskedItem({ source: false, toObject: true }))).toBe('Dawnthorn');
+  });
+
+  it('is undefined for identified items (no mask → common shape untouched)', () => {
+    expect(
+      unmaskedName({
+        name: 'Longsword',
+        system: { identified: true },
+        _source: { name: 'Longsword' },
+      })
+    ).toBeUndefined();
+  });
+
+  it('is undefined for items without the identifiable template (identified missing)', () => {
+    expect(
+      unmaskedName({ name: 'Fireball', type: 'spell', system: {}, _source: { name: 'Fireball' } })
+    ).toBeUndefined();
+    expect(unmaskedName(null)).toBeUndefined();
+    expect(unmaskedName(undefined)).toBeUndefined();
+  });
+
+  it('is undefined when no usable source name exists', () => {
+    expect(unmaskedName(maskedItem({ source: false }))).toBeUndefined();
+    expect(unmaskedName(maskedItem({ srcName: '' }))).toBeUndefined();
+    expect(unmaskedName(maskedItem({ srcName: 42 }))).toBeUndefined();
   });
 });
 

@@ -81,6 +81,25 @@ export function toSource(doc: any): any {
 }
 
 /**
+ * dnd5e masks `item.name` with `system.unidentified.name` on EVERY read while
+ * `system.identified === false` — even for the GM. The real name survives only in the
+ * document SOURCE (`item._source.name` / `toObject().name`), so a rename of an
+ * unidentified item reads back as a silent no-op unless the source name is surfaced.
+ * Returns the source name while the mask is active, undefined otherwise — so read and
+ * write-echo shapes can show the mask AS a mask: `{ name: <masked>, trueName: <source> }`.
+ * Pure (no game globals), so it unit-tests offline.
+ */
+export function unmaskedName(item: any): string | undefined {
+  if (item?.system?.identified !== false) return undefined;
+  // Only trust REAL source data (_source / toObject()); falling back to the item itself
+  // would re-read the masked prepared name and present the mask as the "true" name.
+  const srcName =
+    item?._source?.name ??
+    (typeof item?.toObject === 'function' ? item.toObject()?.name : undefined);
+  return typeof srcName === 'string' && srcName.length > 0 ? srcName : undefined;
+}
+
+/**
  * Resolve a single document from a compendium pack and return a fresh, copy-ready
  * plain data object. The spine of every WHOLE-DOCUMENT compendium-first copy
  * (design.md §2.3): `createActorFromCompendium` and `importItemFromCompendium` both
