@@ -24,9 +24,11 @@ the user approves findings — then fix each with the narrowest tool available.
 
 ## Step 1 — establish canon
 
-1. **Get the current plot document.** Ask the user for the path if it isn't given or obvious.
-   Read the file itself — never work from memory of an older draft; the whole point is that
-   memories and worlds go stale.
+1. **Get the current plot document.** Look in the campaign's notes repo first: if the user keeps a
+   per-campaign repo (a campaign pointer memory names it), its `plot/` directory holds the
+   authoritative doc — the newest draft there is canon. Only ask the user for a path if no campaign
+   repo or pointer exists. Read the file itself — never work from a memory summary or condensed
+   plot reference; the whole point is that summaries and worlds go stale.
 2. **Extract the canon terms**, in four buckets:
    - **Named entities** — NPCs, factions, places, artifacts/relics, deities, quest names.
    - **Renames** — anything the doc marks as renamed/superseded, PLUS ask the user:
