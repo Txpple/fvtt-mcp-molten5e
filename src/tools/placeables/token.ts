@@ -83,6 +83,17 @@ const UpdateTokenSchema = z
       .describe(
         'Token ART scale (sets texture.scaleX and scaleY together). 1 = normal, 1.5 = 50% larger.'
       ),
+    imagePath: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'RESKIN the placed token(s): new token art (texture.src) — a world-relative path (e.g. ' +
+          '"assets/tokens/morgash.png") or URL; a still IMAGE or an animated VIDEO (.webm/.mp4) both ' +
+          'work on a token. Applied to every matched token; the path is existence-checked first, and ' +
+          'a 404 leaves the current art unchanged (with a warning) instead of breaking it. Changes ' +
+          "ONLY the placed instance(s) — the actor's portrait/prototype art is set-actor-art."
+      ),
     elevation: z
       .number()
       .optional()
@@ -159,6 +170,7 @@ const UpdateTokenSchema = z
       v.rotation !== undefined ||
       v.randomizeRotation === true ||
       v.scale !== undefined ||
+      v.imagePath !== undefined ||
       v.elevation !== undefined ||
       v.hidden !== undefined ||
       v.lockRotation !== undefined ||
@@ -173,7 +185,7 @@ const UpdateTokenSchema = z
       v.hp !== undefined,
     {
       message:
-        'Provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp).',
+        'Provide at least one field to change (rotation, randomizeRotation, scale, imagePath, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp).',
     }
   );
 
@@ -211,7 +223,9 @@ export const tokenToolModule: PlaceableModuleFactory = foundry => ({
         '(default: the ACTIVE scene), then target tokens by `tokenIds` and/or `actorIds` (an actor id ' +
         'OR exact name — updates EVERY placed copy of that actor, e.g. all "Dead Guard" corpses). Patch ' +
         'any of: `rotation` (or `randomizeRotation` for an independent per-token angle), `scale` (token ' +
-        'art size — sets texture.scaleX/scaleY together), `elevation`, `hidden`, `lockRotation`, `x`/`y`, ' +
+        'art size — sets texture.scaleX/scaleY together), `imagePath` (RESKIN the placed instance — new ' +
+        'token art, still image or animated video, existence-checked so a 404 never breaks working art; ' +
+        'no more delete+re-place), `elevation`, `hidden`, `lockRotation`, `x`/`y`, ' +
         '`name`, `displayName` (nameplate visibility), `displayBars` (resource-bar visibility), `bar1`/`bar2` ' +
         '(which resource each bar tracks — the health bar is bar1 = attributes.hp), `ring` (dynamic token ' +
         "ring on/off), and `hp` (this token's CURRENT hit points, per-token on its own delta — so two copies " +
@@ -267,7 +281,8 @@ export const tokenToolModule: PlaceableModuleFactory = foundry => ({
                 `\n  • ${t.name} (${t.id}) — rot ${t.rotation}°, scale ${t.scale}, elev ${t.elevation}` +
                 `${t.hidden ? ', hidden' : ''}, name ${t.displayName}, bars ${t.displayBars}` +
                 `${t.bar1 ? ` (${t.bar1})` : ''}, ring ${t.ring ? 'on' : 'off'}` +
-                `${t.hp ? `, hp ${t.hp.value}/${t.hp.max}` : ''}`
+                `${t.hp ? `, hp ${t.hp.value}/${t.hp.max}` : ''}` +
+                `${t.src ? `, art ${t.src}` : ''}`
             )
             .join('')
         : '';

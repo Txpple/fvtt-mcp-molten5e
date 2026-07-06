@@ -42,6 +42,15 @@ const CreateActorFromCompendiumSchema = z.object({
     .max(10)
     .optional()
     .describe('Number of actors to create (default: based on names array length)'),
+  folder: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Actor folder to file the created copies under — a folder id or exact name (created if ' +
+        'absent), so the actor lands in its folder in ONE call instead of create + move-documents. ' +
+        'Omit for the default "Foundry MCP Creatures" folder.'
+    ),
   addToScene: z
     .boolean()
     .default(false)
@@ -146,8 +155,9 @@ export class ActorCreationTools {
           'the new actors. PREFAB-AS-BASE (the §6 step-2 bridge): to make a CUSTOM creature, copy the ' +
           'closest Monster Manual match and pass `modifications` (update-actor-shaped stat edits — ' +
           'cr/hp/ac/abilities/skills/defenses/biography/currency) to layer onto the world copy in the ' +
-          'SAME call; the edits land on the copy only, never the source entry. For a fully ' +
-          'hand-authored NPC with no compendium base, use author-npc (last resort).',
+          'SAME call; the edits land on the copy only, never the source entry. Pass `folder` (id or ' +
+          'exact name, created if absent) to file the copies directly — no move-documents follow-up. ' +
+          'For a fully hand-authored NPC with no compendium base, use author-npc (last resort).',
         inputSchema: toInputSchema(CreateActorFromCompendiumSchema),
       },
       {
@@ -176,8 +186,17 @@ export class ActorCreationTools {
    * Handle actor creation from specific compendium entry
    */
   async handleCreateActorFromCompendium(args: any): Promise<any> {
-    const { packId, itemId, names, quantity, addToScene, placement, modifications, disposition } =
-      CreateActorFromCompendiumSchema.parse(args);
+    const {
+      packId,
+      itemId,
+      names,
+      quantity,
+      folder,
+      addToScene,
+      placement,
+      modifications,
+      disposition,
+    } = CreateActorFromCompendiumSchema.parse(args);
     assertNoSrdPacks(packId, 'create-actor-from-compendium');
     const finalQuantity = quantity || names.length;
 
@@ -213,6 +232,7 @@ export class ActorCreationTools {
         // Prefab-as-base: layer these edits onto the world copy (never the compendium source).
         ...(modifications ? { modifications } : {}),
         ...(disposition ? { disposition } : {}),
+        ...(folder ? { folder } : {}),
       });
 
       this.logger.info('Actor creation completed', {
@@ -369,6 +389,9 @@ export class ActorCreationTools {
       .map((actor: any) => `• **${actor.name}** (from ${packId})`)
       .join('\n');
 
+    // Echo where the copies were filed (the page resolves/creates the folder and reports it back).
+    const folderInfo = result.folder?.name ? `\n📁 Filed under **${result.folder.name}**` : '';
+
     const sceneInfo =
       result.tokensPlaced > 0
         ? `\n🎯 Added ${result.tokensPlaced} tokens to the current scene`
@@ -424,13 +447,14 @@ export class ActorCreationTools {
         },
         tokensPlaced: result.tokensPlaced || 0,
         errors: result.errors,
+        ...(result.folder ? { folder: result.folder } : {}),
         ...(modApplied.length > 0
           ? { modifications: { applied: modApplied, warnings: modWarnings } }
           : {}),
         ...(damageTypes.length > 0 ? { damageTypes } : {}),
         ...(unresolvedScale.length > 0 ? { unresolvedScale } : {}),
       },
-      message: `${summary}\n\n${details}${modInfo}${sceneInfo}${errorInfo}${damageInfo}${formatUnresolvedScale(unresolvedScale)}`,
+      message: `${summary}\n\n${details}${folderInfo}${modInfo}${sceneInfo}${errorInfo}${damageInfo}${formatUnresolvedScale(unresolvedScale)}`,
     };
   }
 }

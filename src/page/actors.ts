@@ -929,16 +929,19 @@ export function extractDamageProfile(sourceItems: any[]): {
  * Create one or more world actors by copying a specific compendium entry
  * (resolved by exact packId + itemId). Each copy carries the source's full
  * system data, embedded items, effects, and prototype token (with remote token
- * texture URLs cleared), and is filed under the auto-managed "Foundry MCP
- * Creatures" Actor folder. Optionally places tokens on the current scene.
+ * texture URLs cleared), and is filed under the caller's `folder` (id or exact
+ * name, created if absent) — default: the auto-managed "Foundry MCP Creatures"
+ * Actor folder. Optionally places tokens on the current scene.
  * Best-effort: per-actor failures are collected as `errors` rather than aborting.
- * Returns { success, totalCreated, totalRequested, actors, tokensPlaced, errors? }.
+ * Returns { success, totalCreated, totalRequested, actors, tokensPlaced, folder?, errors? }.
  */
 export async function createActorFromCompendium(request: {
   packId: string;
   itemId: string;
   customNames: string[];
   quantity?: number;
+  // Destination Actor folder (id or exact name; created if absent). Mirrors create-scene's param.
+  folder?: string;
   addToScene?: boolean;
   placement?: {
     type: 'random' | 'grid' | 'center' | 'coordinates';
@@ -986,6 +989,24 @@ export async function createActorFromCompendium(request: {
   const createdActors: any[] = [];
   const errors: string[] = [];
 
+  // Resolve the destination folder ONCE, before the per-copy loop — the caller's folder (id or
+  // exact name; created if absent, mirroring create-scene's param), else the auto-managed default.
+  // An unresolvable requested folder falls back to the default and is reported, never silent.
+  const requestedFolder = typeof request.folder === 'string' ? request.folder.trim() : '';
+  let folderId: string | null = null;
+  if (requestedFolder !== '') {
+    const existing =
+      game.folders?.get(requestedFolder) ||
+      game.folders?.find((x: any) => x.name === requestedFolder && x.type === 'Actor');
+    folderId = existing ? existing.id : await getOrCreateFolder(requestedFolder, 'Actor');
+    if (!folderId) {
+      errors.push(
+        `could not resolve or create Actor folder "${requestedFolder}" — filed under "Foundry MCP Creatures" instead`
+      );
+    }
+  }
+  if (!folderId) folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
+
   // Create actors.
   for (let i = 0; i < finalQuantity; i++) {
     try {
@@ -1030,8 +1051,6 @@ export async function createActorFromCompendium(request: {
         })
       );
 
-      // File created actors under the auto-managed creatures folder.
-      const folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
       if (folderId) {
         actorData.folder = folderId;
       }
@@ -1126,6 +1145,10 @@ export async function createActorFromCompendium(request: {
     totalRequested: finalQuantity,
     actors: createdActors,
     tokensPlaced,
+    // Echo where the copies were filed so the tool can confirm it (id + resolved name).
+    ...(folderId
+      ? { folder: { id: folderId, name: game.folders?.get(folderId)?.name ?? null } }
+      : {}),
     errors: errors.length > 0 ? errors : undefined,
   };
 }

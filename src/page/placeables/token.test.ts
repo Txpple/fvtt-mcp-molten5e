@@ -203,6 +203,26 @@ describe('buildTokenUpdate — the pure placed-token patch builder (update-token
     expect(buildTokenUpdate({ id: 't1' }, { ring: false }).changed).toBe(true);
     expect(buildTokenUpdate({ id: 't1' }, { ring: true }).update['ring.enabled']).toBe(true);
   });
+
+  it('imagePath reskins via texture.src, NORMALIZED (leading /Data/ stripped)', () => {
+    const { update, changed } = buildTokenUpdate(
+      { id: 't1' },
+      { imagePath: '/Data/assets/tokens/morgash.png' }
+    );
+    expect(update['texture.src']).toBe('assets/tokens/morgash.png');
+    expect(changed).toBe(true);
+  });
+
+  it('imagePath accepts a video path (a token texture may be animated, unlike a portrait)', () => {
+    const { update } = buildTokenUpdate({ id: 't1' }, { imagePath: 'assets/tokens/wisp.webm' });
+    expect(update['texture.src']).toBe('assets/tokens/wisp.webm');
+  });
+
+  it('ignores an empty/whitespace imagePath (no texture.src write, no change)', () => {
+    const { update, changed } = buildTokenUpdate({ id: 't1' }, { imagePath: '   ' });
+    expect(update).toEqual({ _id: 't1' });
+    expect(changed).toBe(false);
+  });
 });
 
 describe('buildHpPatch — the pure per-token HP patch builder (update-token hp)', () => {

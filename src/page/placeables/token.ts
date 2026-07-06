@@ -16,6 +16,8 @@ import {
   type CreateDocResult,
   type PlaceableDescriptor,
 } from '../_placeables.js';
+import { normalizeAssetPath } from '../_shared.js';
+import { imgResolves } from '../img-resolve.js';
 import { resolveSceneStrict } from '../scenes.js';
 
 const DISPOSITION_NAME: Record<number, string> = {
@@ -157,6 +159,7 @@ export interface TokenPatchArgs {
   rotation?: number;
   randomizeRotation?: boolean;
   scale?: number;
+  imagePath?: string; // reskin: token art (texture.src) — IMAGE or VIDEO; existence-checked in updateSceneTokens
   elevation?: number;
   hidden?: boolean;
   lockRotation?: boolean;
@@ -226,6 +229,12 @@ export function buildTokenUpdate(
     update['texture.scaleX'] = args.scale;
     update['texture.scaleY'] = args.scale;
   }
+  // Reskin — a token texture.src accepts IMAGE or VIDEO (the set-actor-art ground truth; it is the
+  // portrait-only `img` field that rejects video). Existence is checked in updateSceneTokens (async);
+  // here the path is only normalized.
+  if (typeof args.imagePath === 'string' && args.imagePath.trim() !== '') {
+    update['texture.src'] = normalizeAssetPath(args.imagePath);
+  }
   if (typeof args.elevation === 'number') update.elevation = args.elevation;
   if (typeof args.hidden === 'boolean') update.hidden = args.hidden;
   if (typeof args.x === 'number') update.x = args.x;
@@ -277,8 +286,10 @@ export function buildHpPatch(hp?: TokenHpArgs): Record<string, number> | null {
  * (that's update-actor). Resolve the scene by id/exact-name (default: the active scene), then target
  * tokens by token id(s) and/or by actor (id OR exact name — matches ALL placed copies of that actor,
  * e.g. every "Dead Guard" on the map). Patch any of: rotation (or `randomizeRotation` for an
- * independent per-token angle), art scale (texture.scaleX/scaleY together), elevation, hidden,
- * lockRotation, x/y, name — batched into ONE updateEmbeddedDocuments call. buildTokenUpdate owns the
+ * independent per-token angle), art scale (texture.scaleX/scaleY together), imagePath (the placed-
+ * instance RESKIN — texture.src, image or video, existence-checked so a 404 never replaces working
+ * art), elevation, hidden, lockRotation, x/y, name — batched into ONE updateEmbeddedDocuments call.
+ * buildTokenUpdate owns the
  * lockRotation gotcha (auto-unlock so a set rotation is visible). HP is applied separately, per token,
  * on the token's own actor (buildHpPatch) so unlinked copies of one prototype can hold different HP.
  */
@@ -331,6 +342,7 @@ export async function updateSceneTokens(
     args.rotation !== undefined ||
     args.randomizeRotation === true ||
     args.scale !== undefined ||
+    (typeof args.imagePath === 'string' && args.imagePath.trim() !== '') ||
     args.elevation !== undefined ||
     args.hidden !== undefined ||
     args.lockRotation !== undefined ||
@@ -345,7 +357,7 @@ export async function updateSceneTokens(
     hpPatch !== null;
   if (!hasField) {
     throw new Error(
-      'provide at least one field to change (rotation, randomizeRotation, scale, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp)'
+      'provide at least one field to change (rotation, randomizeRotation, scale, imagePath, elevation, hidden, lockRotation, x, y, name, displayName, displayBars, bar1, bar2, ring, or hp)'
     );
   }
 
@@ -356,10 +368,26 @@ export async function updateSceneTokens(
   const unmatchedTokenIds = [...wantTokenIds].filter(id => !matchedTokenIds.has(id));
 
   const warnings: string[] = [];
+
+  // Reskin path — validated ONCE up front (one path, many tokens): a 404 texture would replace
+  // every matched token's WORKING art with a broken image, so a miss drops the reskin (art left
+  // unchanged), warns, and the rest of the patch still applies. Never a silent broken "success".
+  let effectiveArgs = args;
+  if (typeof args.imagePath === 'string' && args.imagePath.trim() !== '') {
+    const src = normalizeAssetPath(args.imagePath);
+    if (!(await imgResolves(src))) {
+      warnings.push(
+        `imagePath "${src}" was not found on the server — token art left unchanged. Upload it first (upload-asset) or fix the path.`
+      );
+      const { imagePath: _dropped, ...rest } = args;
+      effectiveArgs = rest;
+    }
+  }
+
   const updates: Record<string, unknown>[] = [];
   const updatedIds = new Set<string>(); // tokens changed by EITHER the doc patch or the HP patch
   for (const t of matched) {
-    const { update, warnings: w, changed } = buildTokenUpdate(t, args);
+    const { update, warnings: w, changed } = buildTokenUpdate(t, effectiveArgs);
     warnings.push(...w);
     if (changed) {
       updates.push(update);
@@ -386,6 +414,7 @@ export async function updateSceneTokens(
     actorId: t.actorId || undefined,
     rotation: t.rotation,
     scale: t.texture?.scaleX,
+    src: t.texture?.src,
     elevation: t.elevation,
     hidden: t.hidden,
     lockRotation: t.lockRotation,

@@ -197,6 +197,62 @@ describe('handleCreateActorFromCompendium', () => {
     ).rejects.toThrow();
   });
 
+  it('forwards folder to the page (file the copies in ONE call, no move-documents)', async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'Hobgoblin Captain', id: 'a1' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({
+      packId: 'dnd-monster-manual.actors',
+      itemId: 'hobgoblin-captain-id',
+      names: ['Hobgoblin Captain'],
+      folder: 'Trade Way',
+    });
+    const call = calls.find(c => c[0] === 'createActorFromCompendium');
+    expect(call![1].folder).toBe('Trade Way');
+  });
+
+  it('omits folder from the page call when not given (page uses the default folder)', async () => {
+    const { tools, calls } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'X' }],
+      tokensPlaced: 0,
+    });
+    await tools.handleCreateActorFromCompendium({ packId: 'p', itemId: 'i', names: ['X'] });
+    expect(calls[0][1]).not.toHaveProperty('folder');
+  });
+
+  it('rejects an empty folder string', async () => {
+    const { tools } = build({});
+    await expect(
+      tools.handleCreateActorFromCompendium({ packId: 'p', itemId: 'i', names: ['X'], folder: '' })
+    ).rejects.toThrow();
+  });
+
+  it('echoes the folder the page filed the copies under', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ name: 'Hobgoblin Captain', id: 'a1' }],
+      tokensPlaced: 0,
+      folder: { id: 'f1', name: 'Trade Way' },
+    });
+    const out = await tools.handleCreateActorFromCompendium({
+      packId: 'p',
+      itemId: 'i',
+      names: ['Hobgoblin Captain'],
+      folder: 'Trade Way',
+    });
+    expect(out.message).toContain('📁 Filed under **Trade Way**');
+    expect(out.details.folder).toEqual({ id: 'f1', name: 'Trade Way' });
+  });
+
   it('surfaces the layered modifications the page applied to the world copy', async () => {
     const { tools } = build({
       success: true,

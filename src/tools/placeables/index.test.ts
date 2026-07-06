@@ -543,6 +543,35 @@ describe('token handlers', () => {
     ).rejects.toThrow();
   });
 
+  it('update-token accepts imagePath as the sole change (placed-instance reskin) and echoes the art', async () => {
+    const { tools, calls } = build({
+      success: true,
+      matched: 1,
+      updated: 1,
+      sceneId: 'sc1',
+      sceneName: 'Cave',
+      tokens: [
+        {
+          id: 'tk1',
+          name: 'Wisp',
+          rotation: 0,
+          scale: 1,
+          elevation: 0,
+          hidden: false,
+          src: 'assets/tokens/wisp.webm',
+        },
+      ],
+    });
+    const out = await tools.handle('update-token', {
+      sceneIdentifier: 'Cave',
+      tokenIds: ['tk1'],
+      imagePath: 'assets/tokens/wisp.webm',
+    });
+    expect(calls[0][0]).toBe('updateSceneTokens');
+    expect(calls[0][1]).toMatchObject({ tokenIds: ['tk1'], imagePath: 'assets/tokens/wisp.webm' });
+    expect(out).toContain('art assets/tokens/wisp.webm');
+  });
+
   it('delete-tokens forwards tokenIds as {ids}', async () => {
     const { tools, calls } = build({
       success: true,
