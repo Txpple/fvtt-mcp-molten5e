@@ -155,6 +155,7 @@ import { addFeaturesFromCompendium } from './dnd5e/compendium-features.js';
 import { addItem, importItemFromCompendium } from './dnd5e/items.js';
 import { auditContent } from './dnd5e/content-audit.js';
 import { manageActivity } from './dnd5e/manage-activity.js';
+import { addFreeCast } from './dnd5e/free-cast.js';
 import {
   createPcActor,
   createPcFromPrefab,
@@ -304,6 +305,7 @@ const api = {
   importItemFromCompendium,
   auditContent,
   manageActivity,
+  addFreeCast,
   // dnd5e PC authoring (leveling engine: type:character + advancement → @scale resolves natively)
   createPcActor,
   createPcFromPrefab,

@@ -90,3 +90,18 @@
     or the encounter's GM key, linked from there — not in the item. A "sealed letter" / mysterious note
     is the classic trap: keep the item's own text innocuous and put the intent in a GM note elsewhere.
     (Same spirit as rule 7's no-fudge note, but about SECRECY leaking to players, not mechanics.)
+
+13. **Feature-granted FREE CASTS live ON the spell — use `add-free-cast`, never a tracker feat.** When
+    a feat/feature lets an actor cast a spell **without a spell slot N times per rest** — Magic
+    Initiate, a 2024 lineage grant (Gnomish/Elven Lineage), Favored Enemy, a magic item's "cast X
+    1/day" — the tracking goes on the **spell entry itself**: a use pool on the spell plus a free-cast
+    option in its Spells-tab row (this is how the premium PHB Hunter's Mark ships). The
+    `add-free-cast` tool wires the whole shape in one call — pass the spell, `grantedBy` (the granting
+    feature's name), `uses` (a number or a `@scale.*` formula), and the recovery period (default long
+    rest, the 2024 wording). The free-cast option is named **`<Spell Name> - <granting feature>`**
+    (e.g. *"Bless - Magic Initiate"*, *"Hunter's Mark - Favored Enemy"*) — keep that convention. Do
+    **NOT** create a separate Features-tab feat item to track the daily use (a "<Spell> — Free Cast"
+    feat is the forbidden shape): it splits one castable thing across two tabs and drifts from the
+    sheet the player actually plays from. If a premium compendium spell already ships the pattern
+    (Hunter's Mark does), keep it — `add-free-cast` is idempotent and updates it in place rather than
+    duplicating.

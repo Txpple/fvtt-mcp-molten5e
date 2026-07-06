@@ -187,6 +187,10 @@ in `warnings` — fix or ask, don't invent a spell.
   add it now: `add-feature` mode `compendium-features` with the feat name (it copies the real PHB feat),
   or `import-item` for a feat-as-item. (Ability-increase ASIs are already in the final scores — don't
   re-apply them. The Origin feat from the background is granted automatically.)
+- **Feature-granted free casts** — when a feat/lineage grants "cast X without a spell slot N/rest"
+  (Magic Initiate, a lineage spell, Favored Enemy…), add the spell normally, then wire the free cast
+  ON the spell with **`add-free-cast`** (`grantedBy` = the feature name; default 1/long rest). Never
+  a separate tracker feat — shared policy rule 13 has the full shape + naming convention.
 
 ## Step 7 — Finishing pass
 

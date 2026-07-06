@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 132 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 133 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -56,7 +56,8 @@ describe('tool registry', () => {
     // + place-tokens + delete-tokens (placed-token lifecycle; update-token stays bespoke)
     // + list-folders (the folder-tree read/inspect step the write tools were missing)
     // + list-users + update-user (user-account admin: roster read + role/name/color/character)
-    expect(names.length).toBe(132);
+    // + add-free-cast (feature-granted free casting lives ON the spell — the HM pattern)
+    expect(names.length).toBe(133);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
