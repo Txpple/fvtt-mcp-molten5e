@@ -60,8 +60,17 @@ export interface BuildActivityOpts {
   level?: number;
   /** The spell's V/S/M components (['vocal','somatic','material']) — resolved from the linked spell. */
   spellProperties?: string[];
-  /** Item charges consumed per cast. Omit for an at-will cast (no consumption). */
-  charges?: number;
+  /**
+   * Cast consumption. usesOn 'item' (default — the wand pattern): `charges` are consumed FROM the
+   * parent item's own pool per cast. usesOn 'activity' (the feature-granted free-cast pattern —
+   * required when the parent has no pool): a pool of `charges` uses (number or formula, e.g.
+   * "@scale.ranger.favored-enemy") lives ON the activity, recovering per `recoveryPeriod`, and one
+   * use is consumed per cast. Omit charges for an at-will cast (no consumption either way).
+   */
+  charges?: number | string;
+  usesOn?: 'item' | 'activity';
+  /** Activity-pool recovery (usesOn 'activity' only): lr / sr / day / dawn / dusk. Default 'lr'. */
+  recoveryPeriod?: string;
 }
 
 /** Build one dnd5e activity object of the given type. */
@@ -247,8 +256,11 @@ function buildUtilityActivity(opts: BuildActivityOpts): Record<string, any> {
 //              neither -> {attack:null, override:false}       (defer DC/attack to the casting actor)
 // The page sanitizer strips `save` tree-wide, so a fixed save DC is correct-but-invisible on read-back.
 //
-//   consumption: spellSlot:false (an item never eats the holder's spell slots) + an itemUses target of
-//                `charges` per cast; omit charges for an at-will cast (empty targets).
+//   consumption: spellSlot:false (an item never eats the holder's spell slots) + either an itemUses
+//                target of `charges` per cast (usesOn 'item', the wand pattern) or a self-contained
+//                pool of `charges` uses ON the activity with one activityUses consumed per cast
+//                (usesOn 'activity', the feature free-cast pattern — the sheet's "Additional Spells"
+//                row counter reads this pool). Omit charges for an at-will cast (empty targets).
 function buildCastActivity(opts: BuildActivityOpts): Record<string, any> {
   const challenge =
     opts.saveDC !== undefined
@@ -256,8 +268,11 @@ function buildCastActivity(opts: BuildActivityOpts): Record<string, any> {
       : opts.attackBonus !== undefined
         ? { attack: opts.attackBonus, override: true }
         : { attack: null, override: false };
-  const targets =
-    opts.charges !== undefined && opts.charges !== null
+  const hasCharges = opts.charges !== undefined && opts.charges !== null;
+  const pooled = hasCharges && opts.usesOn === 'activity';
+  const targets = pooled
+    ? [{ type: 'activityUses', value: '1', target: '', scaling: { mode: '', formula: '' } }]
+    : hasCharges
       ? [
           {
             type: 'itemUses',
@@ -267,6 +282,13 @@ function buildCastActivity(opts: BuildActivityOpts): Record<string, any> {
           },
         ]
       : [];
+  const uses = pooled
+    ? {
+        spent: 0,
+        max: String(opts.charges),
+        recovery: [{ period: opts.recoveryPeriod ?? 'lr', type: 'recoverAll' }],
+      }
+    : { spent: 0, recovery: [], max: '' };
   return {
     _id: opts.id,
     type: 'cast',
@@ -291,7 +313,7 @@ function buildCastActivity(opts: BuildActivityOpts): Record<string, any> {
       override: false,
       prompt: true,
     },
-    uses: { spent: 0, recovery: [], max: '' },
+    uses,
     flags: {},
     visibility: {
       level: {},

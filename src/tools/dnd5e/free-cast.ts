@@ -5,13 +5,14 @@ import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
- * add-free-cast — wire a feature-granted "cast without a spell slot" onto the spell itself.
+ * add-free-cast — feature-granted "cast without a spell slot, N per rest", the native way.
  *
- * House rule (owner, 2026-07-05): free casts granted by a feat/feature (Magic Initiate, Favored
- * Enemy, a lineage, a magic item…) live ON the spell entry in the Spells tab — a use pool on the
- * spell plus a `forward` activity consuming an item use — never as a separate Features-tab tracker
- * feat. The shape mirrors the premium PHB Hunter's Mark, which ships the pattern natively. The
- * forward activity is named `<Spell Name> - <granting feature>`.
+ * House rule (owner, 2026-07-05 — supersedes the earlier forward-on-the-spell shape): the sheet
+ * gets TWO entries. The spell sits in the repertoire as a normal ALWAYS-PREPARED spell (castable
+ * with slots, no pools, no dialogs), and the free cast is a `cast` activity ON the granting
+ * feature — which projects a "<Spell> - <Feature>" entry into the sheet's NATIVE "Additional
+ * Spells" spellbook section with its own tracked pool (default 1/long rest). The old shape (a use
+ * pool + forward activity on the spell) is migrated off automatically.
  */
 
 const AddFreeCastSchema = z.object({
@@ -19,19 +20,24 @@ const AddFreeCastSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Name or id of the actor that owns the spell (partial name match supported). Also accepts a ' +
-        "placed TOKEN id (from list-tokens): the edit then lands on that token INSTANCE's own delta."
+      'Name or id of the actor (partial name match supported). Also accepts a placed TOKEN id ' +
+        "(from list-tokens): the edit then lands on that token INSTANCE's own delta."
     ),
   spellIdentifier: z
     .string()
     .min(1)
-    .describe('Name or id of the embedded spell to grant the free cast on.'),
+    .describe(
+      'The spell to grant a free cast of — an embedded spell on the actor (name or id), or a ' +
+        'premium compendium uuid ("Compendium.dnd-players-handbook.spells.Item.…") to also ADD it ' +
+        'to the repertoire (always prepared) when the actor lacks it.'
+    ),
   grantedBy: z
     .string()
     .min(1)
     .describe(
-      'The feature/feat that grants the free casting, e.g. "Magic Initiate" or "Favored Enemy". ' +
-        'Becomes the activity name: "<Spell Name> - <grantedBy>".'
+      'The granting feature ITEM on the actor (name or id) — e.g. "Magic Initiate", "Favored ' +
+        'Enemy", a lineage feature. The cast activity lands ON this item and the Additional Spells ' +
+        'entry is titled "<Spell> - <feature name>".'
     ),
   uses: z
     .union([z.number().int().positive(), z.string().min(1)])
@@ -46,13 +52,6 @@ const AddFreeCastSchema = z.object({
     .describe(
       'When the free casts come back: "lr" long rest (default — the 2024 wording for feat-granted ' +
         'casts), "sr" short rest, "day", "dawn", or "dusk".'
-    ),
-  activityId: z
-    .string()
-    .optional()
-    .describe(
-      "Explicit cast activity id to forward to (from get-actor-entity). Default: the spell's " +
-        'slot-consuming cast activity (lowest sort).'
     ),
 });
 
@@ -77,12 +76,15 @@ export class DnD5eFreeCastTool {
       {
         name: 'add-free-cast',
         description:
-          '[D&D 5e] Grant "cast without a spell slot, N per rest" ON a spell an actor already has — ' +
-          'the way Magic Initiate, Favored Enemy, lineages, and similar features work. Adds a use ' +
-          'pool to the spell plus a "<Spell> - <feature>" free-cast option in its Spells-tab row ' +
-          "(the premium Hunter's Mark pattern). NEVER track a feature-granted free cast as a " +
-          'separate feat item — use this tool on the spell instead. Idempotent: re-running updates ' +
-          'the existing free-cast option in place.',
+          '[D&D 5e] Grant "cast without a spell slot, N per rest" the native 2024 way — Magic ' +
+          'Initiate, Favored Enemy, lineage grants. TWO sheet entries result: the spell stays in ' +
+          'the repertoire as a normal ALWAYS-PREPARED spell (castable with slots; imported from ' +
+          'the compendium if missing), and a cast activity ON the granting feature projects a ' +
+          '"<Spell> - <Feature>" entry into the sheet\'s native "Additional Spells" spellbook ' +
+          'section with its own tracked pool (default 1/long rest) — no slot, no use-dialog. Also ' +
+          'MIGRATES the old shape (on-spell use pool + forward activity) off the spell, and dedupes ' +
+          "dnd5e's cached spellbook copies. Idempotent. NEVER track a free cast as a separate " +
+          'tracker feat or as a forward on the spell.',
         inputSchema: toInputSchema(AddFreeCastSchema),
       },
     ];
@@ -91,7 +93,7 @@ export class DnD5eFreeCastTool {
   async handleAddFreeCast(args: any): Promise<any> {
     try {
       const parsed = AddFreeCastSchema.parse(args ?? {});
-      this.logger.info('Adding free cast to spell', {
+      this.logger.info('Adding free cast', {
         actorIdentifier: parsed.actorIdentifier,
         spellIdentifier: parsed.spellIdentifier,
         grantedBy: parsed.grantedBy,
@@ -108,12 +110,23 @@ export class DnD5eFreeCastTool {
   private formatResponse(result: any): any {
     const warns: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
     const verb = result?.activity?.reused ? 'Updated' : 'Added';
-    const summary = `✅ ${verb} free cast "${result?.activity?.name}" on "${result?.actor?.name}" (${result?.uses?.max ?? '?'}/${result?.uses?.recovery?.[0]?.period ?? '?'})`;
+    const period = result?.activity?.uses?.recovery?.[0]?.period ?? '?';
+    const summary =
+      `✅ ${verb} free cast "${result?.activity?.name}" on "${result?.actor?.name}" ` +
+      `(${result?.activity?.uses?.max ?? '?'}/${period}, on feature "${result?.feature?.name}")`;
+    const repertoire = result?.repertoire?.imported
+      ? `imported to the repertoire (always prepared)`
+      : result?.repertoire?.migrated
+        ? `already in the repertoire — old free-cast shape migrated off`
+        : `already in the repertoire (clean)`;
     const details = [
       `**Actor:** ${result?.actor?.name} (id: \`${result?.actor?.id}\`)`,
-      `**Spell:** ${result?.item?.name} (id: \`${result?.item?.id}\`)`,
-      `**Free-cast activity:** ${result?.activity?.name} (id: \`${result?.activity?.id}\`, forwards to \`${result?.activity?.targetActivityId}\`)`,
-      `**Uses:** ${result?.uses?.max} per ${result?.uses?.recovery?.[0]?.period ?? '?'}`,
+      `**Repertoire spell:** ${result?.repertoire?.name} (id: \`${result?.repertoire?.id}\`) — ${repertoire}`,
+      `**Feature:** ${result?.feature?.name} (id: \`${result?.feature?.id}\`)`,
+      `**Cast activity:** ${result?.activity?.name} (id: \`${result?.activity?.id}\`, ` +
+        `${result?.activity?.uses?.max} per ${period}, ${result?.activity?.activationType})`,
+      `**Additional Spells entry:** ${result?.additionalSpells?.name ?? '(mints on first use)'}` +
+        (result?.additionalSpells?.cachedId ? ` (id: \`${result.additionalSpells.cachedId}\`)` : ''),
     ].join('\n');
     const warningSection = warns.length
       ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
@@ -122,9 +135,11 @@ export class DnD5eFreeCastTool {
       summary,
       success: true,
       actor: result?.actor,
-      item: result?.item,
+      feature: result?.feature,
+      spell: result?.spell,
+      repertoire: result?.repertoire,
       activity: result?.activity,
-      uses: result?.uses,
+      additionalSpells: result?.additionalSpells,
       ...(warns.length ? { warnings: warns } : {}),
       message: `${summary}\n\n${details}${warningSection}`,
     };

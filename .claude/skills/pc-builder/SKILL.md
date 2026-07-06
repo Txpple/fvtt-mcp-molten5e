@@ -174,6 +174,11 @@ confirm spells. Pick the class's loadout for the level (e.g. a level-1 Wizard's 
 spells; more at higher levels); ask the player for signature picks. A name not in the books is reported
 in `warnings` — fix or ask, don't invent a spell.
 
+**Always-prepared house rule (policy rule 14):** for a KNOWN-style caster — **sorcerer, bard,
+ranger, warlock** — finish by setting EVERY spell on the sheet (cantrips + leveled) to *always
+prepared*: `update-actor-item` patch `{"system.prepared": 2}` per spell. No prepared-toggle state on
+known casters at this table. Prepared casters (cleric/druid/wizard/paladin) keep the normal toggle.
+
 ## Step 6 — Starting equipment + ASI-feats (your call, via `import-item` / `add-feature`)
 
 `create-pc` adds **no gear and no ASI-feats**. After the PC exists:
@@ -188,9 +193,12 @@ in `warnings` — fix or ask, don't invent a spell.
   or `import-item` for a feat-as-item. (Ability-increase ASIs are already in the final scores — don't
   re-apply them. The Origin feat from the background is granted automatically.)
 - **Feature-granted free casts** — when a feat/lineage grants "cast X without a spell slot N/rest"
-  (Magic Initiate, a lineage spell, Favored Enemy…), add the spell normally, then wire the free cast
-  ON the spell with **`add-free-cast`** (`grantedBy` = the feature name; default 1/long rest). Never
-  a separate tracker feat — shared policy rule 13 has the full shape + naming convention.
+  (Magic Initiate, a lineage spell, Favored Enemy…), one call to **`add-free-cast`** builds the whole
+  approved shape: the spell in the repertoire as a normal always-prepared entry (imported if absent)
+  PLUS a cast activity on the granting feature (`grantedBy` = the feature ITEM on the actor; default
+  1/long rest) that projects the "<Spell> - <Feature>" row into the sheet's native **Additional
+  Spells** section. Never a tracker feat, never a pool/forward on the spell itself — shared policy
+  rule 13 has the full shape + naming convention.
 
 ## Step 7 — Finishing pass
 

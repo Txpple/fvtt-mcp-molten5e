@@ -6,10 +6,10 @@
 //
 // Relocated here from actors.ts: activities are a dnd5e concept, so the orchestrator belongs in the
 // dnd5e domain next to its builder — not in the system-agnostic actor reads/writes file. It depends
-// only on the shared resolution helpers (_shared) + the pure builder (activities) + the
-// premium/SRD source policy (compendium-sources); no actors.ts coupling, no import cycle.
+// only on the shared resolution helpers (_shared) + the pure builder (activities) + the shared cast
+// plumbing (cast-spells: premium-only spell-link resolver + cached-copy settler); no actors.ts
+// coupling, no import cycle.
 
-import { isSrdPack } from '../../utils/compendium-sources.js';
 import {
   resolveActorFuzzy as resolveActor,
   resolveActorItem,
@@ -18,57 +18,7 @@ import {
   toSource,
 } from '../_shared.js';
 import { buildActivity } from './activities.js';
-
-/**
- * Resolve a spell uuid for a `cast` activity (the activity LINKS a real compendium spell — design.md
- * §2.3 / authoring-policy: an item's referenced spell is reached by COPYING a book spell, never by
- * hand-rolling a fake save/damage activity). Validates the link and returns the facts the pure
- * buildCastActivity needs (level / V·S·M components / name); it NEVER invents — an off-book or SRD
- * spell throws so the skill STOPs and ASKs instead of fabricating.
- */
-async function resolveCastSpell(
-  spellUuid: string | undefined
-): Promise<{ uuid: string; level: number; properties: string[]; name: string }> {
-  if (!spellUuid) {
-    throw new Error(
-      'A cast activity requires `spellUuid` — the Compendium uuid of the spell to link ' +
-        '(e.g. "Compendium.dnd-players-handbook.spells.Item.phbsplFireball00").'
-    );
-  }
-  const spell: any = await fromUuid(spellUuid);
-  if (!spell) {
-    throw new Error(
-      `Spell not found for uuid "${spellUuid}". A cast activity must LINK a real compendium spell ` +
-        '(mirror the Wand of Fireballs). If the spell is not in the premium books, STOP and ASK — ' +
-        'substitute a book spell, drop it, or get explicit homebrew permission; do not hand-roll a ' +
-        'fake save/damage activity to simulate an off-book spell (design.md §2.3).'
-    );
-  }
-  if (spell.documentName !== 'Item' || spell.type !== 'spell') {
-    throw new Error(
-      `uuid "${spellUuid}" resolves to a ${spell.documentName}/${spell.type ?? '?'}, not a spell.`
-    );
-  }
-  const packId: string = spell.pack ?? '';
-  if (isSrdPack(packId)) {
-    throw new Error(
-      `Refusing to link an SRD spell (pack "${packId}") into a cast activity — author from the ` +
-        'premium books only (design.md §2.3). Use the dnd-players-handbook.spells equivalent.'
-    );
-  }
-  const src = toSource(spell);
-  const rawProps = src?.system?.properties;
-  const allProps: string[] = Array.isArray(rawProps) ? rawProps : Array.from(rawProps ?? []);
-  // The cast activity carries only the V/S/M casting COMPONENTS (not concentration/ritual/etc).
-  const COMPONENTS = new Set(['vocal', 'somatic', 'material']);
-  const properties = allProps.filter(p => COMPONENTS.has(p));
-  return {
-    uuid: spellUuid,
-    level: typeof src?.system?.level === 'number' ? src.system.level : 0,
-    properties,
-    name: spell.name ?? 'Spell',
-  };
-}
+import { resolveCastSpell, settleCachedSpellCopies } from './cast-spells.js';
 
 /**
  * Add / edit / remove / list dnd5e Activities on an item — embedded on an actor (pass
@@ -93,6 +43,7 @@ export async function manageActivity(params: {
 
   // Resolve the item (embedded on an actor, or world-level) + the matching write path.
   let item: any;
+  let actorDoc: any = null;
   let actorRef: { id: string; name: string } | null = null;
   let applyUpdate: (data: Record<string, any>) => Promise<any>;
   if (params.actorIdentifier) {
@@ -100,6 +51,7 @@ export async function manageActivity(params: {
     if (!actor) throw new Error(`Actor not found: ${params.actorIdentifier}`);
     item = resolveActorItem(actor, itemIdentifier);
     if (!item) throw new Error(`Item "${itemIdentifier}" not found on actor "${actor.name}"`);
+    actorDoc = actor;
     actorRef = { id: actor.id, name: actor.name };
     applyUpdate = data => actor.updateEmbeddedDocuments('Item', [{ _id: item.id, ...data }]);
   } else {
@@ -129,21 +81,37 @@ export async function manageActivity(params: {
       const id = foundry.utils.randomID(16);
       const { type: _t, ...rest } = params.activity ?? {};
       // A cast activity LINKS a real compendium spell: resolve+validate it (off-book/SRD throws),
-      // then fill the facts the pure builder needs (cast level default, V/S/M components, name).
+      // then fill the facts the pure builder needs (cast level default, V/S/M components, name,
+      // the spell's own casting time). With charges on an item that has NO uses pool of its own
+      // (e.g. a feature), the pool goes ON the activity — an itemUses target pointing at an empty
+      // pool would silently never cast.
       if (type === 'cast') {
         const spell = await resolveCastSpell(rest.spellUuid);
         if (rest.level === undefined || rest.level === null) rest.level = spell.level;
         rest.spellProperties = spell.properties;
         if (!rest.name) rest.name = `Cast ${spell.name}`;
+        if (!rest.activationType) rest.activationType = spell.activationType;
+        if (rest.charges !== undefined && rest.charges !== null && !rest.usesOn) {
+          const parentMax = toSource(item).system?.uses?.max;
+          rest.usesOn = typeof parentMax === 'string' && parentMax !== '' ? 'item' : 'activity';
+        }
       }
       const act = buildActivity(type, { id, ...rest });
       await applyUpdate({ [`system.activities.${id}`]: act });
+      // Embedded cast: dnd5e async-mints the "Additional Spells" cached copy (and multi-mints
+      // under v14) — settle it to exactly one deterministically.
+      let cachedSpell: unknown;
+      if (type === 'cast' && actorDoc) {
+        const liveItem = actorDoc.items?.get?.(item.id) ?? item;
+        cachedSpell = await settleCachedSpellCopies(actorDoc, liveItem, id);
+      }
       return {
         ...base,
         action: 'add',
         activityId: id,
         type,
         ...(type === 'cast' ? { spell: rest.spellUuid } : {}),
+        ...(cachedSpell ? { cachedSpell } : {}),
       };
     }
 

@@ -142,7 +142,19 @@ const ManageActivitySchema = z.object({
     .int()
     .min(1)
     .optional()
-    .describe('Cast activity: item charges (uses) consumed per cast. Omit for an at-will cast.'),
+    .describe(
+      'Cast activity: uses per cast. On an item with its own uses pool (a wand) this many charges ' +
+        'are consumed FROM that pool per cast; on an item WITHOUT one (e.g. a feature) a pool of ' +
+        'this size is created ON the activity (recovering per recoveryPeriod), one use per cast. ' +
+        'Omit for an at-will cast.'
+    ),
+  recoveryPeriod: z
+    .enum(['lr', 'sr', 'day', 'dawn', 'dusk'])
+    .optional()
+    .describe(
+      'Cast activity with charges on a poolless item: when the activity-side pool recovers. ' +
+        'Default "lr" (long rest).'
+    ),
 
   // edit
   patch: z
@@ -258,10 +270,12 @@ export class DnD5eManageActivityTool {
         checkAbility: parsed.checkAbility,
         checkDC: parsed.checkDC,
         skills: parsed.skills,
-        // cast — the page resolves spellUuid -> level default + V/S/M components + name
+        // cast — the page resolves spellUuid -> level default + V/S/M components + name +
+        // activation, and decides item-pool vs activity-pool consumption from the parent's uses.
         spellUuid: parsed.spellUuid,
         level: parsed.castLevel,
         charges: parsed.charges,
+        recoveryPeriod: parsed.recoveryPeriod,
       };
 
       this.logger.info('manage-activity', {

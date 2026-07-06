@@ -91,17 +91,32 @@
     is the classic trap: keep the item's own text innocuous and put the intent in a GM note elsewhere.
     (Same spirit as rule 7's no-fudge note, but about SECRECY leaking to players, not mechanics.)
 
-13. **Feature-granted FREE CASTS live ON the spell — use `add-free-cast`, never a tracker feat.** When
-    a feat/feature lets an actor cast a spell **without a spell slot N times per rest** — Magic
-    Initiate, a 2024 lineage grant (Gnomish/Elven Lineage), Favored Enemy, a magic item's "cast X
-    1/day" — the tracking goes on the **spell entry itself**: a use pool on the spell plus a free-cast
-    option in its Spells-tab row (this is how the premium PHB Hunter's Mark ships). The
-    `add-free-cast` tool wires the whole shape in one call — pass the spell, `grantedBy` (the granting
-    feature's name), `uses` (a number or a `@scale.*` formula), and the recovery period (default long
-    rest, the 2024 wording). The free-cast option is named **`<Spell Name> - <granting feature>`**
-    (e.g. *"Bless - Magic Initiate"*, *"Hunter's Mark - Favored Enemy"*) — keep that convention. Do
-    **NOT** create a separate Features-tab feat item to track the daily use (a "<Spell> — Free Cast"
-    feat is the forbidden shape): it splits one castable thing across two tabs and drifts from the
-    sheet the player actually plays from. If a premium compendium spell already ships the pattern
-    (Hunter's Mark does), keep it — `add-free-cast` is idempotent and updates it in place rather than
-    duplicating.
+13. **Feature-granted FREE CASTS = TWO entries: a normal repertoire spell + a cast activity ON the
+    granting feature — use `add-free-cast`, never a tracker feat, never a forward on the spell.**
+    (Owner-revised 2026-07-05; supersedes the earlier forward-on-the-spell shape.) When a
+    feat/feature lets an actor cast a spell **without a spell slot N times per rest** — Magic
+    Initiate, a 2024 lineage grant, Favored Enemy, a magic item's "cast X 1/day" — the sheet gets:
+    1. **The repertoire copy** — the spell as a normal **always-prepared** entry (rule 14), castable
+       with slots like any other spell. No pools, no extra activities, no use-dialog on click.
+    2. **The free cast** — a `cast` activity **on the granting feature item**, linking the premium
+       compendium spell, with its own uses pool on the activity (default 1/long rest — the 2024
+       wording). dnd5e then projects a cached entry into the sheet's **native "Additional Spells"
+       spellbook section**, titled **`<Spell Name> - <granting feature>`** (e.g. *"Bless - Magic
+       Initiate"*, *"Hunter's Mark - Favored Enemy"*), whose row counter tracks the pool and whose
+       cast never eats a slot.
+    The `add-free-cast` tool wires the whole shape in one call — pass the spell (embedded name/id or
+    a premium compendium uuid to import it), `grantedBy` (the granting feature ITEM on the actor),
+    `uses` (a number or a `@scale.*` formula), and the recovery period. It also MIGRATES the old
+    shape off the spell (on-spell pools + `forward` activities — including the premium Hunter's
+    Mark's native forward) and dedupes dnd5e's cached spellbook copies. Do **NOT** create a separate
+    Features-tab feat item to track the daily use, and do **NOT** put the pool/forward on the spell
+    entry (the pre-2026-07-05 shape): both were tried and rejected at this table — the one castable
+    thing must read as a regular spell plus one separately-tracked Additional Spells row.
+
+14. **Known casters' spells are ALWAYS PREPARED — cantrips and leveled spells, `prepared: 2`.**
+    (Owner house rule, 2026-07-05.) For the 2024 "known"-style casters who swap spells only on
+    level-up — **sorcerer, bard, ranger, warlock** — every spell on the sheet is set to *always
+    prepared* (`system.prepared: 2`), cantrips included: no prepared-toggle state, no unprepared
+    spells lingering in the book. Feature-granted spells (rule 13's repertoire copies, subclass
+    always-prepared lists) are `prepared: 2` for everyone. Prepared casters (cleric, druid, wizard,
+    paladin) keep the normal prepare/unprepare toggle for their class list.

@@ -1,7 +1,7 @@
 /**
  * Unit tests for the add-free-cast tool: schema validation, forwarding to the addFreeCast bridge
- * call, and response shaping. The page-side buildFreeCastUpdate correctness is covered by
- * src/page/dnd5e/free-cast.test.ts + the live acceptance script.
+ * call, and response shaping. The page-side planners (buildFreeCastActivityPlan /
+ * buildRepertoireCleanup) are covered by src/page/dnd5e/free-cast.test.ts + the live verify script.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -12,14 +12,26 @@ function makeTool(response: any = {}) {
   const { foundry, calls } = makeFoundry(() => ({
     success: true,
     actor: { id: 'a1', name: 'Gren' },
-    item: { id: 'i1', name: 'Bless', type: 'spell' },
-    activity: {
-      id: 'fwd1234567890abc',
-      name: 'Bless - Magic Initiate',
-      targetActivityId: 'dnd5eactivity000',
-      reused: false,
+    feature: { id: 'f1', name: 'Magic Initiate' },
+    spell: {
+      uuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplBless00000',
+      name: 'Bless',
+      level: 1,
     },
-    uses: { max: '1', recovery: [{ period: 'lr', type: 'recoverAll' }] },
+    repertoire: { id: 'i1', name: 'Bless', imported: false, migrated: true },
+    activity: {
+      id: 'castActivity0000',
+      name: 'Bless - Magic Initiate',
+      reused: false,
+      uses: { max: '1', recovery: [{ period: 'lr', type: 'recoverAll' }] },
+      activationType: 'action',
+    },
+    additionalSpells: {
+      cachedId: 'cached0000000000',
+      name: 'Bless - Magic Initiate',
+      mintedBy: 'system',
+      removedDuplicates: 2,
+    },
     warnings: [],
     ...response,
   }));
@@ -37,6 +49,9 @@ describe('add-free-cast tool definition', () => {
       'spellIdentifier',
       'grantedBy',
     ]);
+    // The native shape: repertoire + Additional Spells, never a tracker feat / on-spell forward.
+    expect(def.description).toContain('Additional Spells');
+    expect(def.description).toContain('ALWAYS-PREPARED');
   });
 });
 
@@ -60,7 +75,7 @@ describe('handleAddFreeCast', () => {
     });
   });
 
-  it('shapes the success response with the convention-named activity', async () => {
+  it('shapes the success response: feature, repertoire state, and the Additional Spells entry', async () => {
     const { tool } = makeTool();
     const res = await tool.handleAddFreeCast({
       actorIdentifier: 'Gren',
@@ -69,19 +84,24 @@ describe('handleAddFreeCast', () => {
     });
     expect(res.success).toBe(true);
     expect(res.summary).toContain('Bless - Magic Initiate');
+    expect(res.summary).toContain('on feature "Magic Initiate"');
     expect(res.message).toContain('1 per lr');
+    expect(res.message).toContain('old free-cast shape migrated off');
+    expect(res.message).toContain('Additional Spells entry');
+    expect(res.additionalSpells?.cachedId).toBe('cached0000000000');
   });
 
   it('says "Updated" and surfaces warnings on an idempotent re-run', async () => {
     const { tool } = makeTool({
       activity: {
-        id: 'fwd1234567890abc',
+        id: 'castActivity0000',
         name: 'Bless - Magic Initiate',
-        targetActivityId: 'dnd5eactivity000',
         reused: true,
+        uses: { max: '1', recovery: [{ period: 'lr', type: 'recoverAll' }] },
+        activationType: 'action',
       },
       warnings: [
-        'Spell already had a free-cast forward ("Bless - Magic Initiate") — updated it in place',
+        '"Magic Initiate" already had a free-cast activity for this spell — rebuilt it in place',
       ],
     });
     const res = await tool.handleAddFreeCast({
@@ -90,7 +110,7 @@ describe('handleAddFreeCast', () => {
       grantedBy: 'Magic Initiate',
     });
     expect(res.summary).toContain('Updated');
-    expect(res.warnings?.[0]).toContain('updated it in place');
+    expect(res.warnings?.[0]).toContain('rebuilt it in place');
   });
 
   it('accepts a formula uses string', async () => {
