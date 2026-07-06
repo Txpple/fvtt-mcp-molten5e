@@ -127,7 +127,8 @@ This is the architectural backbone that makes principle #1 real.
 | | Tables (roll tables) | 1 | ✅ done (`table-builder`; v14 results + `@UUID` loot + import) |
 | | Playable cards | 1 | ✅ done (`cards-builder`; face text + preset import) |
 | | Playlists | 1 | ✅ done (`playlist-builder`; scene-builder delegates) |
-| **DM session assistance** | Chat messages & integration | 2 | ◻️ partial (chat tools exist) |
+| **DM session assistance** | **Event bridge** — live world → Claude (`wait-for-events`) | 2 | ⛔ not started (§8.1 — build first) |
+| | Chat messages & integration | 2 | ◻️ partial (chat tools exist) |
 | | Export chats | 2 | ◻️ partial (`export-chat-log`) |
 | | Audio → text (Craig AI + Whisper) | 2 | ⛔ not started |
 | | Session + audio → summaries / logs | 2 | ⛔ not started |
@@ -286,13 +287,62 @@ When Phase 1 is where we want it, this is next. Captured here so we plumb toward
 corner.
 
 - **Chat integration** — read and post to the Foundry chat log; monitor a live session and interject
-  with narration, NPC dialogue, GM whispers, roll requests, item/attack cards.
+  with narration, NPC dialogue, GM whispers, roll requests, item/attack cards. Live monitoring rides
+  the **event bridge** (§8.1), never polling.
 - **Export** — capture the session transcript (`export-chat-log` is the seed of this).
 - **Audio capture & transcription** — ingest **Craig** (Discord) recordings and run **Whisper**
   speech-to-text to get a spoken transcript alongside the chat transcript.
 - **Summaries & logs** — fuse the chat transcript and the Craig/Whisper audio transcript into session
   recaps and ongoing campaign logs, **authored as journals** (the §5 building block): Phase 1 builds
   the journal capability, Phase 2 writes session output into it.
+
+### 8.1 The event bridge — how the live world reaches Claude
+
+Live assistance means the world **pushes** to Claude, not Claude polling the world. This
+architecture is binding for Phase 2, and it splits on §3 exactly.
+
+**Ground truth (why this shape).** The Foundry server broadcasts every document change — chat
+message, combat turn, token move, actor update — over its websocket to **every connected client**,
+and each client fires local `Hooks` events as those land. Our headless bridge **is a logged-in
+client**, so it already receives the entire live feed in real time; we only have to listen. Foundry
+has no server-side plugin API (and Molten would not permit one), so a listening client is not a
+workaround — it is the only correct architecture. **No module is required for the event feed.**
+
+**The tool side (deterministic).**
+
+- A page-side listener (`src/page/**`) subscribes a curated hook set (chat, combat, token/scene
+  activity, user connect/disconnect) and normalizes each firing into a compact envelope:
+  `{seq, ts, type, userId, sceneId, payload}`. It records; it never judges relevance.
+- Playwright's `exposeBinding` delivers each envelope to the Node process the instant the hook
+  fires — genuine push, zero polling.
+- Node keeps a bounded ring buffer with a monotonic cursor.
+- One new tool, **`wait-for-events`**, exposes the buffer as a long-poll contract:
+  `{since, filter, timeoutMs}` → returns immediately if matching events are buffered, otherwise
+  blocks until the first match or the timeout (then returns an empty batch). Every response carries
+  the next cursor; if `since` has fallen off the buffer, the response **says so explicitly** —
+  events are never silently dropped. The contract is deterministic and unit-testable like any other
+  tool.
+
+MCP is client-driven — a server cannot spontaneously prompt Claude. The long-poll is what makes push
+effective anyway: while a `wait-for-events` call is outstanding, reaction latency is the hook
+firing.
+
+**The skill side (judgment).** A `session-assist` skill owns the loop: call `wait-for-events`,
+judge, act through the existing tools, repeat. All discretion lives here — which event types to
+subscribe, when to interject versus stay silent, the voice and visibility of each interjection (GM
+whisper vs. table-visible), when chat assistance escalates into running the monsters' combat turns,
+and when the session is over. The tool never decides that an event is "interesting"; the skill never
+re-implements delivery.
+
+**The companion module (separate, later).** A published module (an `openserver` sibling, outside
+this repo) adds the human-facing half the broadcast cannot carry: UI on the players'/GM's clients
+(an "ask" button, suggestion panels, a "Claude is thinking" indicator) and a module socket channel
+(`game.socket`) for events that aren't document CRUD. Its emissions arrive at the bridge client and
+enter the same envelope pipe. This document fixes only that contract; the module is never a
+prerequisite for the feed.
+
+**Build order.** The listener + `wait-for-events` land first — pure this-repo work, and they alone
+unlock live chat monitoring and the combat loop. The module follows as the player-facing face.
 
 ---
 
