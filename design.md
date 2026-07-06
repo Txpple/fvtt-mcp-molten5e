@@ -360,7 +360,8 @@ This is *how* the contract in §3 is realized today. (Mechanism, not mission —
 - **Skills ship in-repo.** `.claude/skills/**` is a tracked deliverable, committed alongside the
   tools. Current skills: `start-session`, `scene-builder`, `stat-block-builder`,
   `physical-item-builder`, `pc-builder`, `ddb-import`, `journal-builder`, `table-builder`,
-  `cards-builder`, `playlist-builder`, `chat-and-narration`, `tom-cartos-import`.
+  `cards-builder`, `playlist-builder`, `chat-and-narration`, `tom-cartos-import`, `token-cutout`,
+  `plot-drift-check`.
 - **Target stack.** Foundry v14, dnd5e 5.3.3, Molten Hosting. D&D-5e-only by design.
 - **Quality gate.** biome · `tsc --noEmit` · vitest · build · knip, all green before any commit. No
   pre-commit hook — run `biome check --write .` manually.
