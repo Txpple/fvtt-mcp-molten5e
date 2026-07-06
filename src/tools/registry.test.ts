@@ -56,7 +56,10 @@ describe('tool registry', () => {
     // + place-tokens + delete-tokens (placed-token lifecycle; update-token stays bespoke)
     // + list-folders (the folder-tree read/inspect step the write tools were missing)
     // + list-users + update-user (user-account admin: roster read + role/name/color/character)
-    // + add-free-cast (feature-granted free casting lives ON the spell — the HM pattern)
+    // + add-free-cast (feature-granted free cast → cast activity ON the feature + repertoire copy;
+    //   projects the native "Additional Spells" spellbook entry)
+    // (update-world was built and DROPPED 2026-07-06: /setup editWorld needs a role-4 bridge
+    //  user and Claude deliberately stays ASSISTANT — see src/page/world.ts header.)
     expect(names.length).toBe(133);
   });
 

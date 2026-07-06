@@ -381,7 +381,12 @@ export class SceneTools {
       },
       {
         name: 'get-world-info',
-        description: 'Get basic information about the Foundry world and system',
+        description:
+          'Get basic information about the Foundry world and system, including the world ' +
+          'description (HTML) and join-page background path. READ-ONLY: world metadata has no ' +
+          'write tool (the /setup editWorld route needs a role-4 GAMEMASTER session; the bridge ' +
+          'user is deliberately an ASSISTANT) — hand edits go through the in-app "Edit World" ' +
+          'dialog.',
         inputSchema: toInputSchema(GetWorldInfoSchema),
       },
       {
@@ -723,6 +728,8 @@ export class SceneTools {
     return {
       id: worldData.id,
       title: worldData.title,
+      description: worldData.description ?? '',
+      background: worldData.background ?? null,
       system: {
         id: worldData.system,
         version: worldData.systemVersion,

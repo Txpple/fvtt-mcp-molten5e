@@ -241,6 +241,24 @@ describe('handleGetWorldInfo', () => {
       'Failed to get world information: bridge down'
     );
   });
+
+  it('passes through description and background (world metadata is read-only)', async () => {
+    const { tools } = build({
+      ...worldData,
+      description: '<p>hook</p>',
+      background: 'assets/join-bg.webp',
+    });
+    const out = await tools.handleGetWorldInfo({});
+    expect(out.description).toBe('<p>hook</p>');
+    expect(out.background).toBe('assets/join-bg.webp');
+  });
+
+  it('defaults description/background when the bridge omits them', async () => {
+    const { tools } = build({ id: 'w', title: 't', system: 'dnd5e' });
+    const out = await tools.handleGetWorldInfo({});
+    expect(out.description).toBe('');
+    expect(out.background).toBeNull();
+  });
 });
 
 describe('handleCreateScene', () => {
