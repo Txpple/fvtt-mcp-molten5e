@@ -177,7 +177,7 @@ describe('buildRepertoireCleanup', () => {
     expect(cleanup.warnings.length).toBe(2); // forwards + pool (prepared raise is silent)
   });
 
-  it('strips the premium native forward too (Hunter\'s Mark converts like everything else)', () => {
+  it("strips the premium native forward too (Hunter's Mark converts like everything else)", () => {
     const hm = {
       name: "Hunter's Mark",
       type: 'spell',

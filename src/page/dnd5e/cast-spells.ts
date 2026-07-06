@@ -241,7 +241,13 @@ export async function settleCachedSpellCopies(
     );
   }
   if (!keep) {
-    return { cachedId: null, cachedName: null, mintedBy, removedDuplicates: removedTotal, warnings };
+    return {
+      cachedId: null,
+      cachedName: null,
+      mintedBy,
+      removedDuplicates: removedTotal,
+      warnings,
+    };
   }
   const kept = actor.items?.get?.(keep.id) ?? keep;
   return {

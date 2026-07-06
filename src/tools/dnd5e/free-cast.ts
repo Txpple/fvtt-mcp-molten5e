@@ -126,7 +126,9 @@ export class DnD5eFreeCastTool {
       `**Cast activity:** ${result?.activity?.name} (id: \`${result?.activity?.id}\`, ` +
         `${result?.activity?.uses?.max} per ${period}, ${result?.activity?.activationType})`,
       `**Additional Spells entry:** ${result?.additionalSpells?.name ?? '(mints on first use)'}` +
-        (result?.additionalSpells?.cachedId ? ` (id: \`${result.additionalSpells.cachedId}\`)` : ''),
+        (result?.additionalSpells?.cachedId
+          ? ` (id: \`${result.additionalSpells.cachedId}\`)`
+          : ''),
     ].join('\n');
     const warningSection = warns.length
       ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`

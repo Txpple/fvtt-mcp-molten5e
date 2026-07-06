@@ -234,10 +234,10 @@ export async function addFreeCast(params: {
     throw new Error(
       embedded
         ? `Spell "${embedded.name}" on "${actor.name}" has no compendium source and no premium-pack ` +
-          'name match to link — pass the premium compendium uuid ' +
-          '(e.g. "Compendium.dnd-players-handbook.spells.Item.…") as spellIdentifier instead.'
+            'name match to link — pass the premium compendium uuid ' +
+            '(e.g. "Compendium.dnd-players-handbook.spells.Item.…") as spellIdentifier instead.'
         : `Spell "${spellIdentifier}" not found on "${actor.name}" — pass an embedded spell ` +
-          '(name/id) or a premium compendium uuid to import it into the repertoire.'
+            '(name/id) or a premium compendium uuid to import it into the repertoire.'
     );
   }
   const facts = await resolveCastSpell(uuid);

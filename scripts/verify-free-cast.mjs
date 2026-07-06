@@ -117,21 +117,24 @@ try {
   // Recreate the OLD shape by hand so migration has something to strip.
   await f.evaluate(
     ({ id, itemId }) =>
-      game.actors.get(id).items.get(itemId).update({
-        'system.uses': { max: '1', spent: 0, recovery: [{ period: 'lr', type: 'recoverAll' }] },
-        'system.prepared': 1,
-        'system.activities.oldForward000000': {
-          _id: 'oldForward000000',
-          type: 'forward',
-          name: 'Bless - Magic Initiate',
-          activity: { id: 'dnd5eactivity000' },
-          consumption: {
-            targets: [{ type: 'itemUses', target: '', value: '1', scaling: {} }],
-            scaling: { allowed: false },
-            spellSlot: true,
+      game.actors
+        .get(id)
+        .items.get(itemId)
+        .update({
+          'system.uses': { max: '1', spent: 0, recovery: [{ period: 'lr', type: 'recoverAll' }] },
+          'system.prepared': 1,
+          'system.activities.oldForward000000': {
+            _id: 'oldForward000000',
+            type: 'forward',
+            name: 'Bless - Magic Initiate',
+            activity: { id: 'dnd5eactivity000' },
+            consumption: {
+              targets: [{ type: 'itemUses', target: '', value: '1', scaling: {} }],
+              scaling: { allowed: false },
+              spellSlot: true,
+            },
           },
-        },
-      }),
+        }),
     { id: actorId, itemId: bless.id }
   );
 
@@ -167,10 +170,7 @@ try {
 
   let copies = await CACHED_COPIES(actorId, fa1.featureId, r1.activity.id);
   assert(copies.length === 1, `exactly ONE cached Additional-Spells copy (${copies.length})`);
-  assert(
-    copies[0]?.name === 'Bless - Magic Initiate',
-    `cached copy titled "${copies[0]?.name}"`
-  );
+  assert(copies[0]?.name === 'Bless - Magic Initiate', `cached copy titled "${copies[0]?.name}"`);
 
   console.log('\n# 2) idempotent re-run — same activity, pool re-pointed, spent survives');
   await f.evaluate(
@@ -264,7 +264,9 @@ if (RUN_JETTEN) {
       grantedBy: 'Magic Initiate',
     });
     assert(rHW.success === true, 'Jetten Healing Word ← Magic Initiate succeeded');
-    console.log(`    repertoire migrated=${rHW.repertoire?.migrated}; warnings: ${(rHW.warnings ?? []).join(' | ') || '(none)'}`);
+    console.log(
+      `    repertoire migrated=${rHW.repertoire?.migrated}; warnings: ${(rHW.warnings ?? []).join(' | ') || '(none)'}`
+    );
     let jc = await CACHED_COPIES('ynipTDamO8lCYI80', rHW.feature.id, rHW.activity.id);
     assert(
       jc.length === 1 && jc[0]?.name === 'Healing Word - Magic Initiate',
@@ -286,7 +288,9 @@ if (RUN_JETTEN) {
         uses: '@scale.ranger.favored-enemy',
       });
       assert(rHM.success === true, "Jetten Hunter's Mark ← Favored Enemy succeeded");
-      console.log(`    repertoire migrated=${rHM.repertoire?.migrated}; warnings: ${(rHM.warnings ?? []).join(' | ') || '(none)'}`);
+      console.log(
+        `    repertoire migrated=${rHM.repertoire?.migrated}; warnings: ${(rHM.warnings ?? []).join(' | ') || '(none)'}`
+      );
       jc = await CACHED_COPIES('ynipTDamO8lCYI80', rHM.feature.id, rHM.activity.id);
       assert(
         jc.length === 1 && jc[0]?.name === "Hunter's Mark - Favored Enemy",
