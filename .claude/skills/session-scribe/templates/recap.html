@@ -1,0 +1,71 @@
+<!-- session-scribe player recap — email-safe (inline styles, table layout, system fonts).
+     Fill every {{PLACEHOLDER}}; body sections use the .section block pattern below.
+     PLAYER-SAFE BY CONSTRUCTION: nothing from gm-notes.md may appear here. -->
+<div style="margin:0;padding:24px 8px;background-color:#f4f1ea;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
+         style="max-width:640px;width:100%;margin:0 auto;background-color:#fffdf8;border:1px solid #d8cfc0;border-radius:8px;">
+    <tr>
+      <td style="padding:28px 32px 8px 32px;border-bottom:3px double #b3a284;">
+        <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8a7a5c;">
+          {{CAMPAIGN_NAME}} &mdash; Session {{SESSION_NO}}
+        </p>
+        <h1 style="margin:6px 0 4px 0;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;color:#3d3225;">
+          {{SESSION_TITLE}}
+        </h1>
+        <p style="margin:0 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8a7a5c;">
+          {{SESSION_DATE}}
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:20px 32px 4px 32px;">
+        <p style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;font-style:italic;">
+          {{TLDR_ONE_PARAGRAPH}}
+        </p>
+      </td>
+    </tr>
+    <!-- Repeat this section block per story beat -->
+    <tr>
+      <td style="padding:4px 32px;">
+        <h2 style="margin:14px 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#6b5535;border-bottom:1px solid #e2d9c8;padding-bottom:4px;">
+          {{SECTION_HEADING}}
+        </h2>
+        <p style="margin:0 0 12px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;">
+          {{SECTION_PROSE}}
+        </p>
+      </td>
+    </tr>
+    <!-- End repeated block -->
+    <tr>
+      <td style="padding:8px 32px 4px 32px;">
+        <h2 style="margin:14px 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#6b5535;border-bottom:1px solid #e2d9c8;padding-bottom:4px;">
+          Spoils &amp; Progress
+        </h2>
+        <ul style="margin:0 0 12px 0;padding-left:22px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;">
+          {{LOOT_AND_LEVELS_LI_ITEMS}}
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:4px 32px 24px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+               style="background-color:#f2ead9;border-left:4px solid #b3a284;border-radius:4px;">
+          <tr>
+            <td style="padding:12px 16px;">
+              <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:14px;line-height:1.6;color:#5d4e38;">
+                <strong>Next time:</strong> {{NEXT_SESSION_TEASER}}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:12px 32px 20px 32px;border-top:1px solid #e2d9c8;">
+        <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#9c8f78;">
+          Recorded at the table &mdash; transcribed &amp; chronicled by the party scribe.
+        </p>
+      </td>
+    </tr>
+  </table>
+</div>
