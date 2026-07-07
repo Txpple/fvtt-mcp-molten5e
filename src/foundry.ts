@@ -60,7 +60,11 @@ export interface FoundryConfig {
   worldId?: string;
   /** Run Chromium headless (default true). */
   headless?: boolean;
-  /** Ms to wait for game.ready after submitting the join form (default 120000). */
+  /**
+   * Ms to wait for game.ready after submitting the join form (default 300000). The heavy dnd5e
+   * world has taken 200s+ to reach game.ready on a freshly-woken Molten box (cold disk cache,
+   * measured live 2026-07-07) — 120s was not enough.
+   */
   readyTimeoutMs?: number;
   /** Overall budget to bring a cold box up (wake + optional launch) before joining (default 600000). */
   wakeTimeoutMs?: number;
@@ -119,7 +123,7 @@ export class Foundry implements FoundryBridge {
     this.context ??= await this.browser.newContext({ viewport: { width: 1920, height: 1080 } });
 
     this.page = await this.context.newPage();
-    this.page.setDefaultTimeout(this.cfg.readyTimeoutMs ?? 120_000);
+    this.page.setDefaultTimeout(this.readyTimeout);
 
     await this.wake();
     await this.ensureWorldReady(this.page);
@@ -207,23 +211,29 @@ export class Foundry implements FoundryBridge {
     } catch {
       return 'booting'; // connection refused / nav error -> VM still coming up
     }
-    // The user <select> is client-rendered after the world loads; give it a brief chance.
-    const hasForm = await page
-      .waitForSelector('select[name="userid"]', { timeout: 8_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (hasForm) return 'joinable';
-    // No form: distinguish "VM up, no world active" (Foundry's themed "Critical Failure!" /
-    // "no active game session" page) from a world still booting (its own splash). Check BOTH
-    // body text and title, so detection doesn't hinge on body innerText being populated.
-    const { bodyText, title } = await page
-      .evaluate(() => ({ bodyText: document.body?.innerText ?? '', title: document.title ?? '' }))
-      .catch(() => ({ bodyText: '', title: '' }));
-    if (
-      /no active game session|configure the world/i.test(bodyText) ||
-      /critical failure/i.test(title)
-    )
-      return 'no-world';
+    // The user <select> is client-rendered once world data arrives over the socket — on a
+    // slow Molten box that render takes 9s+ after domcontentloaded (measured live 2026-07-07),
+    // so poll a real window rather than one short wait. Each pass also checks for the
+    // "VM up, no world active" page (Foundry's themed "Critical Failure!" / "no active game
+    // session"), which needs no world data and is therefore detected fast. Check BOTH body
+    // text and title, so detection doesn't hinge on body innerText being populated.
+    const probeDeadline = Date.now() + 30_000;
+    while (Date.now() < probeDeadline) {
+      const hasForm = await page
+        .locator('select[name="userid"]')
+        .count()
+        .catch(() => 0);
+      if (hasForm > 0) return 'joinable';
+      const { bodyText, title } = await page
+        .evaluate(() => ({ bodyText: document.body?.innerText ?? '', title: document.title ?? '' }))
+        .catch(() => ({ bodyText: '', title: '' }));
+      if (
+        /no active game session|configure the world/i.test(bodyText) ||
+        /critical failure/i.test(title)
+      )
+        return 'no-world';
+      await page.waitForTimeout(1_000);
+    }
     return 'booting';
   }
 
@@ -296,6 +306,10 @@ export class Foundry implements FoundryBridge {
     return this.cfg.serverUrl.replace(/\/$/, '');
   }
 
+  private get readyTimeout(): number {
+    return this.cfg.readyTimeoutMs ?? 300_000;
+  }
+
   /** Navigate to /join, select the user (force-enabling a stale-active option), submit, await ready. */
   private async joinWorld(page: Page): Promise<void> {
     // The user <select> is rendered by Foundry's client JS AFTER it finishes loading the
@@ -348,7 +362,7 @@ export class Foundry implements FoundryBridge {
 
     await page.locator('button[name="join"], button[type="submit"]').first().click();
 
-    const timeout = this.cfg.readyTimeoutMs ?? 120_000;
+    const timeout = this.readyTimeout;
     const outcome = await Promise.race([
       page
         .waitForFunction(
