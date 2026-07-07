@@ -62,8 +62,9 @@ export interface FoundryConfig {
   headless?: boolean;
   /**
    * Ms to wait for game.ready after submitting the join form (default 300000). The heavy dnd5e
-   * world has taken 200s+ to reach game.ready on a freshly-woken Molten box (cold disk cache,
-   * measured live 2026-07-07) — 120s was not enough.
+   * world has taken 200s+ to reach game.ready over a slow client link (measured live 2026-07-07,
+   * airplane wifi on the travel box) — 120s was not enough. The travel box regularly runs on bad
+   * networks, so the defaults must absorb link slowness, not just box slowness.
    */
   readyTimeoutMs?: number;
   /** Overall budget to bring a cold box up (wake + optional launch) before joining (default 600000). */
@@ -211,9 +212,9 @@ export class Foundry implements FoundryBridge {
     } catch {
       return 'booting'; // connection refused / nav error -> VM still coming up
     }
-    // The user <select> is client-rendered once world data arrives over the socket — on a
-    // slow Molten box that render takes 9s+ after domcontentloaded (measured live 2026-07-07),
-    // so poll a real window rather than one short wait. Each pass also checks for the
+    // The user <select> is client-rendered once world data arrives over the socket — over a
+    // slow client link that render takes 9s+ after domcontentloaded (measured live 2026-07-07,
+    // airplane wifi), so poll a real window rather than one short wait. Each pass also checks for the
     // "VM up, no world active" page (Foundry's themed "Critical Failure!" / "no active game
     // session"), which needs no world data and is therefore detected fast. Check BOTH body
     // text and title, so detection doesn't hinge on body innerText being populated.
