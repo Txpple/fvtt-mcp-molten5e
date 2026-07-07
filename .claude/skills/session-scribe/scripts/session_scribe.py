@@ -10,14 +10,19 @@ Subcommands (run with the ~/.session-scribe venv python):
 The Craig download key is used in-memory only and never written to disk (craig-info.json is
 sanitized) — session dirs get committed to the campaign repo.
 
-Craig API contract (mapped from CraigChat/craig @ master, 2026-07):
-  GET  {base}/api/recording/{id}?key=          -> { info: { startTime, ... } }
-  GET  {base}/api/recording/{id}/users?key=    -> { users: [{ id, name, discrim }] }   (track order)
-  GET  {base}/api/recording/{id}/duration?key= -> { duration }                          (seconds)
-  GET  {base}/api/recording/{id}/notes?key=    -> { notes }                             (/note markers)
-  POST {base}/api/recording/{id}/cook?key=     body {format, container, dynaudnorm}     (start cook)
-  GET  {base}/api/recording/{id}/cook?key=     -> { ready, download: { file } }         (poll)
-  GET  {base}/dl/{file}                        -> the cooked archive
+Craig API contract — "ferret" download page (CraigChat/craig apps/ferret, deployed on
+craig.horse, verified live 2026-07-06):
+  GET  {base}/api/v1/recordings/{id}?key=          -> { recording: { startTime, expiresAfter,
+                                                       guild, channel }, users: [{track,
+                                                       username, globalName}], live }
+  GET  {base}/api/v1/recordings/{id}/duration?key= -> { duration }                     (seconds)
+  POST {base}/api/v1/recordings/{id}/job?key=      body {"type":"recording","options":
+                                                       {"format":"flac","container":"zip"}}
+                                                     (400 JOB_ALREADY_EXISTS -> just poll)
+  GET  {base}/api/v1/recordings/{id}/job?key=      -> { job: { status, state, outputFileName,
+                                                       outputSize } | null }           (poll)
+  GET  {base}/dl/{outputFileName}                  -> the cooked archive
+Legacy pages (pre-ferret) used /api/recording/{id} + /cook — kept as a fallback.
 """
 
 import argparse
@@ -91,20 +96,89 @@ def _request(url: str, data: bytes | None = None, headers: dict | None = None):
     return urllib.request.urlopen(req, timeout=120)
 
 
-def api_json(url: str, payload: dict | None = None) -> dict:
+def api_json(url: str, payload: dict | None = None, tolerate: tuple = ()) -> dict:
     data = json.dumps(payload).encode() if payload is not None else None
     headers = {"Content-Type": "application/json"} if payload is not None else {}
     try:
         with _request(url, data, headers) as r:
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
+        if e.code in tolerate:
+            try:
+                return json.loads(e.read().decode())
+            except Exception:
+                return {"_httpError": e.code}
         if e.code in (404, 410):
             raise SystemExit(
-                f"Recording not found or expired (HTTP {e.code}). Craig keeps recordings 7 days."
+                f"Recording not found or expired (HTTP {e.code} at {url.split('?')[0]}). "
+                "Craig keeps recordings ~7 days."
             )
-        if e.code == 403:
-            raise SystemExit("Craig rejected the key (HTTP 403) — re-check the pasted link.")
+        if e.code in (401, 403):
+            raise SystemExit(f"Craig rejected the key (HTTP {e.code}) — re-check the pasted link.")
         raise
+
+
+def fetch_metadata(base: str, rec_id: str, key: str) -> tuple[dict, list, float, object]:
+    """Return (info, users, duration, notes) from the ferret API, falling back to legacy.
+    info is normalized to {startTime, guildName, channelName}; users to [{track, id, name}]."""
+    try:
+        d = api_json(f"{base}/api/v1/recordings/{rec_id}?key={key}")
+        rec, users_raw = d.get("recording", {}), d.get("users", [])
+        info = {
+            "startTime": rec.get("startTime"),
+            "guildName": rec.get("guild", {}).get("name"),
+            "channelName": rec.get("channel", {}).get("name"),
+        }
+        users = [{"track": u.get("track", i + 1), "id": u.get("id"),
+                  "name": u.get("globalName") or u.get("username") or f"track{i + 1}"}
+                 for i, u in enumerate(users_raw)]
+        duration = api_json(f"{base}/api/v1/recordings/{rec_id}/duration?key={key}").get("duration")
+        return info, users, duration, None
+    except SystemExit:
+        raise
+    except urllib.error.HTTPError:
+        pass  # not a ferret host — try the legacy API below
+    d = api_json(f"{base}/api/recording/{rec_id}?key={key}").get("info", {})
+    info = {
+        "startTime": d.get("startTime"),
+        "guildName": d.get("guildExtra", {}).get("name"),
+        "channelName": d.get("channelExtra", {}).get("name"),
+    }
+    users_raw = api_json(f"{base}/api/recording/{rec_id}/users?key={key}").get("users", [])
+    users = [{"track": i + 1, "id": u.get("id"), "name": u.get("name") or f"track{i + 1}"}
+             for i, u in enumerate(users_raw)]
+    duration = api_json(f"{base}/api/recording/{rec_id}/duration?key={key}").get("duration")
+    try:
+        notes = api_json(f"{base}/api/recording/{rec_id}/notes?key={key}").get("notes")
+    except Exception:
+        notes = None
+    return info, users, duration, notes
+
+
+def run_ferret_job(base: str, rec_id: str, key: str) -> str:
+    """Start (or adopt) a recording job and poll until done; return the output file name."""
+    job_url = f"{base}/api/v1/recordings/{rec_id}/job?key={key}"
+    resp = api_json(job_url, {"type": "recording",
+                              "options": {"format": "flac", "container": "zip"}},
+                    tolerate=(400,))
+    if resp.get("error") or resp.get("_httpError"):
+        print(f"  job POST: {resp.get('code') or resp.get('error') or resp} — polling existing job")
+
+    deadline = time.time() + 45 * 60
+    while time.time() < deadline:
+        job = api_json(job_url).get("job") or {}
+        status, out = job.get("status"), job.get("outputFileName")
+        if out and status not in ("queued", "running"):
+            bad = any(w in str(status).lower() for w in ("err", "fail", "cancel"))
+            if bad:
+                raise SystemExit(f"Craig job ended badly: status={status}")
+            return out
+        if status and any(w in str(status).lower() for w in ("err", "fail", "cancel")):
+            raise SystemExit(f"Craig job ended badly: status={status}")
+        print(f"  cooking... status={status or 'no job yet'} state={job.get('state')}")
+        time.sleep(4)
+    raise SystemExit("Cook did not finish in 45 min — download manually from the Craig page "
+                     "and unzip into audio/tracks/, then run transcribe.")
 
 
 def cmd_fetch(args) -> int:
@@ -115,37 +189,13 @@ def cmd_fetch(args) -> int:
     tracks_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Recording {rec_id} @ {base}")
-    info = api_json(f"{base}/api/recording/{rec_id}?key={key}").get("info", {})
-    users = api_json(f"{base}/api/recording/{rec_id}/users?key={key}").get("users", [])
-    duration = api_json(f"{base}/api/recording/{rec_id}/duration?key={key}").get("duration")
-    try:
-        notes = api_json(f"{base}/api/recording/{rec_id}/notes?key={key}").get("notes")
-    except Exception:
-        notes = None
-
-    print(f"  channel : #{info.get('channelExtra', {}).get('name', '?')}"
-          f" in {info.get('guildExtra', {}).get('name', '?')}")
+    info, users, duration, notes = fetch_metadata(base, rec_id, key)
+    print(f"  channel : #{info.get('channelName', '?')} in {info.get('guildName', '?')}")
     print(f"  started : {info.get('startTime')}")
     print(f"  duration: {duration}s, tracks: {len(users)}")
 
     print("Requesting cook (flac/zip)...")
-    api_json(f"{base}/api/recording/{rec_id}/cook?key={key}",
-             {"format": "flac", "container": "zip", "dynaudnorm": False})
-
-    file_name = None
-    deadline = time.time() + 45 * 60
-    while time.time() < deadline:
-        state = api_json(f"{base}/api/recording/{rec_id}/cook?key={key}")
-        dl = state.get("download") or {}
-        file_name = dl.get("file") or state.get("file")
-        if state.get("ready") and file_name:
-            break
-        msg = state.get("message") or f"progress={state.get('progress')}"
-        print(f"  cooking... {msg}")
-        time.sleep(5)
-    if not file_name:
-        raise SystemExit("Cook did not finish in 45 min — download manually from the Craig page "
-                         "and unzip into audio/tracks/, then run transcribe.")
+    file_name = run_ferret_job(base, rec_id, key)
 
     zip_path = audio_dir / f"craig-{rec_id}.zip"
     print(f"Downloading /dl/{file_name} ...")
@@ -164,10 +214,9 @@ def cmd_fetch(args) -> int:
         "recordingId": rec_id,
         "startTime": info.get("startTime"),
         "durationSeconds": duration,
-        "guild": info.get("guildExtra", {}).get("name"),
-        "channel": info.get("channelExtra", {}).get("name"),
-        "users": [{"track": i + 1, "id": u.get("id"), "name": u.get("name")}
-                  for i, u in enumerate(users)],
+        "guild": info.get("guildName"),
+        "channel": info.get("channelName"),
+        "users": users,
         "craigNotes": notes,
         "fetchedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
@@ -280,7 +329,11 @@ def cmd_align(args) -> int:
                    f"{strip_html(m.get('flavor') or '') or 'roll'}: {', '.join(parts)}"
             kind = "roll"
         else:
-            text = f"{m.get('alias') or m.get('authorName')}: {strip_html(m.get('content') or '')}"
+            body = strip_html(m.get("content") or "")
+            # dnd5e item/spell cards carry their full rules text — keep the headline only.
+            if len(body) > 200:
+                body = body[:200].rstrip() + " …"
+            text = f"{m.get('alias') or m.get('authorName')}: {body}"
             kind = "whisper" if (m.get("whisper") or m.get("blind")) else "chat"
         events.append({"t": t - t0, "kind": kind, "text": text})
 
