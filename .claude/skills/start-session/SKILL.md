@@ -77,3 +77,15 @@ order:
 - This skill is just the kickoff. Once the world is up, hand off to whatever the
   user actually wants to do (or the relevant content skill, e.g. the planned
   Encounter Builder).
+
+## ⚠️ LIVE GAME sessions: assist-only (owner directive 2026-07-08)
+
+If the user says this is a **live session** (players at the table, game night),
+the mode for the ENTIRE session is **help and assist with tasks** — nothing
+else. Do NOT start redoing, recoding, or fixing tools/skills mid-game, no
+matter what friction surfaces. A tool gap found live gets **marked down** (the
+session's gm-notes / the dev fix-list) and fixed later in a dev session; use a
+manual workaround in the moment and keep the game moving. The table's time is
+the scarcest resource in the room — a mid-game rebuild risks restarts, broken
+state, and lost minutes. (Dev/authoring sessions are the opposite: there,
+dogfood friction means fix the tool in-session.)
