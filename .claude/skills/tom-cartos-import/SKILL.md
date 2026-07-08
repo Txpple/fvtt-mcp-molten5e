@@ -36,7 +36,14 @@ teleporter fixer), `create-journal` / `add-journal-image`, `create-folder` / `mo
 > (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
 > modern pack's split walls / `config{}` lights / `environment{}` mood and cross-scene **teleporters**
 > (the stairs/portals), or a legacy pack's `sense` walls, flat torch lights, flat grid/mood, and `img`
-> background. The legend→map-pins feature (below) now runs BY DEFAULT whenever a per-map legend key is
+> background. **`type:"Adventure"` packs are in scope too** — the modern premium format (e.g.
+> tomcartos-ostenwold 2.x) ships ONE Adventure compendium whose Adventure doc(s) EMBED every
+> scene/journal; `read-pack` harvests them into the same streams, stamps each scene with its
+> `adventure` name (a pack can hold several — Ostenwold ships "Ostenwold" + "Ostenwold in Winter",
+> with IDENTICAL scene names across them, so select by `sourceId`, never by name), dedupes the
+> journal docs the adventures share, and resolves a v14 pack's background from its LEVEL
+> (`levels[initialLevel].background.src` — v14 has no top-level Scene.background). The
+> legend→map-pins feature (below) now runs BY DEFAULT whenever a per-map legend key is
 > present (place the pins, then tell the user). **Never
 > reconstruct a wall, light, or region field-by-field** — `read-pack` hands them back whole; pass them
 > through whole (the dropped-`sight`/blown-out-lights trap).

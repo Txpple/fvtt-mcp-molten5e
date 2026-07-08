@@ -14,11 +14,13 @@ import {
   decodeAssetSegments,
   detectPackEra,
   discoverTiles,
+  harvestAdventureDocs,
   PackReaderTools,
   parseNedbDocs,
   parseTileName,
   projectSceneGeometry,
   resolvePackPath,
+  sceneBackgroundSrc,
   staleTmpDirs,
   stripPackArtifacts,
   summarizeTileDir,
@@ -175,6 +177,80 @@ describe('resolvePackPath', () => {
 
   it('leaves a normal relative pack path module-relative', () => {
     expect(resolvePackPath('/abs/module', 'packs/temple')).toMatch(/module[\\/]packs[\\/]temple$/);
+  });
+
+  it('falls back to the extensionless LevelDB DIRECTORY when the declared .db path is absent', () => {
+    // A v11+ module often still declares "packs/foo.db" while shipping the LevelDB dir "packs/foo/"
+    // (tomcartos-ostenwold 2.1.0 does exactly this); Foundry normalizes it at load — mirror that.
+    const dir = mkdtempSync(join(tmpdir(), 'rpp-'));
+    try {
+      mkdirSync(join(dir, 'packs', 'ostenwold'), { recursive: true });
+      expect(resolvePackPath(dir, 'packs/ostenwold.db')).toBe(join(dir, 'packs', 'ostenwold'));
+      // When the declared path EXISTS it always wins (a real NeDB .db must not be re-routed).
+      writeFileSync(join(dir, 'packs', 'ostenwold.db'), '');
+      expect(resolvePackPath(dir, 'packs/ostenwold.db')).toBe(join(dir, 'packs', 'ostenwold.db'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('sceneBackgroundSrc', () => {
+  it('reads a v14 scene: background lives on the INITIAL Level, not top-level', () => {
+    const d = {
+      initialLevel: 'lvl2',
+      levels: [
+        { _id: 'lvl1', background: { src: 'modules/m/maps/wrong.webp' } },
+        { _id: 'lvl2', background: { src: 'modules/m/maps/right.webp' } },
+      ],
+    };
+    expect(sceneBackgroundSrc(d)).toBe('modules/m/maps/right.webp');
+    // No initialLevel match → first level wins.
+    expect(sceneBackgroundSrc({ levels: d.levels })).toBe('modules/m/maps/wrong.webp');
+  });
+
+  it('falls back to the v10+ background object, then the legacy img string', () => {
+    expect(sceneBackgroundSrc({ background: { src: 'maps/v10.webp' } })).toBe('maps/v10.webp');
+    expect(sceneBackgroundSrc({ img: 'maps/legacy.jpg' })).toBe('maps/legacy.jpg');
+    expect(sceneBackgroundSrc({})).toBeUndefined();
+  });
+});
+
+describe('harvestAdventureDocs', () => {
+  it('collects embedded scenes/journals across Adventure docs, stamping sourceAdventure', () => {
+    const advA = {
+      _id: 'advA',
+      name: 'Ostenwold',
+      scenes: [
+        { _id: 's1', name: '01 Inn', walls: [] },
+        { _id: 's2', name: '01 Inn (Night)', walls: [] },
+      ],
+      journal: [{ _id: 'j1', name: 'Map Keys', pages: [] }],
+    };
+    const advB = { _id: 'advB', name: 'Extras', scenes: [{ _id: 's3', name: '02 Mill' }] };
+    const { scenes, journals } = harvestAdventureDocs([advA, advB]);
+    expect(scenes.map(s => s._id)).toEqual(['s1', 's2', 's3']);
+    expect(scenes.map(s => s.sourceAdventure.name)).toEqual(['Ostenwold', 'Ostenwold', 'Extras']);
+    expect(journals.map(j => j._id)).toEqual(['j1']);
+  });
+
+  it('dedupes a journal embedded by several adventures (same _id — Ostenwold Day+Night reality)', () => {
+    const shared = { _id: 'j1', name: 'Map Keys', pages: [] };
+    const { journals } = harvestAdventureDocs([
+      { _id: 'a', name: 'Day', journal: [shared] },
+      { _id: 'b', name: 'Night', journal: [{ ...shared }] },
+    ]);
+    expect(journals).toHaveLength(1);
+    expect(journals[0].sourceAdventure.name).toBe('Day');
+  });
+
+  it('tolerates Adventure docs with missing/non-array collections', () => {
+    const { scenes, journals } = harvestAdventureDocs([
+      { _id: 'a', scenes: null, journal: undefined },
+      {},
+    ]);
+    expect(scenes).toEqual([]);
+    expect(journals).toEqual([]);
   });
 });
 

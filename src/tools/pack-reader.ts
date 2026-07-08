@@ -110,9 +110,25 @@ export interface PackEraDescriptor {
   hasRegions: boolean;
   needsWallSenseTranslation: boolean;
   needsLightConfigNesting: boolean;
-  sceneBackgroundShape: 'object' | 'imgString';
+  sceneBackgroundShape: 'level' | 'object' | 'imgString';
   sceneEnvShape: 'environmentObject' | 'flat';
   statsCoreVersion?: string;
+}
+
+/**
+ * Resolve a Scene doc's background image src across ALL eras. v14 moved the background onto a
+ * LEVEL — `levels[<initialLevel>].background.src`; there is NO top-level Scene.background in
+ * v14-packed data (see the fvtt-mcp-scene-v14-schema ground truth) — while v10–v13 use the
+ * `background:{src}` object and ≤v9 a flat `img` string. Pure/exported for unit testing.
+ */
+export function sceneBackgroundSrc(d: any): string | undefined {
+  const levels: any[] = Array.isArray(d?.levels) ? d.levels : [];
+  const initial = levels.find(l => l?._id === d?.initialLevel) ?? levels[0];
+  const fromLevel = initial?.background?.src;
+  if (typeof fromLevel === 'string' && fromLevel) return fromLevel;
+  const fromObject = d?.background?.src;
+  if (typeof fromObject === 'string' && fromObject) return fromObject;
+  return typeof d?.img === 'string' && d.img ? d.img : undefined;
 }
 
 /**
@@ -130,8 +146,12 @@ export function detectPackEra(scene: any, storage: 'leveldb' | 'nedb'): PackEraD
     !!firstLight &&
     firstLight.config === undefined &&
     (firstLight.dim !== undefined || firstLight.tintColor !== undefined);
-  const sceneBackgroundShape: 'object' | 'imgString' =
-    scene?.background && typeof scene.background === 'object' ? 'object' : 'imgString';
+  const sceneBackgroundShape: 'level' | 'object' | 'imgString' =
+    Array.isArray(scene?.levels) && scene.levels.some((l: any) => l?.background?.src)
+      ? 'level'
+      : scene?.background && typeof scene.background === 'object'
+        ? 'object'
+        : 'imgString';
   const sceneEnvShape: 'environmentObject' | 'flat' =
     scene?.environment && typeof scene.environment === 'object' ? 'environmentObject' : 'flat';
   const lightHasV12 =
@@ -139,9 +159,15 @@ export function detectPackEra(scene: any, storage: 'leveldb' | 'nedb'): PackEraD
     (firstLight.config.negative !== undefined || firstLight.config.priority !== undefined);
 
   let era: PackEraDescriptor['era'];
-  // Require regions OR an environment{} object OR v12-only light fields for the v12+ label,
-  // so a stray re-packed field can't over-promote a real v11 pack (build plan §2b edge case).
-  if (hasRegions || sceneEnvShape === 'environmentObject' || lightHasV12) era = 'v12+';
+  // Require regions OR an environment{} object OR v12-only light fields OR a v14 background-on-Level
+  // for the v12+ label, so a stray re-packed field can't over-promote a real v11 pack (§2b edge case).
+  if (
+    hasRegions ||
+    sceneEnvShape === 'environmentObject' ||
+    lightHasV12 ||
+    sceneBackgroundShape === 'level'
+  )
+    era = 'v12+';
   else if (needsWallSenseTranslation || sceneBackgroundShape === 'imgString') era = 'legacy';
   else era = 'v10-v11';
 
@@ -163,10 +189,48 @@ export function detectPackEra(scene: any, storage: 'leveldb' | 'nedb'): PackEraD
  * Resolve a manifest pack `path` against the module folder. Some older manifests (e.g. Tom's v10
  * Into-the-Wilds) declare an absolute-style `/packs/foo.db`; a leading slash makes `path.resolve`
  * jump to the FILESYSTEM ROOT (`C:\packs\foo.db`), losing the module folder. Strip leading
- * slashes/backslashes so the pack path stays module-relative. Pure/exported for unit testing.
+ * slashes/backslashes so the pack path stays module-relative. Additionally, a v11+ module often
+ * still DECLARES the legacy `packs/foo.db` while shipping a LevelDB DIRECTORY `packs/foo/` —
+ * Foundry normalizes that at load; mirror it by falling back to the extensionless directory when
+ * the declared path doesn't exist. Pure/exported for unit testing.
  */
 export function resolvePackPath(moduleDir: string, packPath: string): string {
-  return resolve(moduleDir, String(packPath).replace(/^[/\\]+/, ''));
+  const declared = resolve(moduleDir, String(packPath).replace(/^[/\\]+/, ''));
+  if (existsSync(declared)) return declared;
+  const levelDbDir = declared.replace(/\.db$/i, '');
+  if (levelDbDir !== declared && existsSync(levelDbDir)) return levelDbDir;
+  return declared; // let the caller's statSync raise the natural ENOENT
+}
+
+/**
+ * Harvest the embedded Scene and JournalEntry docs out of extracted Adventure documents. A modern
+ * premium pack (e.g. tomcartos-ostenwold 2.x) often ships ONE `type:"Adventure"` compendium whose
+ * single Adventure doc embeds every scene/journal, instead of separate Scene/JournalEntry packs.
+ * The embedded docs carry the same shape (own `_id`, walls/lights/regions, pages) as pack-level
+ * docs, so everything downstream (era detection, payloads, rewrites) consumes them unchanged.
+ *
+ * Two multi-Adventure realities (Ostenwold ships a Day AND a Night Adventure in one pack):
+ *  - scenes repeat NAMES across adventures (same "The Sanguine Dawn Inn (Roof)" in each) — every
+ *    harvested scene is stamped `sourceAdventure: {id, name}` so a selection can tell them apart;
+ *  - the SAME journal doc (same `_id`) is embedded in every adventure — journals are deduped by
+ *    `_id` (first adventure wins).
+ * Pure/exported for unit testing.
+ */
+export function harvestAdventureDocs(adventures: any[]): { scenes: any[]; journals: any[] } {
+  const scenes: any[] = [];
+  const journals: any[] = [];
+  const seenJournalIds = new Set<string>();
+  for (const adv of adventures) {
+    const sourceAdventure = { id: adv?._id, name: adv?.name };
+    if (Array.isArray(adv?.scenes))
+      scenes.push(...adv.scenes.map((s: any) => ({ ...s, sourceAdventure })));
+    for (const j of Array.isArray(adv?.journal) ? adv.journal : []) {
+      if (typeof j?._id === 'string' && seenJournalIds.has(j._id)) continue;
+      if (typeof j?._id === 'string') seenJournalIds.add(j._id);
+      journals.push({ ...j, sourceAdventure });
+    }
+  }
+  return { scenes, journals };
 }
 
 /**
@@ -467,7 +531,9 @@ export async function extractPackDocs(
 
 const READ_PACK_DESCRIPTION =
   'Read a Tom-Cartos-style Foundry SCENE-PACK MODULE off disk (a `module.json` + LevelDB/NeDB ' +
-  'compendium packs) and return its era-normalized documents for import. OFF-LINE and Node-only: ' +
+  'compendium packs — Scene/JournalEntry packs AND modern `type:"Adventure"` packs whose single ' +
+  'Adventure doc embeds every scene/journal) and return its era-normalized documents for import. ' +
+  'OFF-LINE and Node-only: ' +
   "it reads files, never the live world. Detects the pack's Foundry era from field shape (older " +
   'v10/NeDB vs newer v13/LevelDB), extracts each Scene (dimensions, grid, background, thumbnail, ' +
   'walls, lights, regions/teleporters) and JournalEntry (pages), strips cli pack artifacts, and — ' +
@@ -552,11 +618,15 @@ export class PackReaderTools {
     const journalPacks = packs.filter(
       p => p?.type === 'JournalEntry' && (!packName || p?.name === packName)
     );
+    const adventurePacks = packs.filter(
+      p => p?.type === 'Adventure' && (!packName || p?.name === packName)
+    );
 
     this.logger.info('read-pack: extracting', {
       moduleId,
       scenePacks: scenePacks.length,
       journalPacks: journalPacks.length,
+      adventurePacks: adventurePacks.length,
     });
 
     // Resolve the cli once — needed for LevelDB packs only (NeDB .db packs are parsed directly).
@@ -612,9 +682,28 @@ export class PackReaderTools {
       if (!descriptor && docs[0]) descriptor = detectPackEra(docs[0], storage);
       allSceneDocs.push(...docs);
     }
-    const totalScenes = allSceneDocs.length;
 
     const journalDocs: any[] = [];
+
+    // Adventure packs: ONE compendium doc embedding every scene/journal (modern premium format).
+    // Harvest the embedded docs into the same streams — same shape, same downstream handling.
+    for (const pack of adventurePacks) {
+      const packDir = resolvePackPath(moduleDir, pack.path);
+      const storage = statSync(packDir).isDirectory() ? 'leveldb' : 'nedb';
+      const raw = (
+        await extractPackDocs(
+          packDir,
+          storage === 'nedb' ? { nedb: true } : { cliEntry: requireCli() }
+        )
+      ).filter(d => typeof d?._key !== 'string' || d._key.startsWith('!adventures!'));
+      const { scenes: advScenes, journals: advJournals } = harvestAdventureDocs(
+        raw.map(d => stripPackArtifacts(d))
+      );
+      if (!descriptor && advScenes[0]) descriptor = detectPackEra(advScenes[0], storage);
+      allSceneDocs.push(...advScenes);
+      journalDocs.push(...advJournals);
+    }
+    const totalScenes = allSceneDocs.length;
     for (const pack of journalPacks) {
       const packDir = resolvePackPath(moduleDir, pack.path);
       const storage = statSync(packDir).isDirectory() ? 'leveldb' : 'nedb';
@@ -637,6 +726,7 @@ export class PackReaderTools {
         sceneIndex: allSceneDocs.map(d => ({
           sourceId: d._id,
           name: d.name,
+          ...(d.sourceAdventure?.name ? { adventure: d.sourceAdventure.name } : {}),
           counts: {
             walls: d.walls?.length ?? 0,
             lights: d.lights?.length ?? 0,
@@ -666,7 +756,7 @@ export class PackReaderTools {
     const nextOffset = start + batch.length < totalScenes ? start + batch.length : null;
 
     const scenes: any[] = batch.map(d => {
-      const bgSrc = d.background?.src ?? (typeof d.img === 'string' ? d.img : undefined);
+      const bgSrc = sceneBackgroundSrc(d); // era-aware: v14 Level → v10+ object → legacy img
       // Legacy packs store the nav thumb as an inline `data:` URI, not a file path — never surface
       // it as an uploadable asset: it can't be uploaded, and a base64 blob per scene would blow the
       // manifest response cap. Foundry regenerates the thumb anyway, so dropping it is harmless.
@@ -684,9 +774,10 @@ export class PackReaderTools {
       return {
         sourceId: d._id,
         name: d.name,
+        ...(d.sourceAdventure?.name ? { adventure: d.sourceAdventure.name } : {}),
         // Geometry + mood, normalized across eras (legacy flat grid/mood ↔ v10+ objects).
         ...projectSceneGeometry(d),
-        background: leanAsset(noteAsset(bgSrc) ?? { docSrc: bgSrc }),
+        background: leanAsset(noteAsset(bgSrc) ?? (bgSrc ? { docSrc: bgSrc } : undefined)),
         thumb: thumbSrc ? leanAsset(noteAsset(thumbSrc)) : null,
         // v12+ mood objects (absent on legacy/mid — the flat fields above carry those eras).
         environment: d.environment,
