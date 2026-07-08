@@ -20,6 +20,8 @@ import {
   sanitizeDocData,
   importFromCompendium,
   findUnresolvedScaleTokens,
+  assertPlainSerializable,
+  guardSerialization,
 } from './_shared.js';
 
 describe('normalizeAssetPath', () => {
@@ -409,5 +411,105 @@ describe('scaleTokensResolveFor', () => {
         '@scale.bard.bardic-inspiration'
       )
     ).toBe(false);
+  });
+});
+
+describe('assertPlainSerializable', () => {
+  it('accepts plain JSON — primitives, null/undefined, nested objects/arrays', () => {
+    for (const v of [undefined, null, 'x', 42, 0, true, false]) {
+      expect(() => assertPlainSerializable(v, 'h')).not.toThrow();
+    }
+    expect(() =>
+      assertPlainSerializable({ a: 1, b: [2, { c: 'd' }], e: null, f: undefined }, 'h')
+    ).not.toThrow();
+    // a null-prototype object is still plain (Object.create(null) — a common bag shape)
+    expect(() =>
+      assertPlainSerializable(Object.assign(Object.create(null), { a: 1 }), 'h')
+    ).not.toThrow();
+  });
+
+  it('does NOT reject a DAG (a shared sub-object referenced twice is not a cycle)', () => {
+    const shared = { x: 1 };
+    // Playwright and JSON both handle a DAG fine; an all-visited guard would false-positive here.
+    expect(() => assertPlainSerializable({ a: shared, b: shared, c: [shared] }, 'h')).not.toThrow();
+  });
+
+  it('rejects a top-level Map, naming the handler (the SILENT Playwright {} trap)', () => {
+    expect(() => assertPlainSerializable(new Map([['a', 1]]), 'getThing')).toThrow(
+      /Page handler "getThing" returned a non-serializable Map at the top level/
+    );
+  });
+
+  it('rejects a nested Map (system.activities) and Set (system.destinations) by dot-path', () => {
+    // The two documented hazards: dnd5e 5.x activities Map + region destinations SetField.
+    expect(() =>
+      assertPlainSerializable({ system: { activities: new Map() } }, 'getCharacterEntity')
+    ).toThrow(/non-serializable Map at path "system\.activities"/);
+    expect(() =>
+      assertPlainSerializable({ system: { destinations: new Set(['Scene.a']) } }, 'listRegions')
+    ).toThrow(/non-serializable Set at path "system\.destinations"/);
+  });
+
+  it('rejects a live Foundry Document / Collection (class instances), naming the class', () => {
+    class Actor5e {}
+    expect(() => assertPlainSerializable({ actor: new Actor5e() }, 'getActor')).toThrow(
+      /non-serializable Actor5e at path "actor"/
+    );
+    // a Collection (a Map subclass, as dnd5e uses) is caught too
+    class EmbeddedCollection extends Map {}
+    expect(() => assertPlainSerializable(new EmbeddedCollection(), 'x')).toThrow(
+      /non-serializable EmbeddedCollection at the top level/
+    );
+  });
+
+  it('rejects a TRUE circular reference (the opaque Playwright throw), object and array alike', () => {
+    const cyclic: any = { name: 'a' };
+    cyclic.self = cyclic;
+    expect(() => assertPlainSerializable(cyclic, 'h')).toThrow(
+      /non-serializable circular reference at path "self"/
+    );
+    const arr: any = [1];
+    arr.push(arr);
+    expect(() => assertPlainSerializable({ list: arr }, 'h')).toThrow(
+      /circular reference at path "list\.1"/
+    );
+  });
+
+  it('rejects functions, symbols, and bigint', () => {
+    expect(() => assertPlainSerializable({ f: () => 1 }, 'h')).toThrow(
+      /non-serializable function at path "f"/
+    );
+    expect(() => assertPlainSerializable({ s: Symbol('x') }, 'h')).toThrow(
+      /non-serializable symbol at path "s"/
+    );
+    expect(() => assertPlainSerializable({ n: 10n }, 'h')).toThrow(
+      /non-serializable bigint at path "n"/
+    );
+  });
+});
+
+describe('guardSerialization (the registration-time seam guard)', () => {
+  it('passes a plain return through unchanged, preserving args', async () => {
+    const api = guardSerialization({ ok: (n: number) => ({ doubled: n * 2 }) });
+    await expect(api.ok(3)).resolves.toEqual({ doubled: 6 });
+  });
+
+  it('rejects a handler that returns a Map / Set / Document, naming the handler', async () => {
+    const api = guardSerialization({
+      mapHandler: () => new Map([['a', 1]]),
+      setHandler: () => ({ tags: new Set(['x']) }),
+      docHandler: () => {
+        class Item5e {}
+        return new Item5e();
+      },
+    });
+    await expect(api.mapHandler()).rejects.toThrow(/handler "mapHandler".*Map/s);
+    await expect(api.setHandler()).rejects.toThrow(/handler "setHandler".*Set at path "tags"/s);
+    await expect(api.docHandler()).rejects.toThrow(/handler "docHandler".*Item5e/s);
+  });
+
+  it('awaits async handlers before asserting (a promise of a Map still rejects)', async () => {
+    const api = guardSerialization({ asyncMap: async () => new Map() });
+    await expect(api.asyncMap()).rejects.toThrow(/non-serializable Map/);
   });
 });

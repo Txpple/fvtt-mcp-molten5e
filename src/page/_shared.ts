@@ -80,6 +80,129 @@ export function toSource(doc: any): any {
   return typeof doc?.toObject === 'function' ? doc.toObject() : doc;
 }
 
+// --- node↔page serialization boundary guard ---------------------------------
+//
+// Every handler registered in src/page/index.ts crosses the Playwright `page.evaluate`
+// bridge on its way back to Node, and that serialization is LOSSY in ways that fail
+// silently: a Map/Set — at the top level OR nested — is flattened to `{}` with NO error
+// (the exact `system.activities` trap `toSource` documents above, and the dnd5e SetField
+// `system.destinations` hazard), while a live Foundry Document is cyclic and makes
+// Playwright throw an opaque error surfaced only as a generic `foundry.call('X') failed`.
+// The type side (`satisfies (...args) => unknown`) gives ZERO return-type protection, so a
+// new handler that forgets toObject()/dump()/sanitizeDocData() is a silent-data-loss bug
+// neither `tsc` nor the unit tests can catch.
+//
+// `guardSerialization` wraps every handler at registration so plainness is asserted IN-PAGE,
+// where the value's real type is still intact (before Playwright mangles it). A non-plain
+// return throws a clear error naming the handler + the offending dot-path — loud and located
+// instead of silent. This turns the per-handler `dump()`/`toObject()` convention into a
+// mechanical invariant (design.md §9 / architecture-review G3: enforce, don't rely on prose).
+
+/** Friendly constructor name for a rejected value (`Map`, `Set`, `Actor5e`, `Date`, …). */
+function nonPlainTypeName(value: object): string {
+  const ctor = (value as { constructor?: { name?: unknown } }).constructor?.name;
+  return typeof ctor === 'string' && ctor.length > 0 && ctor !== 'Object'
+    ? ctor
+    : 'non-plain object';
+}
+
+/**
+ * Walk `value` and return the first `{ path, kind }` that is NOT plain-JSON-serializable, or
+ * null when the whole structure is plain. "Plain" = null/undefined/string/number/boolean, arrays
+ * of plain values, and objects whose prototype is `Object.prototype` or null. Everything else is
+ * rejected: Map/Set (the SILENT `{}` case), Foundry Documents / Collections / other class
+ * instances (`Date`, `RegExp`, …), and functions/symbols/bigint. True circular references are
+ * rejected too — tracked by ANCESTORS on the current path, not an all-visited set, so a DAG that
+ * shares a sub-object twice is NOT a false positive (Playwright and JSON both handle a DAG). The
+ * depth cap is only a stack-safety backstop; a real cycle repeats an ancestor far below it.
+ */
+function findNonPlainValue(
+  value: unknown,
+  path: string[],
+  ancestors: object[],
+  depth: number
+): { path: string; kind: string } | null {
+  if (value === null) return null;
+  const t = typeof value;
+  if (t === 'string' || t === 'number' || t === 'boolean' || t === 'undefined') return null;
+  if (t !== 'object') return { path: path.join('.'), kind: t }; // function / symbol / bigint
+  if (depth > 200) return null; // acyclic data this deep can't occur in Foundry docs; cycles caught above
+
+  const obj = value as object;
+
+  if (Array.isArray(obj)) {
+    if (ancestors.includes(obj)) return { path: path.join('.'), kind: 'circular reference' };
+    ancestors.push(obj);
+    for (let i = 0; i < obj.length; i++) {
+      path.push(String(i));
+      const bad = findNonPlainValue(obj[i], path, ancestors, depth + 1);
+      if (bad) return bad; // abort — the unbalanced stack is discarded on the throw
+      path.pop();
+    }
+    ancestors.pop();
+    return null;
+  }
+
+  const proto = Object.getPrototypeOf(obj);
+  if (proto !== Object.prototype && proto !== null) {
+    return { path: path.join('.'), kind: nonPlainTypeName(obj) };
+  }
+
+  if (ancestors.includes(obj)) return { path: path.join('.'), kind: 'circular reference' };
+  ancestors.push(obj);
+  for (const key of Object.keys(obj)) {
+    path.push(key);
+    const bad = findNonPlainValue(
+      (obj as Record<string, unknown>)[key],
+      path,
+      ancestors,
+      depth + 1
+    );
+    if (bad) return bad;
+    path.pop();
+  }
+  ancestors.pop();
+  return null;
+}
+
+/**
+ * Assert a page handler's return `value` is plain JSON-serializable data; throw a clear, located
+ * error otherwise. Runs in-page (before the Playwright bridge). Pure — unit-tests offline.
+ */
+export function assertPlainSerializable(value: unknown, handlerName: string): void {
+  const bad = findNonPlainValue(value, [], [], 0);
+  if (!bad) return;
+  const where = bad.path ? `at path "${bad.path}"` : 'at the top level';
+  throw new Error(
+    `Page handler "${handlerName}" returned a non-serializable ${bad.kind} ${where}. ` +
+      'Page handlers must return plain JSON (objects/arrays/primitives): Playwright silently ' +
+      'flattens Maps/Sets to {} and throws opaquely on live Documents/cycles. Convert Foundry ' +
+      'Documents with toObject()/dump()/sanitizeDocData() and Maps/Sets to plain objects/arrays ' +
+      'before returning.'
+  );
+}
+
+/**
+ * Wrap every handler in `handlers` so its return value is plainness-checked at the seam (see
+ * assertPlainSerializable). Returns a new map with the SAME keys; each wrapper awaits the handler
+ * (they may be sync or async — awaiting a non-promise is a no-op) then asserts before returning.
+ * Used once, in src/page/index.ts, on the `api` object bound to window.__fvtt.
+ */
+export function guardSerialization<T extends Record<string, (...args: any[]) => unknown>>(
+  handlers: T
+): T {
+  const guarded: Record<string, (...args: any[]) => unknown> = {};
+  for (const name of Object.keys(handlers)) {
+    const fn = handlers[name] as (...args: unknown[]) => unknown;
+    guarded[name] = async (...args: unknown[]) => {
+      const result = await fn(...args);
+      assertPlainSerializable(result, name);
+      return result;
+    };
+  }
+  return guarded as T;
+}
+
 /**
  * dnd5e masks `item.name` with `system.unidentified.name` on EVERY read while
  * `system.identified === false` — even for the GM. The real name survives only in the

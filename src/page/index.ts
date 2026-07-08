@@ -9,6 +9,7 @@
 // === window.__fvtt.getCharacterInfo(args). They match the legacy
 // foundry-mcp-bridge.<name> methods 1:1, so the Node tools rewire mechanically.
 
+import { guardSerialization } from './_shared.js';
 import { getWorldInfo } from './world.js';
 import {
   getActiveScene,
@@ -332,4 +333,9 @@ const api = {
  */
 export type PageApi = typeof api;
 
-window.__fvtt = api;
+// Bind the GUARDED handlers: every return value is asserted plain-JSON-serializable in-page,
+// before it crosses the Playwright bridge, so a forgotten toObject()/dump() (a Map silently
+// flattened to {}, a live Document that throws opaquely) fails loudly naming the handler + path
+// instead of corrupting data. `PageApi` above stays derived from the RAW `api`, so the tool-side
+// `foundry.call(name)` contract is unchanged (see src/page/_shared.ts guardSerialization).
+window.__fvtt = guardSerialization(api);
