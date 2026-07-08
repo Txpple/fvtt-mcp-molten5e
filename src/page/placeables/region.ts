@@ -110,6 +110,21 @@ export interface RegionPatch {
   rect?: { x: number; y: number; widthCells?: number; heightCells?: number; snapToGrid?: boolean };
 }
 
+/**
+ * Serialize ONE behavior for read-back: type always; id/name/disabled only when present (unit-test
+ * mocks and pre-create docs lack them), teleport destinations when the behavior has any.
+ */
+export function dumpBehavior(b: any): Record<string, unknown> {
+  const destinations = teleportDestinationsOf(b?.system);
+  return {
+    ...(b?.id ? { id: b.id } : {}),
+    type: b?.type,
+    ...(typeof b?.name === 'string' && b.name !== '' ? { name: b.name } : {}),
+    ...(b?.disabled ? { disabled: true } : {}),
+    ...(destinations.length ? { destinations } : {}),
+  };
+}
+
 /** Serialize a region for read-back: id, name, its shapes' bounds, and any teleport destinations. */
 export function dumpRegion(region: any): Record<string, unknown> {
   return {
@@ -121,11 +136,66 @@ export function dumpRegion(region: any): Record<string, unknown> {
       ...(s.width !== undefined ? { width: s.width, height: s.height } : {}),
       ...(s.radiusX !== undefined ? { radiusX: s.radiusX, radiusY: s.radiusY } : {}),
     })),
-    behaviors: (region.behaviors?.contents ?? region.behaviors ?? []).map((b: any) => {
-      const destinations = teleportDestinationsOf(b.system);
-      return { type: b.type, ...(destinations.length ? { destinations } : {}) };
-    }),
+    behaviors: (region.behaviors?.contents ?? region.behaviors ?? []).map(dumpBehavior),
   };
+}
+
+/**
+ * Does a rectangle contain at least one grid-SNAPPED token center STRICTLY inside it? v13+/v14
+ * movement snaps a 1×1 token's center to cell centers (sceneX/sceneY-anchored, origin + (k+0.5)·g),
+ * and region containment excludes the boundary — so a rect that misses every snapped center is a
+ * teleport destination no walking token can ever be placed in, and core fails SILENTLY (found live
+ * 2026-07-08: half-cell-offset stair pads — MOVE_IN fires, placement finds nothing, nothing happens).
+ * Pure/exported for unit testing.
+ */
+export function rectContainsSnappedCenter(
+  rect: { x: number; y: number; width: number; height: number },
+  grid: { size: number; sceneX: number; sceneY: number }
+): boolean {
+  const g = grid.size > 0 ? grid.size : 100;
+  const hasCenterStrictlyInside = (lo: number, len: number, origin: number) => {
+    // smallest k with origin+(k+0.5)·g > lo, then check that center against the far edge
+    const k = Math.floor((lo - origin) / g - 0.5) + 1;
+    return origin + (k + 0.5) * g < lo + len;
+  };
+  return (
+    hasCenterStrictlyInside(rect.x, rect.width, grid.sceneX) &&
+    hasCenterStrictlyInside(rect.y, rect.height, grid.sceneY)
+  );
+}
+
+/**
+ * Teleport-destination sanity: null when the landing region is fine, else a human warning. Only
+ * all-rectangle, hole-free geometry is analyzed (polygons/ellipses are assumed intentional); a
+ * destination whose every rect misses every snapped token center is the silent-no-op geometry
+ * rectContainsSnappedCenter documents. Pure/exported for unit testing.
+ */
+export function teleportPlacementWarning(
+  destRegion: { name?: string; shapes?: any[] },
+  grid: { size: number; sceneX: number; sceneY: number }
+): string | null {
+  const shapes = destRegion.shapes ?? [];
+  const rects = shapes.filter((s: any) => s?.type === 'rectangle' && !s.hole);
+  if (rects.length === 0 || rects.length !== shapes.length) return null; // non-rect geometry — not analyzed
+  if (rects.some((s: any) => rectContainsSnappedCenter(s, grid))) return null;
+  return (
+    `destination region "${destRegion.name}" contains NO grid-snapped token position strictly inside ` +
+    `it (rect off the grid?) — snapped movement cannot land there and the teleport silently no-ops; ` +
+    `re-align it with update-region's rect convenience`
+  );
+}
+
+/** Resolve ONE region on a scene by id or EXACT name (ambiguous names throw — use the id). */
+export function resolveRegionStrict(scene: any, identifier: string): any | null {
+  const byId = scene.regions?.get?.(identifier);
+  if (byId) return byId;
+  const matches = (scene.regions?.contents ?? []).filter((r: any) => r.name === identifier);
+  if (matches.length > 1) {
+    throw new Error(
+      `Region name "${identifier}" is ambiguous on "${scene.name}" (${matches.length} matches) — use an id`
+    );
+  }
+  return matches[0] ?? null;
 }
 
 function toCreateDoc(input: RegionInput, ctx: PlaceableCtx): CreateDocResult {
@@ -296,6 +366,98 @@ export async function createSceneTeleporter(args: {
     twoWay,
     from: { sceneId: fromScene.id, sceneName: fromScene.name, ...dumpRegion(freshA) },
     to: { sceneId: toScene.id, sceneName: toScene.name, ...dumpRegion(freshB) },
+  };
+}
+
+/**
+ * Add ONE behavior to an EXISTING region — the gap between create-region (behaviors only at create
+ * time) and update-region (deliberately never touches behaviors): a real
+ * region.createEmbeddedDocuments('RegionBehavior') so the doc validates against its registered data
+ * model, exactly the path createSceneTeleporter uses. `teleportTo` resolves a scene+region pair to
+ * the Scene.<id>.Region.<id> UUID (no hand-built UUIDs) and appends it to system.destinations. Every
+ * teleport destination is then geometry-checked (teleportPlacementWarning) so the half-cell-offset
+ * silent no-op is caught at authoring time, not at the table.
+ */
+export async function addRegionBehavior(args: {
+  sceneIdentifier: string;
+  regionIdentifier: string;
+  type: string;
+  name?: string;
+  disabled?: boolean;
+  system?: Record<string, unknown>;
+  teleportTo?: { sceneIdentifier: string; regionIdentifier: string };
+}): Promise<Record<string, unknown>> {
+  if (!args?.sceneIdentifier) throw new Error('sceneIdentifier is required');
+  if (!args?.regionIdentifier) throw new Error('regionIdentifier is required');
+  if (!args?.type) throw new Error('type is required');
+  const scene = resolveSceneStrict(args.sceneIdentifier);
+  if (!scene) return { success: true, notFound: args.sceneIdentifier };
+  const region = resolveRegionStrict(scene, args.regionIdentifier);
+  if (!region) {
+    return { success: true, notFoundRegion: args.regionIdentifier, sceneName: scene.name };
+  }
+
+  const registered = Object.keys(
+    (globalThis as any).CONFIG?.RegionBehavior?.dataModels ?? {}
+  ) as string[];
+  if (registered.length > 0 && !registered.includes(args.type)) {
+    throw new Error(`Unknown behavior type "${args.type}" — registered: ${registered.join(', ')}`);
+  }
+
+  const system: Record<string, unknown> = { ...(args.system ?? {}) };
+  if (args.teleportTo) {
+    if (args.type !== 'teleportToken') {
+      throw new Error('teleportTo is only valid with type "teleportToken"');
+    }
+    const destScene = resolveSceneStrict(args.teleportTo.sceneIdentifier);
+    if (!destScene) return { success: true, notFound: args.teleportTo.sceneIdentifier };
+    const destRegion = resolveRegionStrict(destScene, args.teleportTo.regionIdentifier);
+    if (!destRegion) {
+      return {
+        success: true,
+        notFoundRegion: args.teleportTo.regionIdentifier,
+        sceneName: destScene.name,
+      };
+    }
+    const existing = Array.isArray(system.destinations) ? system.destinations : [];
+    system.destinations = [...existing, teleportDestUuid(destScene.id, destRegion.id)];
+  }
+  if (
+    args.type === 'teleportToken' &&
+    !(Array.isArray(system.destinations) && system.destinations.length > 0)
+  ) {
+    throw new Error('a teleportToken needs a destination — pass teleportTo or system.destinations');
+  }
+
+  const doc: Record<string, unknown> = { type: args.type };
+  if (Object.keys(system).length > 0) doc.system = system;
+  if (typeof args.name === 'string' && args.name.trim() !== '') doc.name = args.name.trim();
+  if (typeof args.disabled === 'boolean') doc.disabled = args.disabled;
+  const [behavior] = await region.createEmbeddedDocuments('RegionBehavior', [doc]);
+
+  // Teleport-destination geometry check — the silent-no-op guard.
+  const warnings: string[] = [];
+  for (const dest of teleportDestinationsOf(behavior.system)) {
+    const m = dest.match(TELEPORT_DEST_RE);
+    if (!m) continue;
+    const dScene = game.scenes?.get?.(m[1]);
+    const dRegion = dScene?.regions?.get?.(m[2]);
+    if (!dScene || !dRegion) {
+      warnings.push(`destination ${dest} does not resolve to an existing region`);
+      continue;
+    }
+    const warn = teleportPlacementWarning(dRegion, sceneGrid(dScene));
+    if (warn) warnings.push(`${warn} (on "${dScene.name}")`);
+  }
+
+  return {
+    success: true,
+    sceneId: scene.id,
+    sceneName: scene.name,
+    regionId: region.id,
+    regionName: region.name,
+    behavior: dumpBehavior(behavior),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 

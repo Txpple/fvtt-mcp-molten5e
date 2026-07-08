@@ -50,6 +50,7 @@ import {
   deleteSceneRegions,
   createSceneTeleporter,
   remapSceneTeleporters,
+  addRegionBehavior,
 } from './placeables/region.js';
 import {
   createSceneSounds,
@@ -198,6 +199,7 @@ const api = {
   deleteSceneRegions,
   createSceneTeleporter,
   remapSceneTeleporters,
+  addRegionBehavior,
   createSceneSounds,
   listSceneSounds,
   updateSceneSounds,

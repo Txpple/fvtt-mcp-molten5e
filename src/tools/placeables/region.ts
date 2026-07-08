@@ -1,8 +1,9 @@
 // Region tools — create/list/update/delete-region over the page-side Region descriptor
-// (src/page/placeables/region.ts), plus the two NAMED SPECIAL OPS outside generic CRUD:
-// create-teleporter (two cross-linked regions in one call) and remap-teleporters (post-import
-// destination repair). update-region stays SINGLE-target by schema; it rides the kernel batch
-// machinery underneath.
+// (src/page/placeables/region.ts), plus the NAMED SPECIAL OPS outside generic CRUD:
+// create-teleporter (two cross-linked regions in one call), add-region-behavior (wire a behavior
+// onto an EXISTING region — the create/update gap), and remap-teleporters (post-import destination
+// repair). update-region stays SINGLE-target by schema; it rides the kernel batch machinery
+// underneath.
 
 import { z } from 'zod';
 import { toInputSchema } from '../../utils/schema.js';
@@ -150,6 +151,51 @@ const CreateTeleporterSchema = z.object({
   color: z.string().optional().describe('Region tint hex (default "#3fb0ff").'),
 });
 
+const AddRegionBehaviorSchema = z.object({
+  sceneIdentifier: z.string().min(1).describe('Scene id or exact name holding the region.'),
+  regionIdentifier: z
+    .string()
+    .min(1)
+    .describe(
+      'Region id or EXACT region name on that scene (an ambiguous name errors — use the id).'
+    ),
+  type: z
+    .string()
+    .min(1)
+    .describe(
+      'Behavior type key, validated against the live registry — core v14: teleportToken, ' +
+        'executeMacro, executeScript, adjustDarknessLevel, changeLevel, displayScrollingText, ' +
+        'modifyMovementCost, pauseGame, suppressWeather, toggleBehavior, defineSurface, plus system ' +
+        'ones like dnd5e.difficultTerrain.'
+    ),
+  name: z.string().optional().describe("Behavior label (defaults to the type's standard name)."),
+  disabled: z.boolean().optional().describe('Create the behavior disabled (default false).'),
+  system: z
+    .object({})
+    .passthrough()
+    .optional()
+    .describe(
+      'Behavior system data carried verbatim (the v14 shape for the type) — e.g. executeMacro ' +
+        '{uuid}, adjustDarknessLevel {mode, modifier}.'
+    ),
+  teleportTo: z
+    .object({
+      sceneIdentifier: z.string().min(1).describe('Destination scene id or exact name.'),
+      regionIdentifier: z
+        .string()
+        .min(1)
+        .describe(
+          'Destination region id or exact name — the LANDING pad (leave it behavior-less so ' +
+            "arrivals don't bounce straight back)."
+        ),
+    })
+    .optional()
+    .describe(
+      'teleportToken convenience: resolve this scene+region to the destination UUID and append it ' +
+        'to system.destinations — no hand-built "Scene.<id>.Region.<id>" needed.'
+    ),
+});
+
 const RemapTeleportersSchema = z.object({
   sourceModule: z
     .string()
@@ -169,7 +215,8 @@ export const regionToolModule: PlaceableModuleFactory = foundry => ({
         'teleporter). Each region carries its v14 `shapes` whole (rectangle/ellipse/polygon in canvas ' +
         'px) plus optional color/visibility/behaviors. Behaviors pass through verbatim: a teleportToken ' +
         'here must already have system.destinations = ["Scene.<id>.Region.<id>"] (use create-teleporter ' +
-        'for the two-new-region convenience). Returns the created region ids. GM-only.',
+        'for the two-new-region convenience, or add-region-behavior to wire one onto an EXISTING ' +
+        'region). Returns the created region ids. GM-only.',
       inputSchema: toInputSchema(CreateRegionSchema),
     },
     {
@@ -207,6 +254,17 @@ export const regionToolModule: PlaceableModuleFactory = foundry => ({
         'link is wired (the destination-UUID chicken-and-egg). twoWay:false makes it one-directional. ' +
         'Regions default to GM/Regions-layer visibility (no player-visible overlay). GM-only.',
       inputSchema: toInputSchema(CreateTeleporterSchema),
+    },
+    {
+      name: 'add-region-behavior',
+      description:
+        'Add ONE behavior to an EXISTING region — the write create-region only offers at creation ' +
+        'time and update-region deliberately never touches. Creates a real RegionBehavior embedded ' +
+        'document (validated against the registered behavior types). For teleporters, pass ' +
+        'teleportTo {sceneIdentifier, regionIdentifier} and the destination UUID is resolved for ' +
+        "you; the landing region's geometry is then sanity-checked and you are WARNED when it " +
+        'contains no grid-snapped token position (the silent teleport no-op: off-grid pads). GM-only.',
+      inputSchema: toInputSchema(AddRegionBehaviorSchema),
     },
     {
       name: 'remap-teleporters',
@@ -270,6 +328,24 @@ export const regionToolModule: PlaceableModuleFactory = foundry => ({
         `  • ${result?.to?.sceneName} region ${result?.to?.id} (${result?.to?.name})` +
         (result?.twoWay ? `\n      → ${dest(result?.to)}` : ' (no return link)')
       );
+    },
+    'add-region-behavior': async args => {
+      const parsed = AddRegionBehaviorSchema.parse(args ?? {});
+      const result = await foundry.call('addRegionBehavior', parsed);
+      if (result?.notFound) return `Scene not found: "${result.notFound}". Nothing changed.`;
+      if (result?.notFoundRegion) {
+        const where = result?.sceneName ? ` on "${result.sceneName}"` : '';
+        return `Region not found: "${result.notFoundRegion}"${where}. Nothing changed.`;
+      }
+      const b: any = result?.behavior ?? {};
+      const lines = [
+        `Added ${b.type} behavior ${b.id ?? '(no id)'} to region "${result?.regionName}" ` +
+          `(${result?.regionId}) on "${result?.sceneName}" (${result?.sceneId}).`,
+      ];
+      for (const d of b.destinations ?? []) lines.push(`    → ${d}`);
+      const warnings: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
+      for (const w of warnings) lines.push(`  ⚠ ${w}`);
+      return lines.join('\n');
     },
     'remap-teleporters': async args => {
       const parsed = RemapTeleportersSchema.parse(args ?? {});

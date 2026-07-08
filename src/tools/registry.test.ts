@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 137 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 138 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -65,7 +65,10 @@ describe('tool registry', () => {
     // + configure-combat-tracker (core.combatTrackerConfig: custom turn marker / resource /
     //   skip-defeated — the first game-SETTING writer, deliberately one typed tool per setting;
     //   settings are NOT the dropped update-world metadata)
-    expect(names.length).toBe(137);
+    // + add-region-behavior (wire a behavior onto an EXISTING region — the create-region/
+    //   update-region gap; teleportTo resolves the destination UUID and warns on off-grid landing
+    //   pads, the silent teleport no-op found live 2026-07-08)
+    expect(names.length).toBe(138);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

@@ -9,10 +9,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   dumpRegion,
+  rectContainsSnappedCenter,
   regionDescriptor,
   remapTeleportDestination,
   teleportDestUuid,
   teleportDestinationsOf,
+  teleportPlacementWarning,
 } from './region.js';
 
 describe('teleportDestUuid', () => {
@@ -124,6 +126,96 @@ describe('dumpRegion', () => {
         { type: 'executeMacro' },
       ],
     });
+  });
+});
+
+describe('dumpRegion — live-doc behavior fields', () => {
+  it('surfaces behavior id/name/disabled when present (omits them for bare mocks)', () => {
+    const region = {
+      id: 'r1',
+      name: 'X',
+      shapes: [],
+      behaviors: {
+        contents: [
+          {
+            id: 'b1',
+            name: 'Teleport to Cave',
+            type: 'teleportToken',
+            disabled: true,
+            system: { destinations: ['Scene.a.Region.b'] },
+          },
+        ],
+      },
+    };
+    expect(dumpRegion(region).behaviors).toEqual([
+      {
+        id: 'b1',
+        name: 'Teleport to Cave',
+        type: 'teleportToken',
+        disabled: true,
+        destinations: ['Scene.a.Region.b'],
+      },
+    ]);
+  });
+});
+
+describe('rectContainsSnappedCenter', () => {
+  // 140px cells anchored at sceneX/sceneY = 840 (the live basement geometry of 2026-07-08).
+  const grid = { size: 140, sceneX: 840, sceneY: 840 };
+
+  it('true for a grid-aligned cell — its own center is strictly inside', () => {
+    expect(rectContainsSnappedCenter({ x: 980, y: 980, width: 140, height: 140 }, grid)).toBe(true);
+  });
+
+  it('false for the half-cell-offset pad — every snapped center lands exactly ON the boundary', () => {
+    // The live silent-fail: rect corners at cell centers → MOVE_IN fires, placement finds nothing.
+    expect(rectContainsSnappedCenter({ x: 910, y: 910, width: 140, height: 140 }, grid)).toBe(
+      false
+    );
+  });
+
+  it('true for a big misaligned rect that still swallows a full cell center', () => {
+    expect(rectContainsSnappedCenter({ x: 910, y: 910, width: 280, height: 280 }, grid)).toBe(true);
+  });
+});
+
+describe('teleportPlacementWarning', () => {
+  const grid = { size: 140, sceneX: 0, sceneY: 0 };
+
+  it('null for an aligned rectangle destination', () => {
+    expect(
+      teleportPlacementWarning(
+        { name: 'Pad', shapes: [{ type: 'rectangle', x: 140, y: 140, width: 140, height: 140 }] },
+        grid
+      )
+    ).toBeNull();
+  });
+
+  it('warns on the silent-no-op geometry (no snapped center strictly inside any rect)', () => {
+    const w = teleportPlacementWarning(
+      { name: 'Pad', shapes: [{ type: 'rectangle', x: 70, y: 70, width: 140, height: 140 }] },
+      grid
+    );
+    expect(w).toMatch(/NO grid-snapped token position/);
+    expect(w).toContain('"Pad"');
+  });
+
+  it('does not analyze non-rectangle or holed geometry', () => {
+    expect(
+      teleportPlacementWarning(
+        { name: 'Pad', shapes: [{ type: 'polygon', points: [0, 0, 10, 0, 10, 10] }] },
+        grid
+      )
+    ).toBeNull();
+    expect(
+      teleportPlacementWarning(
+        {
+          name: 'Pad',
+          shapes: [{ type: 'rectangle', x: 70, y: 70, width: 140, height: 140, hole: true }],
+        },
+        grid
+      )
+    ).toBeNull();
   });
 });
 

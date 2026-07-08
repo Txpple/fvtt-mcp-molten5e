@@ -68,6 +68,7 @@ describe('PlaceableTools.getToolDefinitions', () => {
         'update-region',
         'delete-region',
         'create-teleporter',
+        'add-region-behavior',
         'remap-teleporters',
       ].sort()
     );
@@ -919,5 +920,58 @@ describe('teleporter special ops', () => {
   it('remap-teleporters rejects an empty sourceModule', async () => {
     const { tools } = build();
     await expect(tools.handle('remap-teleporters', { sourceModule: '' })).rejects.toThrow();
+  });
+
+  it('add-region-behavior forwards to addRegionBehavior and reports behavior + destination + warning', async () => {
+    const { tools, calls } = build({
+      success: true,
+      sceneId: 's1',
+      sceneName: 'Basement',
+      regionId: 'r1',
+      regionName: 'WP_TRIG',
+      behavior: { id: 'b1', type: 'teleportToken', destinations: ['Scene.s2.Region.r2'] },
+      warnings: ['destination region "Pad" contains NO grid-snapped token position…'],
+    });
+    const out = await tools.handle('add-region-behavior', {
+      sceneIdentifier: 'Basement',
+      regionIdentifier: 'WP_TRIG',
+      type: 'teleportToken',
+      teleportTo: { sceneIdentifier: 'Ground', regionIdentifier: 'WP_LAND' },
+    });
+    const call = calls.find(([n]) => n === 'addRegionBehavior');
+    expect(call?.[1]).toMatchObject({
+      sceneIdentifier: 'Basement',
+      regionIdentifier: 'WP_TRIG',
+      type: 'teleportToken',
+      teleportTo: { sceneIdentifier: 'Ground', regionIdentifier: 'WP_LAND' },
+    });
+    expect(out).toContain('Added teleportToken behavior b1');
+    expect(out).toContain('→ Scene.s2.Region.r2');
+    expect(out).toContain('⚠ destination region "Pad"');
+  });
+
+  it('add-region-behavior reports scene / region not-found without changing anything', async () => {
+    const { tools } = build({ success: true, notFound: 'Nowhere' });
+    const out = await tools.handle('add-region-behavior', {
+      sceneIdentifier: 'Nowhere',
+      regionIdentifier: 'X',
+      type: 'executeMacro',
+    });
+    expect(out).toContain('Scene not found: "Nowhere"');
+
+    const { tools: t2 } = build({ success: true, notFoundRegion: 'X', sceneName: 'Basement' });
+    const out2 = await t2.handle('add-region-behavior', {
+      sceneIdentifier: 'Basement',
+      regionIdentifier: 'X',
+      type: 'executeMacro',
+    });
+    expect(out2).toContain('Region not found: "X" on "Basement"');
+  });
+
+  it('add-region-behavior rejects a missing type', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handle('add-region-behavior', { sceneIdentifier: 'A', regionIdentifier: 'B' })
+    ).rejects.toThrow();
   });
 });

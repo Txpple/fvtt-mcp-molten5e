@@ -320,6 +320,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'update-region': args => placeableTools.handle('update-region', args),
     'delete-region': args => placeableTools.handle('delete-region', args),
     'create-teleporter': args => placeableTools.handle('create-teleporter', args),
+    'add-region-behavior': args => placeableTools.handle('add-region-behavior', args),
     'remap-teleporters': args => placeableTools.handle('remap-teleporters', args),
 
     // Playlists

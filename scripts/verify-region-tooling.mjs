@@ -170,6 +170,94 @@ try {
     !one?.to?.behaviors?.some(x => x.destinations?.length),
     'one-way to-side has NO return teleport'
   );
+
+  console.log(
+    '\n# add-region-behavior: wire a teleport onto EXISTING regions (+ off-grid warning)'
+  );
+  // B has sceneX/sceneY = 280 (0.05 padding) — 1120 is grid-aligned, 1190 is the half-cell offset.
+  const pads = await f.call('createSceneRegions', {
+    sceneIdentifier: bId,
+    items: [
+      {
+        name: `${TAG} Landing`,
+        shapes: [
+          {
+            type: 'rectangle',
+            x: 1120,
+            y: 1120,
+            width: 140,
+            height: 140,
+            rotation: 0,
+            hole: false,
+          },
+        ],
+      },
+      {
+        name: `${TAG} OffGrid`,
+        shapes: [
+          {
+            type: 'rectangle',
+            x: 1190,
+            y: 1190,
+            width: 140,
+            height: 140,
+            rotation: 0,
+            hole: false,
+          },
+        ],
+      },
+    ],
+  });
+  const landId = pads?.items?.[0]?.id;
+  const offId = pads?.items?.[1]?.id;
+  const stairsRes = await f.call('createSceneRegions', {
+    sceneIdentifier: aId,
+    items: [
+      {
+        name: `${TAG} Stairs`,
+        shapes: [
+          {
+            type: 'rectangle',
+            x: 1400,
+            y: 1400,
+            width: 140,
+            height: 140,
+            rotation: 0,
+            hole: false,
+          },
+        ],
+      },
+    ],
+  });
+  const stairsId = stairsRes?.items?.[0]?.id;
+  const add1 = await f.call('addRegionBehavior', {
+    sceneIdentifier: aId,
+    regionIdentifier: stairsId,
+    type: 'teleportToken',
+    teleportTo: { sceneIdentifier: bId, regionIdentifier: `${TAG} Landing` },
+  });
+  assert(!!add1?.behavior?.id, 'behavior created as a real embedded doc (has an id)');
+  assert(
+    add1?.behavior?.destinations?.[0] === `Scene.${bId}.Region.${landId}`,
+    `teleportTo resolved the destination UUID (${add1?.behavior?.destinations?.[0]})`
+  );
+  assert(!add1?.warnings, 'grid-aligned landing pad draws NO warning');
+  const add2 = await f.call('addRegionBehavior', {
+    sceneIdentifier: aId,
+    regionIdentifier: `${TAG} Stairs`, // resolve the region by NAME this time
+    type: 'teleportToken',
+    teleportTo: { sceneIdentifier: bId, regionIdentifier: offId },
+  });
+  assert(
+    add2?.warnings?.some(w => /NO grid-snapped token position/.test(w)),
+    'off-grid landing pad triggers the silent-no-op warning'
+  );
+  const listStairs = await f.call('listSceneRegions', { sceneIdentifier: aId });
+  const stairs = listStairs?.items?.find(r => r.id === stairsId);
+  assert(
+    stairs?.behaviors?.length === 2,
+    `list-regions shows both behaviors on the trigger (got ${stairs?.behaviors?.length})`
+  );
 } catch (e) {
   fails++;
   console.log(`\n[verify-region] FATAL: ${e?.message || String(e)}`);
