@@ -32,6 +32,14 @@ era detection, tile discovery, and asset path-rewrite math), `upload-asset` / **
 teleporter fixer), `create-journal` / `add-journal-image`, `create-folder` / `move-documents`,
 `list-scenes` / `list-journals`. To boot the world first, hand off to **`start-session`**.
 
+> **🎯 OWNER DEFAULT — MAPS ONLY (directed 2026-07-08):** the owner repurposes pack maps into his
+> own setting (e.g. Ostenwold → Greenrest), so an import delivers **pre-made scenes with their
+> walls, doors, lights, and mood — nothing else**. **SKIP Step 5 (pack journals), scene→journal
+> links, and the legend→map-pins pass entirely** unless the owner explicitly asks for them that
+> session — the pack's lore/names must not enter the world. Teleporters (when a pack ships
+> regions) and tiles remain in scope; folder/naming follow the owner's campaign convention (his
+> chapter folders, his scene names), not the pack's.
+
 > **Scope — all eras:** this skill imports **modern** (v13/LevelDB), **mid** (v10–v11), and **legacy**
 > (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
 > modern pack's split walls / `config{}` lights / `environment{}` mood and cross-scene **teleporters**
