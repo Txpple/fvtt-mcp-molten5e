@@ -95,7 +95,7 @@ export class ActorTools {
       {
         name: 'get-actor-entity',
         description:
-          'Retrieve full details for a specific entity from a character. Works for items (feats, equipment, spells), actions (strikes, special abilities), or effects/conditions. Returns complete description and all system data. Use this after get-actor when you need detailed information about a specific entity.',
+          'Retrieve full details for a specific entity from a character. Works for items (feats, equipment, spells), actions (strikes, special abilities), or effects/conditions. Returns complete description, all system data, and (for items) module flags — the read path for flag forensics like item-piles transfer residue. Use this after get-actor when you need detailed information about a specific entity.',
         inputSchema: toInputSchema(GetActorEntitySchema),
       },
       {
@@ -207,6 +207,10 @@ export class ActorTools {
           hasImage: !!entity.img,
           // Full (source-sanitized) system data for advanced use cases.
           system: entity.system,
+          // Module flags (source-sanitized) — the forensic read path for flag residue such as
+          // item-piles' transfer leftovers (the NaN-attunement investigation needed a script
+          // for exactly this before flags were surfaced here).
+          ...(entity.flags && Object.keys(entity.flags).length > 0 ? { flags: entity.flags } : {}),
         };
       } else if (entityType === 'action') {
         return {

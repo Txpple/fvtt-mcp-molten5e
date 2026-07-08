@@ -81,7 +81,17 @@ describe('handleGetCharacter', () => {
         },
         // saves are attached TOP-LEVEL by getCharacterInfo (page-side extractSaves), not under system
         saves: { str: { value: 0, proficient: 0 }, int: { value: 5, proficient: 1 } },
-        items: [{ id: 'i1', name: 'Dagger', type: 'weapon', system: { equipped: true } }],
+        items: [
+          {
+            id: 'i1',
+            name: 'Dagger',
+            type: 'weapon',
+            system: { equipped: true },
+            // page payload now carries item flags for get-actor-entity; the toEqual below
+            // proves get-actor's minimal projection still drops them (token budget).
+            flags: { 'item-piles': { item: {} } },
+          },
+        ],
         effects: [
           {
             id: 'e1',
@@ -261,6 +271,32 @@ describe('handleGetCharacterEntity', () => {
     expect(out.attunement).toBe(1);
     expect(out.hasImage).toBe(true);
     expect(out.system).toBeTruthy();
+    expect(out.flags).toBeUndefined(); // no flags on the item → key stays off the payload
+  });
+
+  it('surfaces item module flags (the flag-forensics read path) when the page reports them', async () => {
+    const { tools } = build(
+      charWith({
+        items: [
+          {
+            id: 'it2',
+            name: 'Old Greatsword',
+            type: 'weapon',
+            system: { equipped: false },
+            // the item-piles transfer residue shape from the NaN-attunement forensic
+            flags: { 'item-piles': { item: { '-=overheadCost': null } } },
+          },
+        ],
+      })
+    );
+
+    const out = await tools.handleGetCharacterEntity({
+      characterIdentifier: 'Aria',
+      entityIdentifier: 'Old Greatsword',
+    });
+
+    expect(out.entityType).toBe('item');
+    expect(out.flags).toEqual({ 'item-piles': { item: { '-=overheadCost': null } } });
   });
 
   it('resolves an action entity by name', async () => {

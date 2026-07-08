@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  scaleTokensResolveFor,
   normalizeAssetPath,
   basename,
   isVideoPath,
@@ -367,5 +368,46 @@ describe('findUnresolvedScaleTokens', () => {
     expect(findUnresolvedScaleTokens(node)).toEqual([
       { path: 'system.uses.max', formula: '@scale.barbarian.rage-damage' },
     ]);
+  });
+});
+
+describe('scaleTokensResolveFor', () => {
+  // A type:character copy keeps its class item's ScaleValue advancement, so dnd5e puts the
+  // values in roll data under scale.<class>.<id> — the shape getRollData() returns live.
+  const bard = {
+    getRollData: () => ({ scale: { bard: { 'bardic-inspiration': { die: 'd6' } } } }),
+  };
+  const npc = { getRollData: () => ({ abilities: { str: { mod: 3 } } }) }; // no scale — an NPC
+
+  it('resolves a character-copy formula whose scale id exists in roll data', () => {
+    expect(scaleTokensResolveFor(bard, '@scale.bard.bardic-inspiration')).toBe(true);
+    // sub-path into the scale value object resolves too
+    expect(scaleTokensResolveFor(bard, '1 + @scale.bard.bardic-inspiration.die')).toBe(true);
+  });
+
+  it('reports an NPC formula unresolved even when @scale is mid-string', () => {
+    expect(scaleTokensResolveFor(npc, '@scale.rogue.sneak-attack')).toBe(false);
+    // the mid-string case is why this walks references instead of Roll-substituting to "0"
+    expect(scaleTokensResolveFor(npc, '1d8 + @scale.monk.martial-arts')).toBe(false);
+  });
+
+  it('requires EVERY reference in a mixed formula to resolve', () => {
+    expect(
+      scaleTokensResolveFor(bard, '@scale.bard.bardic-inspiration + @scale.rogue.sneak-attack')
+    ).toBe(false);
+  });
+
+  it('is unresolved when roll data is missing or getRollData throws', () => {
+    expect(scaleTokensResolveFor({}, '@scale.bard.bardic-inspiration')).toBe(false);
+    expect(
+      scaleTokensResolveFor(
+        {
+          getRollData: () => {
+            throw new Error('boom');
+          },
+        },
+        '@scale.bard.bardic-inspiration'
+      )
+    ).toBe(false);
   });
 });

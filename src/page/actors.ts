@@ -13,7 +13,9 @@ import {
   getOrCreateFolder as getOrCreateFolderShared,
   importFromCompendium,
   findUnresolvedScaleTokens,
+  scaleTokensResolveFor,
   MCP_FLAG_SCOPE,
+  MCP_FOLDER_CREATION_COLORS,
   resolveActorItem,
   toDeletionKey,
   toSource,
@@ -355,10 +357,15 @@ function extractDerived(actor: any): Record<string, any> | undefined {
 }
 
 /**
- * Detailed character info for one actor, resolved by name or id.
+ * Detailed character info for one actor, resolved via the shared fuzzy resolver
+ * (exact id, exact name, substring, then PLACED-TOKEN id → that token's
+ * ActorDelta-backed actor — the same path searchCharacterItems already had; the
+ * ad-hoc game.actors-only lookup here was why get-actor/get-actor-entity threw
+ * "Character not found" on the token ids their descriptions advertise).
  * Payload mirrors the bridge query: { characterName?, characterId? }.
  * Returns the full CharacterInfo shape the Node character tool consumes:
- * id/name/type, optional img, sanitized system, sanitized items, effects,
+ * id/name/type, optional img, sanitized system, sanitized items (each with its
+ * module `flags` when present — the item-piles NaN forensic read path), effects,
  * and (when present) dnd5e spellcasting.
  */
 export function getCharacterInfo(args: { characterName?: string; characterId?: string }): unknown {
@@ -367,16 +374,7 @@ export function getCharacterInfo(args: { characterName?: string; characterId?: s
     throw new Error('characterName or characterId is required');
   }
 
-  let actor: any;
-  // Prefer an exact id when the identifier is a Foundry id length.
-  if (identifier.length === 16) {
-    actor = game.actors?.get(identifier);
-  }
-  if (!actor) {
-    actor = Array.from(game.actors ?? []).find(
-      (a: any) => a.name?.toLowerCase() === identifier.toLowerCase()
-    );
-  }
+  const actor: any = resolveActor(identifier);
   if (!actor) {
     throw new Error(`Character not found: ${identifier}`);
   }
@@ -390,13 +388,19 @@ export function getCharacterInfo(args: { characterName?: string; characterId?: s
     // and Object.keys() on a Map returns [] — so sanitizing the live `system` silently empties
     // activities (attacks/saves/damage) to {}. toObject() flattens Maps/Collections to plain data.
     system: sanitize(toSource(actor).system),
-    items: actor.items.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      type: item.type,
-      ...(item.img ? { img: item.img } : {}),
-      system: sanitize(toSource(item).system),
-    })),
+    items: actor.items.map((item: any) => {
+      const flags = sanitize(toSource(item).flags);
+      return {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        ...(item.img ? { img: item.img } : {}),
+        system: sanitize(toSource(item).system),
+        // Module flags (dnd5e riders, item-piles transfer residue, …) — surfaced by
+        // get-actor-entity for flag forensics; get-actor's minimal projection drops them.
+        ...(flags && Object.keys(flags).length > 0 ? { flags } : {}),
+      };
+    }),
     effects: actor.effects.map((effect: any) => {
       const dur = effect.duration;
       const durRaw = effect._source?.duration;
@@ -721,8 +725,12 @@ export function findActor(args: { identifier: string }): unknown {
  * document `type`. Thin wrapper over the shared helper that preserves this
  * file's `[foundry-mcp-bridge]`-prefixed console.warn on failure.
  */
-async function getOrCreateFolder(folderName: string, type: string): Promise<string | null> {
-  return getOrCreateFolderShared(folderName, type, `[${MODULE_ID}] `);
+async function getOrCreateFolder(
+  folderName: string,
+  type: string,
+  markGenerated = false
+): Promise<string | null> {
+  return getOrCreateFolderShared(folderName, type, `[${MODULE_ID}] `, markGenerated);
 }
 
 interface TokenPlacement {
@@ -884,6 +892,15 @@ async function removeFolderIfEmptyAndMcp(
   const mcpGenerated = folder.flags?.[MCP_FLAG_SCOPE]?.mcpGenerated === true;
   if (!mcpGenerated) return null;
 
+  // The flag is provenance stamped at creation and never re-checked, so it can outlive the
+  // folder's ownership: legacy bridge versions flagged even user-named folders (the `_DM`
+  // incident). A folder that no longer wears a bridge creation color was re-styled by the
+  // user — treat that as adoption and keep it.
+  const sourceColor = toSource(folder)?.color;
+  if (!sourceColor || !MCP_FOLDER_CREATION_COLORS.has(String(sourceColor).toLowerCase())) {
+    return null;
+  }
+
   const info = { id: folder.id ?? folderId, name: folder.name ?? '' };
   await folder.delete();
   return info;
@@ -1005,7 +1022,9 @@ export async function createActorFromCompendium(request: {
       );
     }
   }
-  if (!folderId) folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
+  // Only the bridge-invented default is marked auto-removable; a user-named `requestedFolder`
+  // above is the user's org structure and must never be flagged for cleanup.
+  if (!folderId) folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor', true);
 
   // Create actors.
   for (let i = 0; i < finalQuantity; i++) {
@@ -1060,9 +1079,11 @@ export async function createActorFromCompendium(request: {
         throw new Error(`Failed to create actor "${customName}"`);
       }
 
-      // Report (don't resolve) any @scale.* tokens the copied embedded items carry. A pure MM
-      // prefab is clean, but a humanoid built from PC class/racial features dangles them to 0 on an
-      // NPC — surface the token + its item so the skill can patch an explicit die (design.md §2.1/§6).
+      // Report (don't resolve) any @scale.* tokens the copied embedded items carry THAT DON'T
+      // resolve in this copy's roll data. A type:character copy (e.g. a PHB pregen) keeps its
+      // class item's ScaleValue advancement, so @scale resolves natively and is no problem; on
+      // an NPC rollData.scale is absent and the same literal token dangles to 0 — surface the
+      // token + its item so the skill can patch an explicit die (design.md §2.1/§6).
       const unresolvedScale: Array<{
         itemId: string;
         itemName: string;
@@ -1071,6 +1092,7 @@ export async function createActorFromCompendium(request: {
       }> = [];
       for (const item of newActor.items ?? []) {
         for (const t of findUnresolvedScaleTokens(toSource(item))) {
+          if (scaleTokensResolveFor(newActor, t.formula)) continue;
           unresolvedScale.push({ itemId: item.id, itemName: item.name, ...t });
         }
       }
@@ -1156,9 +1178,10 @@ export async function createActorFromCompendium(request: {
 /**
  * Permanently delete one or more world actors by STRICT identifier (exact id,
  * then exact name — no fuzzy matching). When removeEmptyFolder is not false,
- * any bridge-created folder this deletion leaves completely empty is also
- * removed (only mcpGenerated, empty folders — never a user folder or one with
- * remaining contents). Returns { success, deletedCount, deleted, notFound?,
+ * any bridge-invented housekeeping folder this deletion leaves completely empty
+ * is also removed (only mcpGenerated + empty + still wearing its bridge creation
+ * color — never a user folder, one the user re-styled, or one with remaining
+ * contents). Returns { success, deletedCount, deleted, notFound?,
  * removedFolders? }.
  */
 export async function deleteActor(data: {

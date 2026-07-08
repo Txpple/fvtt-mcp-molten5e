@@ -47,9 +47,10 @@ async function resolvePcFolderId(folder?: string): Promise<string | null> {
     const f = folder.trim();
     const existing =
       game.folders?.get(f) || game.folders?.find((x: any) => x.name === f && x.type === 'Actor');
+    // User-named folder: never marked mcpGenerated (user org structure, not cleanup fodder).
     return existing ? existing.id : await getOrCreateFolder(f, 'Actor');
   }
-  return getOrCreateFolder('Foundry MCP Characters', 'Actor');
+  return getOrCreateFolder('Foundry MCP Characters', 'Actor', '', true);
 }
 
 // =============================================================================

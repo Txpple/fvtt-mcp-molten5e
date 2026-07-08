@@ -256,8 +256,8 @@ export async function createNpcActor(data: NpcInput): Promise<unknown> {
   // 3. Build the (pure) dnd5e system-data model
   const { actorData, warnings, normalizedCR } = buildNpcActorData(data);
 
-  // 4. Folder — assign if available
-  const folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor');
+  // 4. Folder — assign if available (bridge-invented default, so marked auto-removable)
+  const folderId = await getOrCreateFolder('Foundry MCP Creatures', 'Actor', '', true);
   if (folderId) {
     actorData.folder = folderId;
   }

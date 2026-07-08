@@ -241,8 +241,10 @@ export function listFolders(args?: { type?: string }): unknown {
 
 /**
  * Create a Folder for any world document type, optionally nested under a
- * parent folder of the same type. Flagged mcpGenerated so the auto-cleanup
- * paths (e.g. deleteActor) recognise it.
+ * parent folder of the same type. NOT flagged mcpGenerated: an explicitly
+ * created, user-named folder is deliberate org structure, so deleteActor's
+ * empty-folder auto-cleanup must never remove it (the `_DM` lesson — only the
+ * bridge-invented housekeeping defaults are marked auto-removable).
  */
 export async function createFolder(data: {
   name: string;
@@ -276,7 +278,7 @@ export async function createFolder(data: {
       ...(data.color ? { color: data.color } : {}),
       folder: parentId,
       flags: {
-        [MCP_FLAG_SCOPE]: { mcpGenerated: true, createdAt: new Date().toISOString() },
+        [MCP_FLAG_SCOPE]: { mcpGenerated: false, createdAt: new Date().toISOString() },
       },
     } as any);
 

@@ -191,6 +191,34 @@ export function findUnresolvedScaleTokens(data: unknown): Array<{ path: string; 
   return out;
 }
 
+/**
+ * True when EVERY `@scale.*` reference in `formula` resolves to a defined value in the actor's
+ * roll data. On a type:character copy the class item's ScaleValue advancement is intact, so
+ * `rollData.scale.<class>.<id>` exists and the literal token is NOT a problem to report; on an
+ * NPC `rollData.scale` is absent and every reference stays unresolved (the current warning
+ * behavior). Pure path-walk (no Roll.replaceFormulaData) so a mixed formula like
+ * `1d8 + @scale.monk.die` is judged by its references, not by whether substitution left "0".
+ */
+export function scaleTokensResolveFor(actor: any, formula: string): boolean {
+  const refs = formula.match(/@scale\.[\w.-]+/g) ?? [];
+  if (refs.length === 0) return false; // caller found "@scale." somewhere we can't parse — report it
+  let rollData: any;
+  try {
+    rollData = actor?.getRollData?.();
+  } catch {
+    return false;
+  }
+  if (!rollData) return false;
+  return refs.every(ref => {
+    let v: any = rollData;
+    for (const seg of ref.slice(1).replace(/\.+$/, '').split('.')) {
+      if (v === null || typeof v !== 'object') return false;
+      v = v[seg];
+    }
+    return v !== undefined && v !== null;
+  });
+}
+
 // --- document sanitizer (single source of truth) ----------------------------
 // Hoisted from the byte-identical copies in actors.ts (`sanitize`) and items.ts
 // (`sanitizeData`/`removeSensitiveFields`). This is the page layer's single
@@ -382,9 +410,25 @@ export function resolveJournalStrict(identifier: string): any {
 export { DAMAGE_TYPES } from '../utils/dnd5e-canonical.js';
 
 /**
+ * The colors getOrCreateFolder stamps at creation. deleteActor's empty-folder cleanup uses them
+ * as a user-adoption tripwire: a legacy folder that carries mcpGenerated=true but no longer wears
+ * a creation color was re-styled by the user and must be kept (see removeFolderIfEmptyAndMcp).
+ */
+export const MCP_FOLDER_COLOR_ACTOR = '#4a90e2'; // blue for actors
+export const MCP_FOLDER_COLOR_OTHER = '#f39c12'; // orange for everything else
+export const MCP_FOLDER_CREATION_COLORS: ReadonlySet<string> = new Set([
+  MCP_FOLDER_COLOR_ACTOR,
+  MCP_FOLDER_COLOR_OTHER,
+]);
+
+/**
  * Resolve or create a Folder by name scoped to the given document type. Returns
  * the folder id, or null when absent and creation fails (so callers create the
  * document without a folder rather than failing outright).
+ *
+ * `markGenerated` flags the new folder mcpGenerated (auto-removable when empty) and must be
+ * true ONLY for bridge-invented housekeeping names ("Foundry MCP Creatures" / "Foundry MCP
+ * Characters") — never for a folder name the user supplied (tool folder params, move targets).
  *
  * Hoisted from the five identical per-file copies (actors / journals / collections
  * / organization / dnd5e/npc). Color (#4a90e2 for Actor, #f39c12 otherwise),
@@ -396,7 +440,8 @@ export { DAMAGE_TYPES } from '../utils/dnd5e-canonical.js';
 export async function getOrCreateFolder(
   folderName: string,
   type: string,
-  warnLabel = ''
+  warnLabel = '',
+  markGenerated = false
 ): Promise<string | null> {
   try {
     const existingFolder = game.folders?.find((f: any) => f.name === folderName && f.type === type);
@@ -419,12 +464,16 @@ export async function getOrCreateFolder(
       name: folderName,
       type,
       description,
-      color: type === 'Actor' ? '#4a90e2' : '#f39c12', // Blue for actors, orange for journals
+      color: type === 'Actor' ? MCP_FOLDER_COLOR_ACTOR : MCP_FOLDER_COLOR_OTHER,
       sort: 0,
       parent: null,
       flags: {
         [MCP_FLAG_SCOPE]: {
-          mcpGenerated: true,
+          // mcpGenerated marks BRIDGE-INVENTED housekeeping folders (safe to auto-remove when
+          // empty). A folder minted from a USER-SUPPLIED name is the user's org structure even
+          // though the bridge created the document — it must never be auto-removed (the `_DM`
+          // incident: an old user-named folder carried the flag and deleteActor cleanup ate it).
+          mcpGenerated: markGenerated,
           createdAt: new Date().toISOString(),
           questContext: type === 'JournalEntry' ? folderName : undefined,
         },
