@@ -140,6 +140,34 @@ describe('handleGetCharacter', () => {
     expect(out.spellcasting).toEqual([{ name: 'Wizard Spells', type: 'prepared', ability: 'int' }]);
   });
 
+  it("surfaces a weapon's 2024 mastery property and the actor's mastery kinds", async () => {
+    const { tools } = build({
+      getCharacterInfo: {
+        id: 'a9',
+        name: 'Morgash',
+        type: 'character',
+        system: {
+          traits: { weaponProf: { mastery: { value: ['greatsword'], bonus: [] } } },
+        },
+        items: [
+          {
+            id: 'w1',
+            name: 'Greatsword',
+            type: 'weapon',
+            system: { equipped: true, mastery: 'graze' },
+          },
+          // an empty mastery string (non-weapon or 2014 item) stays off the payload
+          { id: 'w2', name: 'Torch', type: 'consumable', system: { equipped: false, mastery: '' } },
+        ],
+        effects: [],
+      },
+    });
+    const out = await tools.handleGetCharacter({ identifier: 'Morgash' });
+    expect(out.stats.weaponMasteries).toEqual(['greatsword']);
+    expect(out.items[0].mastery).toBe('graze');
+    expect(out.items[1].mastery).toBeUndefined();
+  });
+
   it('collapses an embedded race item to its name and omits empty actions/spellcasting', async () => {
     const { tools } = build({
       getCharacterInfo: {

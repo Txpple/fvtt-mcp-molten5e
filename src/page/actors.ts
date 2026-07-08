@@ -1713,6 +1713,39 @@ export async function updateActor(params: any): Promise<unknown> {
     applied.push('telepathy');
   }
 
+  // --- weapon mastery (PC, 2024) ---
+  if (params.weaponMasteries) {
+    if (actor.type !== 'character') {
+      warnings.push(
+        `"weaponMasteries" is a PC-only field — skipped on ${actor.type} "${actor.name}"`
+      );
+    } else {
+      // Values are base weapon KINDS (CONFIG.DND5E.weaponIds keys: "greatsword", "handcrossbow",
+      // ...), NOT mastery names — the mastery property (graze/vex/...) lives on the weapon item.
+      // Normalize friendly forms ("Hand Crossbow") to the id shape and soft-validate against the
+      // live CONFIG, so a typo warns instead of silently never matching any weapon.
+      const weaponIds = new Set(
+        Object.keys((globalThis as any).CONFIG?.DND5E?.weaponIds ?? {}).map(k => k.toLowerCase())
+      );
+      const normalized = {
+        mode: params.weaponMasteries.mode,
+        values: (params.weaponMasteries.values ?? []).map((v: any) =>
+          String(v)
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '')
+        ),
+      };
+      applySet(
+        'system.traits.weaponProf.mastery',
+        traits.weaponProf?.mastery?.value,
+        normalized,
+        weaponIds.size > 0 ? weaponIds : null,
+        'weapon kind',
+        'weaponMasteries'
+      );
+    }
+  }
+
   // --- resources (NPC) ---
   if (typeof params.legendaryActions === 'number' && npcOnly('legendaryActions')) {
     update['system.resources.legact.max'] = params.legendaryActions;

@@ -71,6 +71,24 @@ describe('extractActorStats', () => {
     expect(stats.saves).toBeUndefined();
   });
 
+  it('surfaces 2024 weapon-mastery kinds and omits the field when unset', () => {
+    const withMastery = extractActorStats({
+      name: 'Morgash',
+      type: 'character',
+      system: {
+        traits: { weaponProf: { mastery: { value: ['greatsword', 'maul'], bonus: [] } } },
+      },
+    });
+    expect(withMastery.weaponMasteries).toEqual(['greatsword', 'maul']);
+
+    const without = extractActorStats({
+      name: 'Salyth',
+      type: 'character',
+      system: { traits: { weaponProf: { mastery: { value: [], bonus: [] } } } },
+    });
+    expect(without.weaponMasteries).toBeUndefined();
+  });
+
   it('extracts an NPC: CR, creature type/size/alignment, legendary actions', () => {
     const stats = extractActorStats({
       name: 'Goblin Boss',

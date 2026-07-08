@@ -89,7 +89,7 @@ export class ActorTools {
       {
         name: 'get-actor',
         description:
-          'Retrieve D&D 5e character information optimized for minimal token usage. Returns: full stats (abilities, skills, saves, AC, HP), action names, active effects/conditions (name only), and ALL items with minimal metadata (name, type, equipped status, attunement) without descriptions. Perfect for checking equipment or identifying what to investigate further. Use get-actor-entity to fetch full details for specific items, spells, or effects.',
+          'Retrieve D&D 5e character information optimized for minimal token usage. Returns: full stats (abilities, skills, saves, AC, HP, 2024 weapon-mastery kinds), action names, active effects/conditions (name only), and ALL items with minimal metadata (name, type, equipped status, attunement, weapon mastery property) without descriptions. Perfect for checking equipment or identifying what to investigate further. Use get-actor-entity to fetch full details for specific items, spells, or effects.',
         inputSchema: toInputSchema(GetActorSchema),
       },
       {
@@ -440,6 +440,13 @@ export class ActorTools {
       // Include attuned status for D&D 5e magic items
       if (item.system?.attunement !== undefined) {
         formattedItem.attunement = item.system.attunement;
+      }
+
+      // dnd5e 2024 weapons: the mastery property (vex/topple/graze/...) — whether the ACTOR can
+      // use it is stats.weaponMasteries (the weapon-kind unlock); surfacing both makes mastery
+      // questions a single get-actor call instead of a get-actor-entity per weapon.
+      if (typeof item.system?.mastery === 'string' && item.system.mastery) {
+        formattedItem.mastery = item.system.mastery;
       }
 
       return formattedItem;

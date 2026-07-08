@@ -147,6 +147,14 @@ export function extractActorStats(actorData: any): any {
     stats.saves = actorData.saves;
   }
 
+  // 2024 Weapon Mastery (PCs): the base weapon KINDS whose mastery property this actor can use
+  // (traits.weaponProf.mastery.value). Each weapon item carries its own mastery (vex/topple/...) —
+  // surfaced per-item in the items list; this is the actor-side unlock.
+  const masteryKinds = system.traits?.weaponProf?.mastery?.value;
+  if (Array.isArray(masteryKinds) && masteryKinds.length > 0) {
+    stats.weaponMasteries = masteryKinds;
+  }
+
   // Creature-specific info (NPCs)
   if (actorData.type === 'npc') {
     const creatureType = system.details?.type?.value ?? system.details?.type;

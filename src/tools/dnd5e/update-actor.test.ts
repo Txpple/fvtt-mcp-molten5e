@@ -154,6 +154,31 @@ describe('handleUpdateActor', () => {
     expect(call?.[1].damageImmunities).toEqual({ mode: 'replace', values: ['fire', 'poison'] });
   });
 
+  it('forwards weaponMasteries with the default replace mode', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Morgash the Gravemaker', type: 'character' },
+      applied: ['weaponMasteries'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Morgash the Gravemaker',
+      weaponMasteries: { values: ['greatsword', 'maul', 'battleaxe'] },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].weaponMasteries).toEqual({
+      mode: 'replace',
+      values: ['greatsword', 'maul', 'battleaxe'],
+    });
+  });
+
+  it('rejects non-array weaponMasteries values', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', weaponMasteries: { values: 'greatsword' } })
+    ).rejects.toThrow();
+  });
+
   it('forwards a currency group with its default mode', async () => {
     const { tool, calls } = makeTool({
       success: true,

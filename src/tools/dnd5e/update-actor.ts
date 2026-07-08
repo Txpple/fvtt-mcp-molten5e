@@ -167,6 +167,30 @@ const UpdateActorSchema = z.object({
     )
     .optional()
     .describe('Set skill proficiencies — merge: only the listed skills change.'),
+  weaponMasteries: z
+    .object({
+      mode: z
+        .enum(['replace', 'add', 'remove'])
+        .default('replace')
+        .describe(
+          'replace (default) overwrites the whole list; add/remove merge with the current list.'
+        ),
+      values: z
+        .array(z.string())
+        .default([])
+        .describe(
+          'Base weapon KINDS ("greatsword", "longbow", "handcrossbow", ...) — NOT mastery names: ' +
+            'each weapon carries its own mastery property (vex/topple/graze/...), the actor just ' +
+            'unlocks it per kind.'
+        ),
+    })
+    .optional()
+    .describe(
+      '[PC] 2024 Weapon Mastery selections — the kinds of weapons whose mastery property the ' +
+        'character can use (system.traits.weaponProf.mastery). Swappable on a Long Rest per the ' +
+        "class feature; the count allowed is the class's business (fighter 3, paladin/ranger 2 at " +
+        'low levels) — the tool does not enforce it.'
+    ),
 
   // vitals
   hp: z
@@ -315,6 +339,8 @@ export class DnD5eUpdateActorTool {
           'placement-only: edit those on a dropped token with update-token)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +
+          '• weaponMasteries [PC] — {mode: replace|add|remove, values: ["greatsword", ...]} — 2024 Weapon ' +
+          'Mastery weapon KINDS (base weapon ids, not mastery names)\n' +
           '• vitals — hp, ac, initiative\n' +
           '• movement, senses\n' +
           '• defenses — damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities / languages ' +
