@@ -38,7 +38,10 @@ teleporter fixer), `create-journal` / `add-journal-image`, `create-folder` / `mo
 > links, and the legend→map-pins pass entirely** unless the owner explicitly asks for them that
 > session — the pack's lore/names must not enter the world. Teleporters (when a pack ships
 > regions) and tiles remain in scope; folder/naming follow the owner's campaign convention (his
-> chapter folders, his scene names), not the pack's.
+> chapter folders, his scene names), not the pack's. **Stamp every imported town/social map with
+> `flags["fvtt-mod-autoexplore"].enabled: true`** (pass it in create-scene's `flags` alongside the
+> provenance flag) — the house autoexplore module renders the scene born-explored (architecture
+> through fog, tokens still LOS-gated); the GM can untick it per scene in the Custom tab.
 
 > **Scope — all eras:** this skill imports **modern** (v13/LevelDB), **mid** (v10–v11), and **legacy**
 > (≤v9 / NeDB `.db`) packs. `read-pack` detects the era and normalizes the on-disk shape for you: a
