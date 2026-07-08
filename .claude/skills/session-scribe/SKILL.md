@@ -73,6 +73,7 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
      construction**: written ONLY from what the players saw at the table; nothing that appears
      solely in gm-notes.md or GM whispers may appear here. The user pastes this into an email —
      it must render in Gmail/Outlook (keep the inline-style table structure intact).
+     **House style (owner-locked 2026-07-08, session 1):** see "recap.html house style" below.
 6. **Commit** — in the campaign repo: `git add sessions/<date>` → commit
    (`session: <date> — <short title>`) → push. `audio/` is gitignored (bulky, and the
    transcript is the durable artifact); tell the user audio stays local and can be deleted
@@ -82,6 +83,22 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
 
 - **Recap voice:** in-world chronicle, not minutes. Lead with the arc, keep table-talk out,
   name PCs and NPCs. The TL;DR paragraph is one breath; section headings are story beats.
+- **recap.html house style (owner-locked 2026-07-08, iterated live on session 1):**
+  - **Dice as narrative, never numerals.** Weave the blow-by-blow of checks, crits, failed
+    saves, and big hits into the prose at FULL detail — but the WORDS carry the magnitude, not
+    the numbers. Crit → "his blade found the perfect seam"; nat-20 lore check → "his temple
+    schooling surfaced with perfect, word-for-word clarity"; failed save → "neither had the
+    will to shake it"; near-death → "beaten to the ragged edge of standing." NO raw numerals
+    in the prose (owner tried a numbers version — "27 to hit, 15 radiant" — and rejected it as
+    hard to read; the narrative-weave rewrite is the approved form).
+  - **Fun endmatter, in-character only.** After Spoils & Progress, add two sections:
+    **Quotable Quotes** (the night's best verbatim table lines with dry one-line attributions
+    — in-character/in-world only) and **Deeds of the Day** (in-world superlative awards, one
+    per PC or so, e.g. "Arrow of the Day", "Finest Masonry in Faerûn"). NO meta, NO player
+    names, NO technical-issues talk anywhere in recap.html — UI/audio/browser troubles belong
+    in gm-notes.md only.
+  - recap.md (the canonical GM record) is exempt: exact rolls/damage numbers are welcome there.
+  - Reference implementation: campaign repo `sessions/2026-07-07/recap.html`.
 - **Attribution is per-speaker-track and trustworthy** — quote players verbatim when it's good
   ("quotes of the night" in gm-notes). Whisper text is GM-only by definition: usable in
   recap.md/gm-notes.md, NEVER in recap.html.

@@ -1,6 +1,9 @@
 <!-- session-scribe player recap — email-safe (inline styles, table layout, system fonts).
      Fill every {{PLACEHOLDER}}; body sections use the .section block pattern below.
-     PLAYER-SAFE BY CONSTRUCTION: nothing from gm-notes.md may appear here. -->
+     PLAYER-SAFE BY CONSTRUCTION: nothing from gm-notes.md may appear here.
+     HOUSE STYLE (owner-locked 2026-07-08): dice woven as narrative, never numerals — the words
+     carry crit/fail/near-death magnitude. In-character endmatter (Quotable Quotes + Deeds of
+     the Day) goes after Spoils. No meta, no player names, no technical-issues talk. -->
 <div style="margin:0;padding:24px 8px;background-color:#f4f1ea;">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
          style="max-width:640px;width:100%;margin:0 auto;background-color:#fffdf8;border:1px solid #d8cfc0;border-radius:8px;">
@@ -43,6 +46,32 @@
         </h2>
         <ul style="margin:0 0 12px 0;padding-left:22px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;">
           {{LOOT_AND_LEVELS_LI_ITEMS}}
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:4px 32px;">
+        <h2 style="margin:14px 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#6b5535;border-bottom:1px solid #e2d9c8;padding-bottom:4px;">
+          Quotable Quotes
+        </h2>
+        <!-- Repeat this quote block per quote: verbatim in-character table lines only,
+             with a dry one-line attribution. -->
+        <p style="margin:0 0 10px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;">
+          <em>"{{QUOTE_TEXT}}"</em><br>
+          <span style="font-size:13px;color:#8a7a5c;">&mdash; {{QUOTE_ATTRIBUTION}}</span>
+        </p>
+        <!-- End repeated quote block -->
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:4px 32px;">
+        <h2 style="margin:14px 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#6b5535;border-bottom:1px solid #e2d9c8;padding-bottom:4px;">
+          Deeds of the Day
+        </h2>
+        <ul style="margin:0 0 12px 0;padding-left:22px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a3f30;">
+          <!-- In-world superlative awards, roughly one per PC:
+               <li><strong>{{DEED_TITLE}}</strong> &mdash; {{PC_NAME}}, {{DEED_CITATION}}</li> -->
+          {{DEEDS_LI_ITEMS}}
         </ul>
       </td>
     </tr>
