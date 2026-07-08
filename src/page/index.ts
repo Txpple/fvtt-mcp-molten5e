@@ -135,6 +135,7 @@ import {
   requestRoll,
 } from './chat.js';
 import { setUserAvatar, listUsers, updateUser } from './users.js';
+import { createMacro, listMacros, deleteMacros } from './macros.js';
 import {
   listFolders,
   createFolder,
@@ -275,6 +276,10 @@ const api = {
   setUserAvatar,
   listUsers,
   updateUser,
+  // macros (world Macro documents + user hotbar pins)
+  createMacro,
+  listMacros,
+  deleteMacros,
   // organization (folders / move / bulk-delete)
   listFolders,
   createFolder,

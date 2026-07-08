@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 133 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 136 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -60,7 +60,9 @@ describe('tool registry', () => {
     //   projects the native "Additional Spells" spellbook entry)
     // (update-world was built and DROPPED 2026-07-06: /setup editWorld needs a role-4 bridge
     //  user and Claude deliberately stays ASSISTANT — see src/page/world.ts header.)
-    expect(names.length).toBe(133);
+    // + create-macro / list-macros / delete-macro (world Macro documents + user hotbar pins —
+    //   hand a player a one-click button, e.g. a weapon-mastery Graze roll)
+    expect(names.length).toBe(136);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

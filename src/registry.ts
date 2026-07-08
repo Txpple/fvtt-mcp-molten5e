@@ -41,6 +41,7 @@ import { TableTools } from './tools/tables.js';
 import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
 import { UserTools } from './tools/users.js';
+import { MacroTools } from './tools/macros.js';
 import { OrganizationTools } from './tools/organization.js';
 import { PackReaderTools } from './tools/pack-reader.js';
 
@@ -104,6 +105,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const cardsTools = new CardsTools({ foundry, logger });
   const chatTools = new ChatTools({ foundry, logger });
   const userTools = new UserTools({ foundry, logger });
+  const macroTools = new MacroTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
   // read-pack: a Node-only tool (no Foundry) — it reads a scene-pack MODULE off disk via the
@@ -145,6 +147,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...cardsTools.getToolDefinitions(),
     ...chatTools.getToolDefinitions(),
     ...userTools.getToolDefinitions(),
+    ...macroTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
     ...packReaderTools.getToolDefinitions(),
   ]) {
@@ -349,6 +352,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'list-users': args => userTools.handleListUsers(args),
     'update-user': args => userTools.handleUpdateUser(args),
     'set-user-avatar': args => userTools.handleSetUserAvatar(args),
+
+    // Macros (world Macro documents + user hotbar pins)
+    'create-macro': args => macroTools.handleCreateMacro(args),
+    'list-macros': args => macroTools.handleListMacros(args),
+    'delete-macro': args => macroTools.handleDeleteMacros(args),
 
     // Organization & batch
     'list-folders': args => organizationTools.handleListFolders(args),

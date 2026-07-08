@@ -19,9 +19,9 @@ const ROLE_LABELS = ['none', 'player', 'trusted', 'assistant', 'gamemaster'] as 
 
 /**
  * Resolve a user by exact id, exact name, then case-insensitive exact name; falls back to the
- * current bridge user when no identifier is given.
+ * current bridge user when no identifier is given. Shared with macros.ts (hotbar targets).
  */
-function resolveUser(identifier?: string): any {
+export function resolveUser(identifier?: string): any {
   if (!identifier) return game.user;
   return (
     game.users?.get(identifier) ||
