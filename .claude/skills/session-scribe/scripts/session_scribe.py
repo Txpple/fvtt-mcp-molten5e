@@ -300,10 +300,14 @@ def cmd_align(args) -> int:
 
     events = []
     for track in segs["tracks"]:
-        # Merge consecutive segments of one speaker into paragraphs (gap <= 2.5s).
+        # Merge consecutive segments of one speaker into paragraphs (gap <= 2.5s), capped at
+        # --max-paragraph-seconds: a near-continuous speaker (a DM narrating for hours) would
+        # otherwise glue into one giant blob that defeats the chat-event interleaving. The cap
+        # breaks at a segment boundary, so a single over-long segment stays whole.
         para = None
         for s in track["segments"]:
-            if para and s["start"] - para["end"] <= 2.5:
+            if (para and s["start"] - para["end"] <= 2.5
+                    and s["end"] - para["t"] <= args.max_paragraph_seconds):
                 para["text"] += " " + s["text"]
                 para["end"] = s["end"]
             else:
@@ -408,6 +412,9 @@ def main() -> int:
     p.add_argument("--chatlog", help="path to export-chat-log JSON (default: session-dir/chatlog.json)")
     p.add_argument("--skew-seconds", type=float, default=0.0,
                    help="add to chat timestamps to correct Craig-vs-Foundry clock skew")
+    p.add_argument("--max-paragraph-seconds", type=float, default=75.0,
+                   help="split a speaker's merged paragraph once it spans this long, so "
+                        "near-continuous speakers still interleave with chat events")
     p.add_argument("--no-window", action="store_true",
                    help="include chat events outside the recording window")
     p.set_defaults(fn=cmd_align)
