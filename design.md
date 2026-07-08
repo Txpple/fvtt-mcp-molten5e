@@ -130,8 +130,8 @@ This is the architectural backbone that makes principle #1 real.
 | **DM session assistance** | **Event bridge** — live world → Claude (`wait-for-events`) | 2 | ⛔ not started (§8.1 — build first) |
 | | Chat messages & integration | 2 | ◻️ partial (chat tools exist) |
 | | Export chats | 2 | ◻️ partial (`export-chat-log`) |
-| | Audio → text (Craig AI + Whisper) | 2 | ⛔ not started |
-| | Session + audio → summaries / logs | 2 | ⛔ not started |
+| | Audio → text (Craig AI + Whisper) | 2 | ✅ done (`session-scribe` — per-track Whisper, chat-aligned) |
+| | Session + audio → summaries / logs | 2 | ✅ done (`session-scribe` → recap / gm-notes / player-safe recap.html) |
 
 Legend: ✅ done · 🔨 active · 🧭 future, architecture must not preclude · ◻️ pieces exist, not the
 focus · ⛔ not started.
@@ -142,7 +142,10 @@ plumbing clean).
 
 **Phase 1 is now feature-complete.** Every content building block above is built, and they compose
 into **end-to-end adventures** (§1, §5) — from "here's a map, make me a module" to "here's my module,
-put it in the VTT." Remaining Phase-1 work is hardening; the next frontier is Phase 2.
+put it in the VTT." With Phase 1 there, the first **Phase-2** increment has landed: the post-session
+**audio → transcript → recap** pipeline (`session-scribe`), on top of the chat/export plumbing it uses.
+The remaining Phase-2 frontier is **live** assistance — the §8.1 event bridge (`wait-for-events`) and
+the in-session loop that rides it — still to build.
 
 ---
 
@@ -360,8 +363,8 @@ This is *how* the contract in §3 is realized today. (Mechanism, not mission —
 - **Skills ship in-repo.** `.claude/skills/**` is a tracked deliverable, committed alongside the
   tools. Current skills: `start-session`, `scene-builder`, `stat-block-builder`,
   `physical-item-builder`, `pc-builder`, `ddb-import`, `journal-builder`, `table-builder`,
-  `cards-builder`, `playlist-builder`, `chat-and-narration`, `tom-cartos-import`, `token-cutout`,
-  `plot-drift-check`.
+  `cards-builder`, `playlist-builder`, `chat-and-narration`, `session-scribe`, `tom-cartos-import`,
+  `token-cutout`, `plot-drift-check`.
 - **Target stack.** Foundry v14, dnd5e 5.3.3, Molten Hosting. D&D-5e-only by design.
 - **Quality gate.** biome · `tsc --noEmit` · vitest · build · knip, all green before any commit. No
   pre-commit hook — run `biome check --write .` manually.

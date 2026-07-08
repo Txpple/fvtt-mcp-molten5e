@@ -74,19 +74,22 @@ automated.
 ## Scope
 
 **In scope:** actors — both **NPCs** and full leveled **PCs** (including import from a publicly shared
-**D&D Beyond** character) — items, journals, scenes (as _documents_), playlists, roll tables, cards,
-compendium manipulation — especially **pulling** content out ("make an actor from the MM owlbear") —
-and asset upload. With the bundled skills these compose into **end-to-end adventures** — from
-**reading a provided map image** to drive a scene and everything in it, to **importing a distributed
-battlemap module** (e.g. Tom Cartos scene-packs) faithfully into your world. Authoring prefers the
-**2024** dnd5e data model, sourced from **PHB / DMG / MM**; if the requested content isn't in those
-packs the tool says so rather than inventing it.
+**D&D Beyond** character) — items, journals, scenes (the scene **document** _and_ its **placeables** —
+walls, lights, tokens, regions/teleporters, ambient sounds, tiles, drawings, map notes), playlists,
+roll tables, cards, macros, combat-tracker config, compendium manipulation — especially **pulling**
+content out ("make an actor from the MM owlbear") — and asset upload. With the bundled skills these
+compose into **end-to-end adventures** — from **reading a provided map image** to drive a scene and
+everything in it, to **importing a distributed battlemap module** (e.g. Tom Cartos scene-packs)
+faithfully into your world. Authoring prefers the **2024** dnd5e data model, sourced from
+**PHB / DMG / MM**; if the requested content isn't in those packs the tool says so rather than
+inventing it.
 
-**Out of scope:** non-5e game systems; **live** placeable manipulation on the running canvas
-(placing/moving tokens, editing walls, lights, ambient sounds) and live "running" of play; AI
-**map-image** generation (Claude reads a *provided* map, it does not draw one); scripting the Molten
-management panel. (Walls and lights _are_ imported when a scene is built — from a map sidecar or a
-scene-pack module — just not manipulated live.)
+**Out of scope (for now):** non-5e game systems; **live session assistance** — monitoring a running
+game and interjecting during play (live chat, running the monsters' combat turns) is the next phase
+(see [`design.md`](design.md) §8), not built yet; AI **map-image** generation (Claude reads a
+*provided* map, it does not draw one); scripting the Molten management panel. (Scene placeables —
+walls, lights, tokens, regions — _are_ authored and edited as scene contents; what's out of scope is
+driving them live on the canvas during a running session.)
 
 ---
 
@@ -170,13 +173,15 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**95 tools total: 85 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
+**138 tools total: 128 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
-journals & quests, scenes, roll tables, cards, ownership, folders/organization, 5e-specific helpers
-(NPC creation, **PC building & leveling**, **D&D Beyond import**, feature/spell granting, structured
-inventory/loot authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten
-WebDAV) is the asset file library.
+journals & quests, scenes **and their placeables** (walls, lights, tokens, regions/teleporters,
+ambient sounds, tiles, drawings, notes), roll tables, cards, playlists, ownership,
+folders/organization, macros, combat-tracker config, and 5e-specific helpers (NPC creation,
+**PC building & leveling**, **D&D Beyond import**, feature/spell granting, structured inventory/loot
+authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the
+asset file library.
 
 **Plane B — Molten file tools (WebDAV):**
 
