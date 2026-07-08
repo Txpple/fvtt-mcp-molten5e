@@ -136,6 +136,7 @@ import {
 } from './chat.js';
 import { setUserAvatar, listUsers, updateUser } from './users.js';
 import { createMacro, listMacros, deleteMacros } from './macros.js';
+import { configureCombatTracker } from './combat-tracker.js';
 import {
   listFolders,
   createFolder,
@@ -280,6 +281,8 @@ const api = {
   createMacro,
   listMacros,
   deleteMacros,
+  // combat tracker (the core.combatTrackerConfig world setting — turn marker etc.)
+  configureCombatTracker,
   // organization (folders / move / bulk-delete)
   listFolders,
   createFolder,

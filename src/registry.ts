@@ -42,6 +42,7 @@ import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
 import { UserTools } from './tools/users.js';
 import { MacroTools } from './tools/macros.js';
+import { CombatTrackerTools } from './tools/combat-tracker.js';
 import { OrganizationTools } from './tools/organization.js';
 import { PackReaderTools } from './tools/pack-reader.js';
 
@@ -106,6 +107,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const chatTools = new ChatTools({ foundry, logger });
   const userTools = new UserTools({ foundry, logger });
   const macroTools = new MacroTools({ foundry, logger });
+  const combatTrackerTools = new CombatTrackerTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
   // read-pack: a Node-only tool (no Foundry) — it reads a scene-pack MODULE off disk via the
@@ -148,6 +150,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...chatTools.getToolDefinitions(),
     ...userTools.getToolDefinitions(),
     ...macroTools.getToolDefinitions(),
+    ...combatTrackerTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
     ...packReaderTools.getToolDefinitions(),
   ]) {
@@ -357,6 +360,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'create-macro': args => macroTools.handleCreateMacro(args),
     'list-macros': args => macroTools.handleListMacros(args),
     'delete-macro': args => macroTools.handleDeleteMacros(args),
+
+    // Combat tracker (the core.combatTrackerConfig world setting — custom turn marker etc.)
+    'configure-combat-tracker': args => combatTrackerTools.handleConfigureCombatTracker(args),
 
     // Organization & batch
     'list-folders': args => organizationTools.handleListFolders(args),
