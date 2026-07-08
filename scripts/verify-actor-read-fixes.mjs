@@ -225,15 +225,12 @@ try {
   adoptedFolderId = staged?.adoptedId;
 
   // Remove the fixture token first (its base actor is about to go), then file the actors.
-  await f.evaluate(
-    async id => game.scenes.active.deleteEmbeddedDocuments('Token', [id]),
-    tokenId
-  );
+  await f.evaluate(async id => game.scenes.active.deleteEmbeddedDocuments('Token', [id]), tokenId);
   tokenId = undefined;
-  await f.evaluate(
-    async arg => game.actors.get(arg.actorId).update({ folder: arg.folderId }),
-    { actorId: npcId, folderId: housekeepFolderId }
-  );
+  await f.evaluate(async arg => game.actors.get(arg.actorId).update({ folder: arg.folderId }), {
+    actorId: npcId,
+    folderId: housekeepFolderId,
+  });
   const delNpc = await f.call('deleteActor', { identifiers: [npcId] });
   npcId = undefined;
   const removedNames = (delNpc?.removedFolders ?? []).map(x => x.name);
@@ -246,10 +243,10 @@ try {
   if (!housekeepAlive) housekeepFolderId = undefined;
 
   if (pregenId) {
-    await f.evaluate(
-      async arg => game.actors.get(arg.actorId).update({ folder: arg.folderId }),
-      { actorId: pregenId, folderId: adoptedFolderId }
-    );
+    await f.evaluate(async arg => game.actors.get(arg.actorId).update({ folder: arg.folderId }), {
+      actorId: pregenId,
+      folderId: adoptedFolderId,
+    });
     const delPregen = await f.call('deleteActor', { identifiers: [pregenId] });
     pregenId = undefined;
     const adoptedAlive = await f.evaluate(id => Boolean(game.folders?.get(id)), adoptedFolderId);
@@ -281,7 +278,10 @@ try {
 } finally {
   try {
     if (tokenId) {
-      await f.evaluate(async id => game.scenes.active.deleteEmbeddedDocuments('Token', [id]), tokenId);
+      await f.evaluate(
+        async id => game.scenes.active.deleteEmbeddedDocuments('Token', [id]),
+        tokenId
+      );
     }
     const actorIds = [npcId, pregenId].filter(Boolean);
     if (actorIds.length) await f.call('deleteActor', { identifiers: actorIds });
