@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler } from '../../utils/error-handler.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { CONDITIONS, DAMAGE_TYPES } from '../../utils/dnd5e-canonical.js';
@@ -208,12 +207,10 @@ export interface DnD5eNpcToolsOptions {
 export class DnD5eNpcTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eNpcToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eNpcTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -261,20 +258,16 @@ export class DnD5eNpcTools {
       warnings: warnings.length,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'author-npc');
+    await assertDnd5e(this.foundry, this.logger, 'author-npc');
 
-      const result = await this.foundry.call('createNpcActor', parsed);
+    const result = await this.foundry.call('createNpcActor', parsed);
 
-      this.logger.info('NPC created successfully', {
-        actorId: result.actor?.id,
-        actorName: result.actor?.name,
-      });
+    this.logger.info('NPC created successfully', {
+      actorId: result.actor?.id,
+      actorName: result.actor?.name,
+    });
 
-      return this.formatResponse(result, parsed, warnings);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'author-npc', 'NPC creation');
-    }
+    return this.formatResponse(result, parsed, warnings);
   }
 
   private formatResponse(result: any, params: any, warnings: string[]): any {

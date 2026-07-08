@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { FormattedToolError } from '../../utils/error-handler.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { type DdbCharacterPlan, parseDdbCharacter } from './ddb/parse.js';
 
@@ -77,11 +77,9 @@ export interface DnD5eDdbImportToolsOptions {
 
 export class DnD5eDdbImportTools {
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ logger }: DnD5eDdbImportToolsOptions) {
     this.logger = logger.child({ component: 'DnD5eDdbImportTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -96,35 +94,36 @@ export class DnD5eDdbImportTools {
 
   async handleParseDdbCharacter(args: any): Promise<any> {
     const parsed = ParseDdbCharacterSchema.parse(args);
-    try {
-      let payload: any;
-      if (parsed.json != null) {
-        payload = typeof parsed.json === 'string' ? JSON.parse(parsed.json) : parsed.json;
-        this.logger.info('Parsing pasted DDB character JSON');
-      } else {
-        const id = extractId(parsed);
-        if (!id) {
+    let payload: any;
+    if (parsed.json != null) {
+      if (typeof parsed.json === 'string') {
+        try {
+          payload = JSON.parse(parsed.json);
+        } catch (error) {
+          // Curate the JSON.parse SyntaxError at its source into a helpful message (bubbles verbatim).
           throw new FormattedToolError(
-            'Could not find a character id. Pass `characterId` (the digits in the sheet URL) or a ' +
-              'dndbeyond.com character `url`.'
+            `That \`json\` is not valid JSON (${error instanceof Error ? error.message : String(error)}). ` +
+              'Paste the full v5 response or its `data` object.'
           );
         }
-        this.logger.info('Fetching DDB character', { id });
-        payload = await this.fetchPublicCharacter(id);
+      } else {
+        payload = parsed.json;
       }
-
-      const plan = parseDdbCharacter(payload);
-      return this.formatResponse(plan);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      if (error instanceof SyntaxError) {
+      this.logger.info('Parsing pasted DDB character JSON');
+    } else {
+      const id = extractId(parsed);
+      if (!id) {
         throw new FormattedToolError(
-          `That \`json\` is not valid JSON (${error.message}). Paste the full v5 response or its ` +
-            '`data` object.'
+          'Could not find a character id. Pass `characterId` (the digits in the sheet URL) or a ' +
+            'dndbeyond.com character `url`.'
         );
       }
-      this.errorHandler.handleToolError(error, 'parse-ddb-character', 'DDB parse');
+      this.logger.info('Fetching DDB character', { id });
+      payload = await this.fetchPublicCharacter(id);
     }
+
+    const plan = parseDdbCharacter(payload);
+    return this.formatResponse(plan);
   }
 
   /** Fetch a PUBLIC character from the v5 endpoint; explain 403 (private) / 404 (missing) clearly. */

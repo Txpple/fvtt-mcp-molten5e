@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
+import { FormattedToolError } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
 import { extractActorStats, extractActorBasicInfo } from './dnd5e/actor-stats.js';
 
@@ -117,24 +118,17 @@ export class ActorTools {
 
     this.logger.info('Getting character information', { identifier });
 
-    try {
-      const characterData = await this.foundry.call('getCharacterInfo', {
-        characterName: identifier,
-      });
+    const characterData = await this.foundry.call('getCharacterInfo', {
+      characterName: identifier,
+    });
 
-      this.logger.debug('Successfully retrieved character data', {
-        characterId: characterData.id,
-        characterName: characterData.name,
-      });
+    this.logger.debug('Successfully retrieved character data', {
+      characterId: characterData.id,
+      characterName: characterData.name,
+    });
 
-      // Format the response for Claude
-      return await this.formatCharacterResponse(characterData);
-    } catch (error) {
-      this.logger.error('Failed to get character information', error);
-      throw new Error(
-        `Failed to retrieve character "${identifier}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    // Format the response for Claude
+    return await this.formatCharacterResponse(characterData);
   }
 
   async handleGetCharacterEntity(args: any): Promise<any> {
@@ -142,103 +136,96 @@ export class ActorTools {
 
     this.logger.info('Getting character entity', { characterIdentifier, entityIdentifier });
 
-    try {
-      // First get the character
-      const characterData = await this.foundry.call('getCharacterInfo', {
-        characterName: characterIdentifier,
-      });
+    // First get the character
+    const characterData = await this.foundry.call('getCharacterInfo', {
+      characterName: characterIdentifier,
+    });
 
-      // Try to find the entity in different collections
-      let entity = null;
-      let entityType = null;
+    // Try to find the entity in different collections
+    let entity = null;
+    let entityType = null;
 
-      // 1. Try to find as an item (by ID or name)
-      entity = characterData.items?.find(
-        (i: any) =>
-          i.id === entityIdentifier || i.name.toLowerCase() === entityIdentifier.toLowerCase()
+    // 1. Try to find as an item (by ID or name)
+    entity = characterData.items?.find(
+      (i: any) =>
+        i.id === entityIdentifier || i.name.toLowerCase() === entityIdentifier.toLowerCase()
+    );
+    if (entity) {
+      entityType = 'item';
+    }
+
+    // 2. Try to find as an action (by name)
+    if (!entity && characterData.actions) {
+      entity = characterData.actions.find(
+        (a: any) => a.name.toLowerCase() === entityIdentifier.toLowerCase()
       );
       if (entity) {
-        entityType = 'item';
+        entityType = 'action';
       }
+    }
 
-      // 2. Try to find as an action (by name)
-      if (!entity && characterData.actions) {
-        entity = characterData.actions.find(
-          (a: any) => a.name.toLowerCase() === entityIdentifier.toLowerCase()
-        );
-        if (entity) {
-          entityType = 'action';
-        }
+    // 3. Try to find as an effect (by name)
+    if (!entity && characterData.effects) {
+      entity = characterData.effects.find(
+        (e: any) => e.name.toLowerCase() === entityIdentifier.toLowerCase()
+      );
+      if (entity) {
+        entityType = 'effect';
       }
+    }
 
-      // 3. Try to find as an effect (by name)
-      if (!entity && characterData.effects) {
-        entity = characterData.effects.find(
-          (e: any) => e.name.toLowerCase() === entityIdentifier.toLowerCase()
-        );
-        if (entity) {
-          entityType = 'effect';
-        }
-      }
-
-      if (!entity) {
-        throw new Error(
-          `Entity "${entityIdentifier}" not found on character "${characterIdentifier}". Tried items, actions, and effects.`
-        );
-      }
-
-      this.logger.debug('Successfully retrieved entity', {
-        entityType,
-        entityName: entity.name,
-      });
-
-      // Return full entity details based on type
-      if (entityType === 'item') {
-        return {
-          entityType: 'item',
-          id: entity.id,
-          name: entity.name,
-          type: entity.type,
-          description: entity.system?.description?.value || entity.system?.description || '',
-          level: entity.system?.level, // dnd5e spell level (number); undefined for non-spells
-          quantity: entity.system?.quantity ?? 1,
-          equipped: entity.system?.equipped,
-          attunement: entity.system?.attunement,
-          hasImage: !!entity.img,
-          // Full (source-sanitized) system data for advanced use cases.
-          system: entity.system,
-          // Module flags (source-sanitized) — the forensic read path for flag residue such as
-          // item-piles' transfer leftovers (the NaN-attunement investigation needed a script
-          // for exactly this before flags were surfaced here).
-          ...(entity.flags && Object.keys(entity.flags).length > 0 ? { flags: entity.flags } : {}),
-        };
-      } else if (entityType === 'action') {
-        return {
-          entityType: 'action',
-          name: entity.name,
-          type: entity.type,
-          itemId: entity.itemId,
-          description: entity.description || 'Action from character strikes/abilities',
-        };
-      } else if (entityType === 'effect') {
-        return {
-          entityType: 'effect',
-          id: entity.id,
-          name: entity.name,
-          description: entity.description || entity.name,
-          duration: entity.duration,
-          // Include full effect data
-          ...entity,
-        };
-      }
-
-      return entity;
-    } catch (error) {
-      this.logger.error('Failed to get character entity', error);
-      throw new Error(
-        `Failed to retrieve entity "${entityIdentifier}" from character "${characterIdentifier}": ${error instanceof Error ? error.message : 'Unknown error'}`
+    if (!entity) {
+      throw new FormattedToolError(
+        `Entity "${entityIdentifier}" not found on character "${characterIdentifier}". Tried items, actions, and effects.`
       );
     }
+
+    this.logger.debug('Successfully retrieved entity', {
+      entityType,
+      entityName: entity.name,
+    });
+
+    // Return full entity details based on type
+    if (entityType === 'item') {
+      return {
+        entityType: 'item',
+        id: entity.id,
+        name: entity.name,
+        type: entity.type,
+        description: entity.system?.description?.value || entity.system?.description || '',
+        level: entity.system?.level, // dnd5e spell level (number); undefined for non-spells
+        quantity: entity.system?.quantity ?? 1,
+        equipped: entity.system?.equipped,
+        attunement: entity.system?.attunement,
+        hasImage: !!entity.img,
+        // Full (source-sanitized) system data for advanced use cases.
+        system: entity.system,
+        // Module flags (source-sanitized) — the forensic read path for flag residue such as
+        // item-piles' transfer leftovers (the NaN-attunement investigation needed a script
+        // for exactly this before flags were surfaced here).
+        ...(entity.flags && Object.keys(entity.flags).length > 0 ? { flags: entity.flags } : {}),
+      };
+    } else if (entityType === 'action') {
+      return {
+        entityType: 'action',
+        name: entity.name,
+        type: entity.type,
+        itemId: entity.itemId,
+        description: entity.description || 'Action from character strikes/abilities',
+      };
+    } else if (entityType === 'effect') {
+      return {
+        entityType: 'effect',
+        id: entity.id,
+        name: entity.name,
+        description: entity.description || entity.name,
+        duration: entity.duration,
+        // Include full effect data
+        ...entity,
+      };
+    }
+
+    return entity;
   }
 
   async handleListCharacters(args: any): Promise<any> {
@@ -246,28 +233,21 @@ export class ActorTools {
 
     this.logger.info('Listing characters', { type });
 
-    try {
-      const actors = await this.foundry.call('listActors', { type });
+    const actors = await this.foundry.call('listActors', { type });
 
-      this.logger.debug('Successfully retrieved character list', { count: actors.length });
+    this.logger.debug('Successfully retrieved character list', { count: actors.length });
 
-      // Format the response for Claude
-      return {
-        characters: actors.map((actor: any) => ({
-          id: actor.id,
-          name: actor.name,
-          type: actor.type,
-          hasImage: !!actor.img,
-        })),
-        total: actors.length,
-        filtered: type ? `Filtered by type: ${type}` : 'All characters',
-      };
-    } catch (error) {
-      this.logger.error('Failed to list characters', error);
-      throw new Error(
-        `Failed to list characters: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    // Format the response for Claude
+    return {
+      characters: actors.map((actor: any) => ({
+        id: actor.id,
+        name: actor.name,
+        type: actor.type,
+        hasImage: !!actor.img,
+      })),
+      total: actors.length,
+      filtered: type ? `Filtered by type: ${type}` : 'All characters',
+    };
   }
 
   async handleSearchCharacterItems(args: any): Promise<any> {
@@ -282,27 +262,20 @@ export class ActorTools {
       limit,
     });
 
-    try {
-      const result = await this.foundry.call('searchCharacterItems', {
-        characterIdentifier,
-        query,
-        type,
-        category,
-        limit: limit ?? 20,
-      });
+    const result = await this.foundry.call('searchCharacterItems', {
+      characterIdentifier,
+      query,
+      type,
+      category,
+      limit: limit ?? 20,
+    });
 
-      this.logger.debug('Successfully searched character items', {
-        characterName: result.characterName,
-        matchCount: result.matches?.length || 0,
-      });
+    this.logger.debug('Successfully searched character items', {
+      characterName: result.characterName,
+      matchCount: result.matches?.length || 0,
+    });
 
-      return result;
-    } catch (error) {
-      this.logger.error('Failed to search character items', error);
-      throw new Error(
-        `Failed to search items for "${characterIdentifier}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    return result;
   }
 
   private async formatCharacterResponse(characterData: any): Promise<any> {

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
@@ -48,12 +47,10 @@ export interface DnD5eConditionToolOptions {
 export class DnD5eConditionTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eConditionToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eConditionTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -72,21 +69,16 @@ export class DnD5eConditionTool {
   }
 
   async handleApplyCondition(args: any): Promise<any> {
-    try {
-      const parsed = ApplyConditionSchema.parse(args ?? {});
-      this.logger.info('Applying conditions', {
-        actorIdentifier: parsed.actorIdentifier,
-        conditions: parsed.conditions,
-        active: parsed.active,
-      });
+    const parsed = ApplyConditionSchema.parse(args ?? {});
+    this.logger.info('Applying conditions', {
+      actorIdentifier: parsed.actorIdentifier,
+      conditions: parsed.conditions,
+      active: parsed.active,
+    });
 
-      await assertDnd5e(this.foundry, this.logger, 'apply-condition');
-      const result = await this.foundry.call('applyCondition', parsed);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'apply-condition', 'applying conditions');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'apply-condition');
+    const result = await this.foundry.call('applyCondition', parsed);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

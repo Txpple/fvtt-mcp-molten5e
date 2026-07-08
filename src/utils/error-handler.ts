@@ -1,5 +1,18 @@
 import { Logger } from '../logger.js';
 
+// THE TOOL ERROR-HANDLING CONTRACT (one contract, applied uniformly across every tool module):
+//
+//   • A handler NEVER maps its own errors. It either returns a result, or throws.
+//   • It throws `FormattedToolError` for a message it curates itself — validation/precondition
+//     guidance and domain "not found" messages. The central dispatch wrapper (index.ts) passes
+//     these through VERBATIM.
+//   • Every OTHER throw (a ZodError from `.parse()`, a bridge/cold-box failure, an unexpected error)
+//     bubbles to that same wrapper, which maps it via `toUserMessage` below — adding cold-box /
+//     permission / not-found guidance while preserving already-specific (ZodError / raw) messages.
+//
+// So `toUserMessage` is the SINGLE error mapper; no tool instantiates ErrorHandler or maps errors
+// itself, and there is no per-handler `instanceof FormattedToolError` re-throw guard to forget.
+
 // The actor-creation tool family — a validation failure on any of these earns the "search-compendium
 // first" tip. Covers the two split tools (create-actor-from-compendium / author-npc).
 const ACTOR_CREATION_TOOLS = new Set(['create-actor-from-compendium', 'author-npc']);
@@ -13,10 +26,12 @@ export interface MCPError {
 }
 
 /**
- * Marks an error message that has ALREADY been curated by ErrorHandler (a tool called
- * handleToolError). The central dispatch wrapper (index.ts) passes these through verbatim instead
- * of re-mapping them — re-running the keyword classifier over an already-formatted message
- * (which now contains suggestion text like "...sufficient permissions") would misclassify it.
+ * A tool-authored, user-facing error message. A handler throws this for guidance it curates itself
+ * (validation/precondition failures, domain "not found" messages). The central dispatch wrapper
+ * (index.ts) passes these through verbatim instead of running them through the keyword classifier —
+ * re-mapping an already-formatted message (which carries suggestion text like "...sufficient
+ * permissions") would misclassify it. Every OTHER error a handler throws bubbles to that wrapper and
+ * is mapped by ErrorHandler.toUserMessage; tools never map their own errors.
  */
 export class FormattedToolError extends Error {
   constructor(message: string) {
@@ -224,20 +239,8 @@ export class ErrorHandler {
   }
 
   /**
-   * Handle tool execution error with proper formatting. Throws a FormattedToolError so the central
-   * dispatch wrapper knows the message is already curated and won't re-map it.
-   */
-  handleToolError(error: any, toolName: string, context: string = ''): never {
-    const mcpError = this.mapFoundryError(error, `${toolName} ${context}`.trim());
-    this.logError(mcpError, toolName, error);
-
-    const formattedMessage = this.formatErrorMessage(mcpError, toolName);
-    throw new FormattedToolError(formattedMessage);
-  }
-
-  /**
-   * Map + log an arbitrary tool error into a user-facing message — the non-throwing form used by
-   * the central dispatch wrapper for tools that don't curate their own errors. Crucially it does
+   * Map + log an arbitrary tool error into a user-facing message — the form used by the central
+   * dispatch wrapper for every error a tool doesn't curate itself. Crucially it does
    * NOT flatten messages that are already specific: zod validation errors keep their field-level
    * detail, and the generic catch-all falls back to the raw message rather than the vague
    * "An unexpected error occurred". So central handling only ADDS value (cold-box / permission /

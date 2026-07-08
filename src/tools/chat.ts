@@ -7,7 +7,6 @@ import { config } from '../config.js';
 import type { MoltenConfig } from '../config.js';
 import { toInputSchema } from '../utils/schema.js';
 import { formatDeletionResult } from '../utils/format.js';
-import { ErrorHandler, FormattedToolError } from '../utils/error-handler.js';
 import { validateExportDestinations } from '../utils/transcript.js';
 import { WebDavClient, toDataRelative, guessContentType } from './molten/webdav.js';
 import {
@@ -259,14 +258,12 @@ export class ChatTools {
   private foundry: FoundryBridge;
   private logger: Logger;
   private molten: MoltenConfig;
-  private errorHandler: ErrorHandler;
   private davClient: WebDavClient | null = null;
 
   constructor({ foundry, logger }: ChatToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'ChatTools' });
     this.molten = config.molten;
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   private dav(): WebDavClient | null {
@@ -333,36 +330,31 @@ export class ChatTools {
   // --- send -----------------------------------------------------------------
 
   async handleSendChatMessage(args: any): Promise<string> {
-    try {
-      const parsed = SendChatMessageSchema.parse(args ?? {});
+    const parsed = SendChatMessageSchema.parse(args ?? {});
 
-      let content = parsed.content;
-      if (parsed.images && parsed.images.length > 0) {
-        const assembled = await this.assembleImages(
-          parsed.images,
-          parsed.imageFolder ?? `worlds/${this.molten.worldId ?? 'world'}/assets/chat`,
-          parsed.overwriteImages
-        );
-        if ('refusal' in assembled) return assembled.refusal;
-        content = `${content}\n${assembled.figures.join('\n')}`;
-      }
-
-      const result = await this.foundry.call('postChatMessage', {
-        content,
-        visibility: parsed.visibility,
-        speakerActor: parsed.speakerActor,
-        flavor: parsed.flavor,
-        style: parsed.style,
-        enrich: parsed.enrich,
-      });
-      return (
-        `Posted chat message ${result?.id} as "${result?.alias}" ` +
-        `(${result?.visibility}, whisper: ${result?.whisperCount}).`
+    let content = parsed.content;
+    if (parsed.images && parsed.images.length > 0) {
+      const assembled = await this.assembleImages(
+        parsed.images,
+        parsed.imageFolder ?? `worlds/${this.molten.worldId ?? 'world'}/assets/chat`,
+        parsed.overwriteImages
       );
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'send-chat-message', 'posting message');
+      if ('refusal' in assembled) return assembled.refusal;
+      content = `${content}\n${assembled.figures.join('\n')}`;
     }
+
+    const result = await this.foundry.call('postChatMessage', {
+      content,
+      visibility: parsed.visibility,
+      speakerActor: parsed.speakerActor,
+      flavor: parsed.flavor,
+      style: parsed.style,
+      enrich: parsed.enrich,
+    });
+    return (
+      `Posted chat message ${result?.id} as "${result?.alias}" ` +
+      `(${result?.visibility}, whisper: ${result?.whisperCount}).`
+    );
   }
 
   /**
@@ -549,15 +541,10 @@ export class ChatTools {
   // --- dnd5e rich cards -----------------------------------------------------
 
   async handlePostItemCard(args: any): Promise<string> {
-    try {
-      const parsed = PostItemCardSchema.parse(args ?? {});
-      const r = await this.foundry.call('postItemCard', parsed);
-      if (r?.posted === false) return `Could not post a rich card: ${r.reason}`;
-      return `Posted ${r?.action} card for "${r?.itemName}" (${r?.activityType}) as ${r?.actorName}.`;
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'post-item-card', 'posting item card');
-    }
+    const parsed = PostItemCardSchema.parse(args ?? {});
+    const r = await this.foundry.call('postItemCard', parsed);
+    if (r?.posted === false) return `Could not post a rich card: ${r.reason}`;
+    return `Posted ${r?.action} card for "${r?.itemName}" (${r?.activityType}) as ${r?.actorName}.`;
   }
 
   async handleRequestRoll(args: any): Promise<string> {

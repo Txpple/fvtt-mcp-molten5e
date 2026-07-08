@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
 import { toInputSchema } from '../utils/schema.js';
-import { ErrorHandler, FormattedToolError } from '../utils/error-handler.js';
 
 /**
  * Combat tracker configuration — the world's core.combatTrackerConfig setting.
@@ -67,12 +66,10 @@ export interface CombatTrackerToolsOptions {
 export class CombatTrackerTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: CombatTrackerToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'CombatTrackerTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -91,51 +88,42 @@ export class CombatTrackerTools {
   }
 
   async handleConfigureCombatTracker(args: any): Promise<string> {
-    try {
-      const parsed = ConfigureCombatTrackerSchema.parse(args ?? {});
-      const r = await this.foundry.call('configureCombatTracker', parsed);
-      const cfg = r?.config ?? {};
-      const marker = cfg.turnMarker ?? {};
-      const animations = Array.isArray(r?.animations) ? r.animations : [];
-      const animationList = animations
-        .map((a: any) => `\`${a.value}\`${a.label && a.label !== a.value ? ` (${a.label})` : ''}`)
-        .join(', ');
+    const parsed = ConfigureCombatTrackerSchema.parse(args ?? {});
+    const r = await this.foundry.call('configureCombatTracker', parsed);
+    const cfg = r?.config ?? {};
+    const marker = cfg.turnMarker ?? {};
+    const animations = Array.isArray(r?.animations) ? r.animations : [];
+    const animationList = animations
+      .map((a: any) => `\`${a.value}\`${a.label && a.label !== a.value ? ` (${a.label})` : ''}`)
+      .join(', ');
 
-      const configLines = [
-        `- **Turn marker:** ${marker.enabled ? 'enabled' : 'disabled'} · animation \`${marker.animation}\` · disposition tint ${marker.disposition ? 'on' : 'off'}`,
-        `- **Marker image:** ${marker.src ? `\`${marker.src}\`` : `(stock${r?.fallbackMarker ? ` — \`${r.fallbackMarker}\`` : ''})`}`,
-        `- **Tracked resource:** ${cfg.resource ? `\`${cfg.resource}\`` : '(none)'}`,
-        `- **Skip defeated:** ${cfg.skipDefeated ? 'yes' : 'no'}`,
-      ];
+    const configLines = [
+      `- **Turn marker:** ${marker.enabled ? 'enabled' : 'disabled'} · animation \`${marker.animation}\` · disposition tint ${marker.disposition ? 'on' : 'off'}`,
+      `- **Marker image:** ${marker.src ? `\`${marker.src}\`` : `(stock${r?.fallbackMarker ? ` — \`${r.fallbackMarker}\`` : ''})`}`,
+      `- **Tracked resource:** ${cfg.resource ? `\`${cfg.resource}\`` : '(none)'}`,
+      `- **Skip defeated:** ${cfg.skipDefeated ? 'yes' : 'no'}`,
+    ];
 
-      const applied = Array.isArray(r?.applied) ? r.applied : null;
-      if (!applied) {
-        const requested = Object.keys(parsed).length > 0;
-        const header = requested
-          ? '✅ Already configured — no changes needed.'
-          : '**Combat tracker config**';
-        return [
-          header,
-          ...configLines,
-          ...(animationList ? [`- **Valid animations:** ${animationList}`] : []),
-        ].join('\n');
-      }
-
-      const fmt = (v: unknown) => (v === '' ? '""' : `\`${v}\``);
+    const applied = Array.isArray(r?.applied) ? r.applied : null;
+    if (!applied) {
+      const requested = Object.keys(parsed).length > 0;
+      const header = requested
+        ? '✅ Already configured — no changes needed.'
+        : '**Combat tracker config**';
       return [
-        `✅ Combat tracker updated (${applied.length} field(s)):`,
-        ...applied.map((c: any) => `- ${c.field}: ${fmt(c.previous)} → ${fmt(c.next)}`),
-        '',
-        '**Now:**',
+        header,
         ...configLines,
+        ...(animationList ? [`- **Valid animations:** ${animationList}`] : []),
       ].join('\n');
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(
-        error,
-        'configure-combat-tracker',
-        'configuring combat tracker'
-      );
     }
+
+    const fmt = (v: unknown) => (v === '' ? '""' : `\`${v}\``);
+    return [
+      `✅ Combat tracker updated (${applied.length} field(s)):`,
+      ...applied.map((c: any) => `- ${c.field}: ${fmt(c.previous)} → ${fmt(c.next)}`),
+      '',
+      '**Now:**',
+      ...configLines,
+    ].join('\n');
   }
 }

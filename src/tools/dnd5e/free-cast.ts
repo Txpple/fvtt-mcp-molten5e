@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
@@ -63,12 +63,10 @@ export interface DnD5eFreeCastToolOptions {
 export class DnD5eFreeCastTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eFreeCastToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eFreeCastTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -91,20 +89,16 @@ export class DnD5eFreeCastTool {
   }
 
   async handleAddFreeCast(args: any): Promise<any> {
-    try {
-      const parsed = AddFreeCastSchema.parse(args ?? {});
-      this.logger.info('Adding free cast', {
-        actorIdentifier: parsed.actorIdentifier,
-        spellIdentifier: parsed.spellIdentifier,
-        grantedBy: parsed.grantedBy,
-      });
+    const parsed = AddFreeCastSchema.parse(args ?? {});
+    this.logger.info('Adding free cast', {
+      actorIdentifier: parsed.actorIdentifier,
+      spellIdentifier: parsed.spellIdentifier,
+      grantedBy: parsed.grantedBy,
+    });
 
-      const result = await this.foundry.call('addFreeCast', parsed);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'add-free-cast', 'adding free cast');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'add-free-cast');
+    const result = await this.foundry.call('addFreeCast', parsed);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

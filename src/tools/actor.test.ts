@@ -199,16 +199,14 @@ describe('handleGetCharacter', () => {
     expect(out.spellcasting).toBeUndefined();
   });
 
-  it('wraps a bridge failure in a descriptive error', async () => {
+  it('lets a bridge failure bubble to the central mapper (no in-tool re-wrap)', async () => {
     const { foundry, calls } = makeFoundry((method: string) => {
       if (method === 'getWorldInfo') return { system: 'dnd5e' };
       throw new Error('boom');
     });
     void calls;
     const tools = new ActorTools({ foundry, logger: makeLogger() });
-    await expect(tools.handleGetCharacter({ identifier: 'Ghost' })).rejects.toThrow(
-      /Failed to retrieve character "Ghost": boom/
-    );
+    await expect(tools.handleGetCharacter({ identifier: 'Ghost' })).rejects.toThrow(/boom/);
   });
 
   it('rejects an empty identifier', async () => {

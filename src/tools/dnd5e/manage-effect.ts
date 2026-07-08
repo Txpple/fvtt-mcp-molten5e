@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { FormattedToolError } from '../../utils/error-handler.js';
+import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
@@ -84,12 +85,10 @@ export interface DnD5eManageEffectToolOptions {
 export class DnD5eManageEffectTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eManageEffectToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eManageEffectTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -109,42 +108,39 @@ export class DnD5eManageEffectTool {
   }
 
   async handleManageEffect(args: any): Promise<any> {
-    try {
-      const parsed = ManageEffectSchema.parse(args ?? {});
+    const parsed = ManageEffectSchema.parse(args ?? {});
 
-      if (!parsed.actorIdentifier && !parsed.itemIdentifier) {
-        throw new FormattedToolError('Provide actorIdentifier and/or itemIdentifier.');
-      }
-      if (parsed.action === 'create' && (!parsed.name || !parsed.changes?.length)) {
-        throw new FormattedToolError(
-          'action "create" requires `name` and at least one `changes` entry.'
-        );
-      }
-      if ((parsed.action === 'edit' || parsed.action === 'delete') && !parsed.effectId) {
-        throw new FormattedToolError(`action "${parsed.action}" requires \`effectId\`.`);
-      }
-
-      const fwd: Record<string, any> = { action: parsed.action };
-      if (parsed.actorIdentifier) fwd.actorIdentifier = parsed.actorIdentifier;
-      if (parsed.itemIdentifier) fwd.itemIdentifier = parsed.itemIdentifier;
-      if (parsed.effectId) fwd.effectId = parsed.effectId;
-      if (parsed.patch) fwd.patch = parsed.patch;
-      fwd.effect = {
-        name: parsed.name,
-        changes: parsed.changes,
-        disabled: parsed.disabled,
-        transfer: parsed.transfer,
-        statuses: parsed.statuses,
-        description: parsed.description,
-      };
-
-      this.logger.info('manage-effect', { action: parsed.action, effectId: parsed.effectId });
-      const result = await this.foundry.call('manageEffect', fwd);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'manage-effect', 'managing effect');
+    if (!parsed.actorIdentifier && !parsed.itemIdentifier) {
+      throw new FormattedToolError('Provide actorIdentifier and/or itemIdentifier.');
     }
+    if (parsed.action === 'create' && (!parsed.name || !parsed.changes?.length)) {
+      throw new FormattedToolError(
+        'action "create" requires `name` and at least one `changes` entry.'
+      );
+    }
+    if ((parsed.action === 'edit' || parsed.action === 'delete') && !parsed.effectId) {
+      throw new FormattedToolError(`action "${parsed.action}" requires \`effectId\`.`);
+    }
+
+    await assertDnd5e(this.foundry, this.logger, 'manage-effect');
+
+    const fwd: Record<string, any> = { action: parsed.action };
+    if (parsed.actorIdentifier) fwd.actorIdentifier = parsed.actorIdentifier;
+    if (parsed.itemIdentifier) fwd.itemIdentifier = parsed.itemIdentifier;
+    if (parsed.effectId) fwd.effectId = parsed.effectId;
+    if (parsed.patch) fwd.patch = parsed.patch;
+    fwd.effect = {
+      name: parsed.name,
+      changes: parsed.changes,
+      disabled: parsed.disabled,
+      transfer: parsed.transfer,
+      statuses: parsed.statuses,
+      description: parsed.description,
+    };
+
+    this.logger.info('manage-effect', { action: parsed.action, effectId: parsed.effectId });
+    const result = await this.foundry.call('manageEffect', fwd);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

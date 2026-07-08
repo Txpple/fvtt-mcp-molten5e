@@ -173,10 +173,26 @@ authoring-policy snippet all authoring skills reference · the tool↔page seam 
 - [x] **4.4 — Generate `add-feature` schema from zod** (`58300dc`) — killed the last hand-written JSON
   schema; the wrapper composes the canonical `AddFeatureSchema` / `AddFeaturesFromCompendiumSchema` /
   `AddToActorItemsSchema` zod. `add-feature` is NOT split into per-mode tools (locked decision).
+- [x] **4.5 — Unify the tool error-handling contract** — one contract across every `src/tools/**`
+  module (the surface had drifted into four styles applied ~50/50). Decision (deliberate — owner
+  confirmed *central-only* over a `runTool`-curation wrapper): **handlers never map their own errors.**
+  A handler throws `FormattedToolError` for a message it curates (validation/precondition guards,
+  domain not-found) and lets everything else bubble to the SINGLE central mapper
+  (`errorHandler.toUserMessage` in `index.ts`). Removed the ~20 per-tool `new ErrorHandler` /
+  `handleToolError` sites and the forgettable per-handler `instanceof FormattedToolError` re-throw
+  guard — the latent double-map bug is now structurally impossible (there is no per-tool mapping to
+  double-map), a stronger fix than baking the guard in once. Deleted the now-dead `ErrorHandler.
+  handleToolError` (it lives only in `index.ts` now). Normalized the two outliers: `ownership.ts`
+  throws (was errors-as-data) and `actor.ts` bubbles (was an ad-hoc re-wrap); added the `assertDnd5e`
+  guard to the three dnd5e tools that lacked it (manage-effect, update-actor-item, free-cast).
+  `toUserMessage`'s substring behavior (ZodError passthrough, raw-message fallback) preserved
+  verbatim. This was **consistency, not codes** — typed error CODES stay deferred (below).
 - [ ] **Deferred (not blocking PCs):** structured error-code taxonomy — no consumer yet; building typed
   codes blind would be speculative (YAGNI), revisit when Phase-5 advancement errors justify them (the
-  one real fragility, the `create-actor` error literal, was fixed inside 4.2). Page-side `manageActivity`
-  relocation out of `actors.ts` (dual-target actor+item, shares helpers — intentional remainder).
+  one real fragility, the `create-actor` error literal, was fixed inside 4.2). The *contract* around
+  the substring classifier is now uniform (4.5); only the classifier's typed-code upgrade remains
+  deferred. Page-side `manageActivity` relocation out of `actors.ts` (dual-target actor+item, shares
+  helpers — intentional remainder).
 
 ### Phase 5 — PCs (LAST, separate effort)
 - [ ] Reserved until 0–4 land. **Re-run the advancement spike FIRST** (`AdvancementManager.forNewItem(

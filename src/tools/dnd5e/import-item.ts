@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { assertNoSrdPacks } from '../../utils/compendium-sources.js';
@@ -79,12 +78,10 @@ export interface DnD5eImportItemToolOptions {
 export class DnD5eImportItemTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eImportItemToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eImportItemTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -110,24 +107,19 @@ export class DnD5eImportItemTool {
   }
 
   async handleImportItem(args: any): Promise<any> {
-    try {
-      const parsed = ImportItemSchema.parse(args ?? {});
-      assertNoSrdPacks(parsed.packId, 'import-item');
-      await assertDnd5e(this.foundry, this.logger, 'import-item');
+    const parsed = ImportItemSchema.parse(args ?? {});
+    assertNoSrdPacks(parsed.packId, 'import-item');
+    await assertDnd5e(this.foundry, this.logger, 'import-item');
 
-      this.logger.info('Copying item from compendium', {
-        packId: parsed.packId,
-        itemId: parsed.itemId,
-        target: parsed.actorIdentifier ?? 'world',
-        rename: parsed.name,
-      });
+    this.logger.info('Copying item from compendium', {
+      packId: parsed.packId,
+      itemId: parsed.itemId,
+      target: parsed.actorIdentifier ?? 'world',
+      rename: parsed.name,
+    });
 
-      const result = await this.foundry.call('importItemFromCompendium', parsed);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'import-item', 'item import');
-    }
+    const result = await this.foundry.call('importItemFromCompendium', parsed);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

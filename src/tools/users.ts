@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
 import { toInputSchema } from '../utils/schema.js';
-import { ErrorHandler, FormattedToolError } from '../utils/error-handler.js';
 
 /**
  * User-account tools.
@@ -77,12 +76,10 @@ export interface UserToolsOptions {
 export class UserTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: UserToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'UserTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -116,67 +113,52 @@ export class UserTools {
   }
 
   async handleListUsers(args: any): Promise<string> {
-    try {
-      ListUsersSchema.parse(args ?? {});
-      const r = await this.foundry.call('listUsers');
-      const users = Array.isArray(r?.users) ? r.users : [];
-      const lines = users.map((u: any) => {
-        const bits = [
-          `role ${u.role} (${u.roleLabel})`,
-          u.active ? 'CONNECTED' : 'offline',
-          ...(u.character ? [`character: ${u.character.name}`] : []),
-          ...(u.isBridgeUser ? ['← bridge user'] : []),
-        ];
-        return `- **${u.name}** (\`${u.id}\`) — ${bits.join(' · ')}`;
-      });
-      return `${users.length} user(s):\n${lines.join('\n')}`;
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'list-users', 'listing users');
-    }
+    ListUsersSchema.parse(args ?? {});
+    const r = await this.foundry.call('listUsers');
+    const users = Array.isArray(r?.users) ? r.users : [];
+    const lines = users.map((u: any) => {
+      const bits = [
+        `role ${u.role} (${u.roleLabel})`,
+        u.active ? 'CONNECTED' : 'offline',
+        ...(u.character ? [`character: ${u.character.name}`] : []),
+        ...(u.isBridgeUser ? ['← bridge user'] : []),
+      ];
+      return `- **${u.name}** (\`${u.id}\`) — ${bits.join(' · ')}`;
+    });
+    return `${users.length} user(s):\n${lines.join('\n')}`;
   }
 
   async handleUpdateUser(args: any): Promise<string> {
-    try {
-      const parsed = UpdateUserSchema.parse(args ?? {});
-      const r = await this.foundry.call('updateUser', parsed);
-      const applied: string[] = Array.isArray(r?.applied) ? r.applied : [];
-      if (applied.length === 0) {
-        return `No changes for ${r?.user?.name} — everything already matched.`;
-      }
-      const changes = applied.map(field => {
-        const prev = (r?.previous as any)?.[field];
-        const now =
-          field === 'role'
-            ? `${r?.user?.role} (${r?.user?.roleLabel})`
-            : field === 'character'
-              ? (r?.user?.character?.name ?? 'none')
-              : ((r?.user as any)?.[field] ?? '');
-        return `- ${field}: ${prev ?? '(unset)'} → ${now}`;
-      });
-      const warns = Array.isArray(r?.warnings) ? r.warnings : [];
-      const warnSection = warns.length
-        ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
-        : '';
-      return `Updated user ${r?.user?.name} (\`${r?.user?.id}\`):\n${changes.join('\n')}${warnSection}`;
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'update-user', 'updating user');
+    const parsed = UpdateUserSchema.parse(args ?? {});
+    const r = await this.foundry.call('updateUser', parsed);
+    const applied: string[] = Array.isArray(r?.applied) ? r.applied : [];
+    if (applied.length === 0) {
+      return `No changes for ${r?.user?.name} — everything already matched.`;
     }
+    const changes = applied.map(field => {
+      const prev = (r?.previous as any)?.[field];
+      const now =
+        field === 'role'
+          ? `${r?.user?.role} (${r?.user?.roleLabel})`
+          : field === 'character'
+            ? (r?.user?.character?.name ?? 'none')
+            : ((r?.user as any)?.[field] ?? '');
+      return `- ${field}: ${prev ?? '(unset)'} → ${now}`;
+    });
+    const warns = Array.isArray(r?.warnings) ? r.warnings : [];
+    const warnSection = warns.length
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
+      : '';
+    return `Updated user ${r?.user?.name} (\`${r?.user?.id}\`):\n${changes.join('\n')}${warnSection}`;
   }
 
   async handleSetUserAvatar(args: any): Promise<string> {
-    try {
-      const parsed = SetUserAvatarSchema.parse(args ?? {});
-      const r = await this.foundry.call('setUserAvatar', parsed);
-      const warns = Array.isArray(r?.warnings) ? r.warnings : [];
-      const warnSection = warns.length
-        ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
-        : '';
-      return `Set ${r?.name}'s avatar to ${r?.avatar}.${warnSection}`;
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'set-user-avatar', 'setting avatar');
-    }
+    const parsed = SetUserAvatarSchema.parse(args ?? {});
+    const r = await this.foundry.call('setUserAvatar', parsed);
+    const warns = Array.isArray(r?.warnings) ? r.warnings : [];
+    const warnSection = warns.length
+      ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
+      : '';
+    return `Set ${r?.name}'s avatar to ${r?.avatar}.${warnSection}`;
   }
 }

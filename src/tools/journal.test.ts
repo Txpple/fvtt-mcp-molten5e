@@ -6,9 +6,9 @@
  * OBJECT (these handlers return structured objects, not human strings). The
  * tests assert (a) the correct bridge method + payload is forwarded and the
  * returned object's fields match what the format code builds, and (b) zod
- * rejects bad input. On validation failure these handlers funnel through
- * ErrorHandler.handleToolError which re-throws a reformatted Error, so the
- * rejection tests only assert that a throw occurs.
+ * rejects bad input. Handlers no longer map their own errors — a validation
+ * failure (or a page-reported failure) just throws and bubbles to the central
+ * mapper in index.ts, so the rejection tests only assert that a throw occurs.
  */
 
 import { describe, it, expect } from 'vitest';

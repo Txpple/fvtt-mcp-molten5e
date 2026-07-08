@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
@@ -54,12 +53,10 @@ export interface DnD5eFeaturesFromCompendiumToolsOptions {
 export class DnD5eFeaturesFromCompendiumTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eFeaturesFromCompendiumToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eFeaturesFromCompendiumTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -110,22 +107,18 @@ export class DnD5eFeaturesFromCompendiumTools {
       packs: parsed.compendiumPacks,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-features-from-compendium');
+    await assertDnd5e(this.foundry, this.logger, 'add-features-from-compendium');
 
-      const result = await this.foundry.call('addFeaturesFromCompendium', parsed);
+    const result = await this.foundry.call('addFeaturesFromCompendium', parsed);
 
-      this.logger.info('Features import complete', {
-        actorId: result.actor?.id,
-        added: result.added?.length,
-        skipped: result.skipped?.length,
-        notFound: result.notFound?.length,
-        failed: result.failed?.length,
-      });
+    this.logger.info('Features import complete', {
+      actorId: result.actor?.id,
+      added: result.added?.length,
+      skipped: result.skipped?.length,
+      notFound: result.notFound?.length,
+      failed: result.failed?.length,
+    });
 
-      return formatImportReport(result, parsed.featureNames.length, 'Features');
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-features-from-compendium', 'feature import');
-    }
+    return formatImportReport(result, parsed.featureNames.length, 'Features');
   }
 }

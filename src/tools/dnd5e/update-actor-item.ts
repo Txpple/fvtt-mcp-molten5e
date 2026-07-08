@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
 /**
@@ -58,12 +58,10 @@ export interface DnD5eUpdateActorItemToolOptions {
 export class DnD5eUpdateActorItemTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eUpdateActorItemToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eUpdateActorItemTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -83,27 +81,23 @@ export class DnD5eUpdateActorItemTool {
   }
 
   async handleUpdateActorItem(args: any): Promise<any> {
-    try {
-      const parsed = UpdateActorItemSchema.parse(args ?? {});
-      if (
-        parsed.name === undefined &&
-        parsed.img === undefined &&
-        !parsed.patch &&
-        !parsed.deletePaths
-      ) {
-        throw new Error('Provide at least one of: name, img, patch, deletePaths.');
-      }
-      this.logger.info('Updating embedded actor item', {
-        actorIdentifier: parsed.actorIdentifier,
-        itemIdentifier: parsed.itemIdentifier,
-      });
-
-      const result = await this.foundry.call('updateActorItem', parsed);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'update-actor-item', 'updating embedded item');
+    const parsed = UpdateActorItemSchema.parse(args ?? {});
+    if (
+      parsed.name === undefined &&
+      parsed.img === undefined &&
+      !parsed.patch &&
+      !parsed.deletePaths
+    ) {
+      throw new Error('Provide at least one of: name, img, patch, deletePaths.');
     }
+    this.logger.info('Updating embedded actor item', {
+      actorIdentifier: parsed.actorIdentifier,
+      itemIdentifier: parsed.itemIdentifier,
+    });
+
+    await assertDnd5e(this.foundry, this.logger, 'update-actor-item');
+    const result = await this.foundry.call('updateActorItem', parsed);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

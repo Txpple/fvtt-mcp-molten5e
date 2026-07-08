@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { DAMAGE_TYPES, WEAPON_PROPERTIES } from '../../utils/dnd5e-canonical.js';
@@ -298,12 +297,10 @@ export interface DnD5eAddItemToolOptions {
 export class DnD5eAddItemTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eAddItemToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eAddItemTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -343,133 +340,122 @@ export class DnD5eAddItemTool {
   }
 
   async handleAddItem(args: any): Promise<any> {
-    try {
-      const parsed = AddItemSchema.parse(args ?? {});
-      await assertDnd5e(this.foundry, this.logger, 'add-item');
+    const parsed = AddItemSchema.parse(args ?? {});
+    await assertDnd5e(this.foundry, this.logger, 'add-item');
 
-      // Soft validation — warn, never block (mirrors add-feature).
-      const warnings: string[] = [];
-      const checkDamage = (d?: { types: string[] }) => {
-        for (const t of d?.types ?? []) {
-          if (!DAMAGE_CANONICAL.has(t)) {
-            warnings.push(`Unknown damage type "${t}" — verify it matches dnd5e system values`);
-          }
-        }
-      };
-      checkDamage(parsed.damage);
-      checkDamage(parsed.versatile);
-      for (const p of parsed.properties) {
-        if (!PROPERTY_CANONICAL.has(p)) {
-          warnings.push(`Unknown weapon property "${p}" — verify it matches dnd5e system values`);
+    // Soft validation — warn, never block (mirrors add-feature).
+    const warnings: string[] = [];
+    const checkDamage = (d?: { types: string[] }) => {
+      for (const t of d?.types ?? []) {
+        if (!DAMAGE_CANONICAL.has(t)) {
+          warnings.push(`Unknown damage type "${t}" — verify it matches dnd5e system values`);
         }
       }
-      if (parsed.attuned && (parsed.attunement ?? '') === '') {
-        warnings.push('attuned is true but attunement is "" (none) — the item cannot be attuned.');
+    };
+    checkDamage(parsed.damage);
+    checkDamage(parsed.versatile);
+    for (const p of parsed.properties) {
+      if (!PROPERTY_CANONICAL.has(p)) {
+        warnings.push(`Unknown weapon property "${p}" — verify it matches dnd5e system values`);
       }
-      if (
-        (parsed.itemType === 'armor' || parsed.itemType === 'shield') &&
-        parsed.armorValue === undefined
-      ) {
-        const def =
-          parsed.itemType === 'shield'
-            ? '+2'
-            : String({ light: 11, medium: 14, heavy: 16 }[parsed.armorType ?? 'medium'] ?? 14);
-        warnings.push(
-          `No armorValue given for ${parsed.itemType} — defaulting (${def}); set armorValue for the real AC.`
-        );
-      }
-      // A numeric +N has no home on a wondrous (plain equipment) item or a non-ammo consumable in
-      // dnd5e 5.3.3 — only the 'mgc' flag is set; the bonus must come from an ActiveEffect.
-      if (parsed.magicalBonus != null && parsed.magicalBonus !== 0) {
-        if (parsed.itemType === 'wondrous') {
-          warnings.push(
-            'magicalBonus has no numeric field on a wondrous item — only the "mgc" flag is set; apply the +N via manage-effect (ActiveEffect).'
-          );
-        } else if (parsed.itemType === 'consumable' && parsed.consumableType !== 'ammo') {
-          warnings.push(
-            'magicalBonus only applies to ammunition consumables; for a magic potion/scroll the +N is not stored — use magical:true plus manage-effect for any bonus.'
-          );
-        }
-      }
-      // attunement/attuned/equipped don't exist on loot/container items — they're silently dropped.
-      if (
-        (parsed.itemType === 'loot' || parsed.itemType === 'container') &&
-        ((parsed.attunement ?? '') !== '' ||
-          parsed.attuned === true ||
-          parsed.equipped !== undefined)
-      ) {
-        warnings.push(
-          `attunement/attuned/equipped are ignored for ${parsed.itemType} items — use itemType "wondrous" for an attunable magic item.`
-        );
-      }
-      // Ranged weapon needs a range; without rangeFt system.range.value is null and the attack has none.
-      if (
-        parsed.itemType === 'weapon' &&
-        parsed.attackType === 'ranged' &&
-        parsed.rangeFt === undefined &&
-        parsed.withAttack !== false
-      ) {
-        warnings.push(
-          'Ranged weapon has no rangeFt — system.range.value will be null and the attack has no defined range. Set rangeFt.'
-        );
-      }
-      if (
-        parsed.longRangeFt !== undefined &&
-        parsed.rangeFt !== undefined &&
-        parsed.longRangeFt <= parsed.rangeFt
-      ) {
-        warnings.push(
-          `longRangeFt (${parsed.longRangeFt}) should be greater than rangeFt (${parsed.rangeFt}).`
-        );
-      }
-      if (
-        parsed.itemType === 'weapon' &&
-        parsed.withAttack === true &&
-        parsed.damage === undefined
-      ) {
-        warnings.push(
-          'withAttack:true but no damage given — no attack activity was created; supply damage to get a rollable attack.'
-        );
-      }
-      if (parsed.versatile !== undefined && !(parsed.properties ?? []).includes('ver')) {
-        warnings.push(
-          'versatile damage given but the "ver" property is missing — add "ver" to properties for the two-handed die to apply.'
-        );
-      }
-      if (parsed.itemType === 'weapon' && parsed.abilityModifier && parsed.sourceRules !== '2024') {
-        warnings.push(
-          `abilityModifier "${parsed.abilityModifier}" only applies under 2024 rules; on 2014 weapons the ability is auto-derived from weapon properties.`
-        );
-      }
-      if (parsed.uses && parsed.itemType !== 'consumable') {
-        warnings.push(`uses is ignored for itemType "${parsed.itemType}" (consumable only).`);
-      }
-      if (parsed.wireAc && !parsed.actorIdentifier) {
-        warnings.push('wireAc only applies when attaching to an actor; ignored for a world item.');
-      }
-      if ((parsed.lootCopy || parsed.lootCopyFolder) && !parsed.actorIdentifier) {
-        warnings.push(
-          'lootCopy applies when attaching to an actor; a world item is already lootable — ignored.'
-        );
-      }
-
-      // withAttack defaults to true for a weapon that has damage.
-      const withAttack =
-        parsed.itemType === 'weapon' ? (parsed.withAttack ?? parsed.damage !== undefined) : false;
-
-      this.logger.info('Authoring physical item', {
-        itemType: parsed.itemType,
-        name: parsed.name,
-        target: parsed.actorIdentifier ?? 'world',
-        warnings: warnings.length,
-      });
-
-      const result = await this.foundry.call('addItem', { ...parsed, withAttack });
-      return this.formatResponse(result, parsed, warnings);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'add-item', 'item authoring');
     }
+    if (parsed.attuned && (parsed.attunement ?? '') === '') {
+      warnings.push('attuned is true but attunement is "" (none) — the item cannot be attuned.');
+    }
+    if (
+      (parsed.itemType === 'armor' || parsed.itemType === 'shield') &&
+      parsed.armorValue === undefined
+    ) {
+      const def =
+        parsed.itemType === 'shield'
+          ? '+2'
+          : String({ light: 11, medium: 14, heavy: 16 }[parsed.armorType ?? 'medium'] ?? 14);
+      warnings.push(
+        `No armorValue given for ${parsed.itemType} — defaulting (${def}); set armorValue for the real AC.`
+      );
+    }
+    // A numeric +N has no home on a wondrous (plain equipment) item or a non-ammo consumable in
+    // dnd5e 5.3.3 — only the 'mgc' flag is set; the bonus must come from an ActiveEffect.
+    if (parsed.magicalBonus != null && parsed.magicalBonus !== 0) {
+      if (parsed.itemType === 'wondrous') {
+        warnings.push(
+          'magicalBonus has no numeric field on a wondrous item — only the "mgc" flag is set; apply the +N via manage-effect (ActiveEffect).'
+        );
+      } else if (parsed.itemType === 'consumable' && parsed.consumableType !== 'ammo') {
+        warnings.push(
+          'magicalBonus only applies to ammunition consumables; for a magic potion/scroll the +N is not stored — use magical:true plus manage-effect for any bonus.'
+        );
+      }
+    }
+    // attunement/attuned/equipped don't exist on loot/container items — they're silently dropped.
+    if (
+      (parsed.itemType === 'loot' || parsed.itemType === 'container') &&
+      ((parsed.attunement ?? '') !== '' || parsed.attuned === true || parsed.equipped !== undefined)
+    ) {
+      warnings.push(
+        `attunement/attuned/equipped are ignored for ${parsed.itemType} items — use itemType "wondrous" for an attunable magic item.`
+      );
+    }
+    // Ranged weapon needs a range; without rangeFt system.range.value is null and the attack has none.
+    if (
+      parsed.itemType === 'weapon' &&
+      parsed.attackType === 'ranged' &&
+      parsed.rangeFt === undefined &&
+      parsed.withAttack !== false
+    ) {
+      warnings.push(
+        'Ranged weapon has no rangeFt — system.range.value will be null and the attack has no defined range. Set rangeFt.'
+      );
+    }
+    if (
+      parsed.longRangeFt !== undefined &&
+      parsed.rangeFt !== undefined &&
+      parsed.longRangeFt <= parsed.rangeFt
+    ) {
+      warnings.push(
+        `longRangeFt (${parsed.longRangeFt}) should be greater than rangeFt (${parsed.rangeFt}).`
+      );
+    }
+    if (parsed.itemType === 'weapon' && parsed.withAttack === true && parsed.damage === undefined) {
+      warnings.push(
+        'withAttack:true but no damage given — no attack activity was created; supply damage to get a rollable attack.'
+      );
+    }
+    if (parsed.versatile !== undefined && !(parsed.properties ?? []).includes('ver')) {
+      warnings.push(
+        'versatile damage given but the "ver" property is missing — add "ver" to properties for the two-handed die to apply.'
+      );
+    }
+    if (parsed.itemType === 'weapon' && parsed.abilityModifier && parsed.sourceRules !== '2024') {
+      warnings.push(
+        `abilityModifier "${parsed.abilityModifier}" only applies under 2024 rules; on 2014 weapons the ability is auto-derived from weapon properties.`
+      );
+    }
+    if (parsed.uses && parsed.itemType !== 'consumable') {
+      warnings.push(`uses is ignored for itemType "${parsed.itemType}" (consumable only).`);
+    }
+    if (parsed.wireAc && !parsed.actorIdentifier) {
+      warnings.push('wireAc only applies when attaching to an actor; ignored for a world item.');
+    }
+    if ((parsed.lootCopy || parsed.lootCopyFolder) && !parsed.actorIdentifier) {
+      warnings.push(
+        'lootCopy applies when attaching to an actor; a world item is already lootable — ignored.'
+      );
+    }
+
+    // withAttack defaults to true for a weapon that has damage.
+    const withAttack =
+      parsed.itemType === 'weapon' ? (parsed.withAttack ?? parsed.damage !== undefined) : false;
+
+    this.logger.info('Authoring physical item', {
+      itemType: parsed.itemType,
+      name: parsed.name,
+      target: parsed.actorIdentifier ?? 'world',
+      warnings: warnings.length,
+    });
+
+    const result = await this.foundry.call('addItem', { ...parsed, withAttack });
+    return this.formatResponse(result, parsed, warnings);
   }
 
   private formatResponse(result: any, params: any, warnings: string[]): any {

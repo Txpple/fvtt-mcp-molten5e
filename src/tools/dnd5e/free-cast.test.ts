@@ -4,37 +4,45 @@
  * buildRepertoireCleanup) are covered by src/page/dnd5e/free-cast.test.ts + the live verify script.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { DnD5eFreeCastTool } from './free-cast.js';
 import { makeFoundry, makeLogger } from '../test-helpers.js';
+import { clearSystemCache } from '../../utils/system-detection.js';
+
+// handleAddFreeCast now probes the system via assertDnd5e (getWorldInfo, module-cached), so the fake
+// bridge answers that probe with the dnd5e marker and the cache is cleared before each test.
+beforeEach(() => clearSystemCache());
 
 function makeTool(response: any = {}) {
-  const { foundry, calls } = makeFoundry(() => ({
-    success: true,
-    actor: { id: 'a1', name: 'Gren' },
-    feature: { id: 'f1', name: 'Magic Initiate' },
-    spell: {
-      uuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplBless00000',
-      name: 'Bless',
-      level: 1,
-    },
-    repertoire: { id: 'i1', name: 'Bless', imported: false, migrated: true },
-    activity: {
-      id: 'castActivity0000',
-      name: 'Bless - Magic Initiate',
-      reused: false,
-      uses: { max: '1', recovery: [{ period: 'lr', type: 'recoverAll' }] },
-      activationType: 'action',
-    },
-    additionalSpells: {
-      cachedId: 'cached0000000000',
-      name: 'Bless - Magic Initiate',
-      mintedBy: 'system',
-      removedDuplicates: 2,
-    },
-    warnings: [],
-    ...response,
-  }));
+  const { foundry, calls } = makeFoundry((name: string) => {
+    if (name === 'getWorldInfo') return { system: 'dnd5e' };
+    return {
+      success: true,
+      actor: { id: 'a1', name: 'Gren' },
+      feature: { id: 'f1', name: 'Magic Initiate' },
+      spell: {
+        uuid: 'Compendium.dnd-players-handbook.spells.Item.phbsplBless00000',
+        name: 'Bless',
+        level: 1,
+      },
+      repertoire: { id: 'i1', name: 'Bless', imported: false, migrated: true },
+      activity: {
+        id: 'castActivity0000',
+        name: 'Bless - Magic Initiate',
+        reused: false,
+        uses: { max: '1', recovery: [{ period: 'lr', type: 'recoverAll' }] },
+        activationType: 'action',
+      },
+      additionalSpells: {
+        cachedId: 'cached0000000000',
+        name: 'Bless - Magic Initiate',
+        mintedBy: 'system',
+        removedDuplicates: 2,
+      },
+      warnings: [],
+      ...response,
+    };
+  });
   const tool = new DnD5eFreeCastTool({ foundry, logger: makeLogger() });
   return { tool, calls };
 }

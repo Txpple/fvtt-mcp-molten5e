@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
+import { FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
@@ -174,12 +174,10 @@ export interface DnD5eManageActivityToolOptions {
 export class DnD5eManageActivityTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eManageActivityToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eManageActivityTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -202,93 +200,88 @@ export class DnD5eManageActivityTool {
   }
 
   async handleManageActivity(args: any): Promise<any> {
-    try {
-      const parsed = ManageActivitySchema.parse(args ?? {});
+    const parsed = ManageActivitySchema.parse(args ?? {});
 
-      // Cross-field guards: throw FormattedToolError so the message surfaces verbatim (the central
-      // error mapper would otherwise flatten a plain Error to a generic "unexpected error").
-      if (parsed.action === 'add') {
-        if (!parsed.type) {
+    // Cross-field guards: throw FormattedToolError so the message surfaces verbatim (the central
+    // error mapper would otherwise flatten a plain Error to a generic "unexpected error").
+    if (parsed.action === 'add') {
+      if (!parsed.type) {
+        throw new FormattedToolError(
+          'action "add" requires `type` (attack/damage/save/heal/check/utility).'
+        );
+      }
+      // Per-type required mechanics — without these the built activity would be malformed
+      // (e.g. a save with no ability writes save.ability:[undefined]) or empty/useless.
+      if (parsed.type === 'save' && (!parsed.saveAbility || parsed.saveDC === undefined)) {
+        throw new FormattedToolError('activity type "save" requires saveAbility and saveDC.');
+      }
+      if (parsed.type === 'heal' && !parsed.healAmount) {
+        throw new FormattedToolError('activity type "heal" requires healAmount.');
+      }
+      if (parsed.type === 'damage' && !parsed.damageParts?.length) {
+        throw new FormattedToolError(
+          'activity type "damage" requires at least one damageParts entry.'
+        );
+      }
+      if (parsed.type === 'cast') {
+        if (!parsed.spellUuid) {
           throw new FormattedToolError(
-            'action "add" requires `type` (attack/damage/save/heal/check/utility).'
+            'activity type "cast" requires `spellUuid` — the Compendium uuid of the spell to link ' +
+              '(e.g. "Compendium.dnd-players-handbook.spells.Item.phbsplFireball00").'
           );
         }
-        // Per-type required mechanics — without these the built activity would be malformed
-        // (e.g. a save with no ability writes save.ability:[undefined]) or empty/useless.
-        if (parsed.type === 'save' && (!parsed.saveAbility || parsed.saveDC === undefined)) {
-          throw new FormattedToolError('activity type "save" requires saveAbility and saveDC.');
-        }
-        if (parsed.type === 'heal' && !parsed.healAmount) {
-          throw new FormattedToolError('activity type "heal" requires healAmount.');
-        }
-        if (parsed.type === 'damage' && !parsed.damageParts?.length) {
+        if (parsed.saveDC !== undefined && parsed.attackBonus !== undefined) {
           throw new FormattedToolError(
-            'activity type "damage" requires at least one damageParts entry.'
+            'activity type "cast": provide saveDC OR attackBonus (a spell uses one challenge), not both.'
           );
         }
-        if (parsed.type === 'cast') {
-          if (!parsed.spellUuid) {
-            throw new FormattedToolError(
-              'activity type "cast" requires `spellUuid` — the Compendium uuid of the spell to link ' +
-                '(e.g. "Compendium.dnd-players-handbook.spells.Item.phbsplFireball00").'
-            );
-          }
-          if (parsed.saveDC !== undefined && parsed.attackBonus !== undefined) {
-            throw new FormattedToolError(
-              'activity type "cast": provide saveDC OR attackBonus (a spell uses one challenge), not both.'
-            );
-          }
-        }
       }
-      if ((parsed.action === 'edit' || parsed.action === 'remove') && !parsed.activityId) {
-        throw new FormattedToolError(`action "${parsed.action}" requires \`activityId\`.`);
-      }
-
-      await assertDnd5e(this.foundry, this.logger, 'manage-activity');
-
-      const fwd: Record<string, any> = {
-        action: parsed.action,
-        itemIdentifier: parsed.itemIdentifier,
-      };
-      if (parsed.actorIdentifier) fwd.actorIdentifier = parsed.actorIdentifier;
-      if (parsed.activityId) fwd.activityId = parsed.activityId;
-      if (parsed.patch) fwd.patch = parsed.patch;
-      // The page builder reads `activity.{type,name,...}` (and maps healAmount -> healing here).
-      fwd.activity = {
-        type: parsed.type,
-        name: parsed.name,
-        activationType: parsed.activationType,
-        damageParts: parsed.damageParts,
-        attackType: parsed.attackType,
-        attackBonus: parsed.attackBonus,
-        ability: parsed.ability,
-        includeBase: parsed.includeBase,
-        saveAbility: parsed.saveAbility,
-        saveDC: parsed.saveDC,
-        onSave: parsed.onSave,
-        healing: parsed.healAmount,
-        checkAbility: parsed.checkAbility,
-        checkDC: parsed.checkDC,
-        skills: parsed.skills,
-        // cast — the page resolves spellUuid -> level default + V/S/M components + name +
-        // activation, and decides item-pool vs activity-pool consumption from the parent's uses.
-        spellUuid: parsed.spellUuid,
-        level: parsed.castLevel,
-        charges: parsed.charges,
-        recoveryPeriod: parsed.recoveryPeriod,
-      };
-
-      this.logger.info('manage-activity', {
-        action: parsed.action,
-        itemIdentifier: parsed.itemIdentifier,
-        type: parsed.type,
-      });
-      const result = await this.foundry.call('manageActivity', fwd);
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'manage-activity', 'managing activity');
     }
+    if ((parsed.action === 'edit' || parsed.action === 'remove') && !parsed.activityId) {
+      throw new FormattedToolError(`action "${parsed.action}" requires \`activityId\`.`);
+    }
+
+    await assertDnd5e(this.foundry, this.logger, 'manage-activity');
+
+    const fwd: Record<string, any> = {
+      action: parsed.action,
+      itemIdentifier: parsed.itemIdentifier,
+    };
+    if (parsed.actorIdentifier) fwd.actorIdentifier = parsed.actorIdentifier;
+    if (parsed.activityId) fwd.activityId = parsed.activityId;
+    if (parsed.patch) fwd.patch = parsed.patch;
+    // The page builder reads `activity.{type,name,...}` (and maps healAmount -> healing here).
+    fwd.activity = {
+      type: parsed.type,
+      name: parsed.name,
+      activationType: parsed.activationType,
+      damageParts: parsed.damageParts,
+      attackType: parsed.attackType,
+      attackBonus: parsed.attackBonus,
+      ability: parsed.ability,
+      includeBase: parsed.includeBase,
+      saveAbility: parsed.saveAbility,
+      saveDC: parsed.saveDC,
+      onSave: parsed.onSave,
+      healing: parsed.healAmount,
+      checkAbility: parsed.checkAbility,
+      checkDC: parsed.checkDC,
+      skills: parsed.skills,
+      // cast — the page resolves spellUuid -> level default + V/S/M components + name +
+      // activation, and decides item-pool vs activity-pool consumption from the parent's uses.
+      spellUuid: parsed.spellUuid,
+      level: parsed.castLevel,
+      charges: parsed.charges,
+      recoveryPeriod: parsed.recoveryPeriod,
+    };
+
+    this.logger.info('manage-activity', {
+      action: parsed.action,
+      itemIdentifier: parsed.itemIdentifier,
+      type: parsed.type,
+    });
+    const result = await this.foundry.call('manageActivity', fwd);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

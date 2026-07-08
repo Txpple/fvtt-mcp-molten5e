@@ -3,12 +3,19 @@
  * mocked; the dot-path patch / deletePaths -> "-=" transform is covered live by the acceptance script.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { DnD5eUpdateActorItemTool } from './update-actor-item.js';
 import { makeFoundry, makeLogger } from '../test-helpers.js';
+import { clearSystemCache } from '../../utils/system-detection.js';
+
+// handleUpdateActorItem now probes the system via assertDnd5e (getWorldInfo, module-cached), so the
+// fake bridge answers that probe with the dnd5e marker and the cache is cleared before each test.
+beforeEach(() => clearSystemCache());
 
 function makeTool(response: any = {}) {
-  const { foundry, calls } = makeFoundry(() => response);
+  const { foundry, calls } = makeFoundry((name: string) =>
+    name === 'getWorldInfo' ? { system: 'dnd5e' } : response
+  );
   const tool = new DnD5eUpdateActorItemTool({ foundry, logger: makeLogger() });
   return { tool, calls };
 }

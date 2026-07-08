@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
-import { ErrorHandler, FormattedToolError } from '../utils/error-handler.js';
+import { FormattedToolError } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
 // Journal STRUCTURING (typed blocks -> styled HTML) lives in ./journal/blocks (pure). The skill
 // supplies the words as blocks; this class arranges/styles them. No prose is generated here — the
@@ -245,12 +245,10 @@ export interface JournalToolsOptions {
 export class JournalTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor(options: JournalToolsOptions) {
     this.foundry = options.foundry;
     this.logger = options.logger;
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   /**
@@ -355,93 +353,84 @@ export class JournalTools {
    * Handle create quest journal request
    */
   async handleCreateQuestJournal(args: any): Promise<any> {
-    try {
-      const request = CreateQuestJournalSchema.parse(args);
+    const request = CreateQuestJournalSchema.parse(args);
 
-      // STRUCTURE the caller's blocks into styled HTML; map playerVisible -> per-page ownership
-      // (2 = players observe a handout). The words are the caller's blocks — no prose generated here.
-      const pages = request.pages.map(p => ({
-        name: p.name,
-        content: renderStyledHtml(p.blocks),
-        ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
-      }));
+    // STRUCTURE the caller's blocks into styled HTML; map playerVisible -> per-page ownership
+    // (2 = players observe a handout). The words are the caller's blocks — no prose generated here.
+    const pages = request.pages.map(p => ({
+      name: p.name,
+      content: renderStyledHtml(p.blocks),
+      ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
+    }));
 
-      const result = await this.foundry.call('createJournal', {
-        name: request.title,
-        pages,
-        ...(request.folderName ? { folderName: request.folderName } : {}),
-      });
+    const result = await this.foundry.call('createJournal', {
+      name: request.title,
+      pages,
+      ...(request.folderName ? { folderName: request.folderName } : {}),
+    });
 
-      if (!result || result.error) {
-        throw new Error(result?.error || 'Failed to create journal');
-      }
-
-      return {
-        success: true,
-        journalId: result.id,
-        journalName: result.name,
-        pageCount: result.pageCount,
-        pages: result.pages,
-        message: `Journal "${result.name}" created with ${result.pageCount} page(s).`,
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-quest-journal', 'quest creation');
+    if (!result || result.error) {
+      throw new Error(result?.error || 'Failed to create journal');
     }
+
+    return {
+      success: true,
+      journalId: result.id,
+      journalName: result.name,
+      pageCount: result.pageCount,
+      pages: result.pages,
+      message: `Journal "${result.name}" created with ${result.pageCount} page(s).`,
+    };
   }
 
   /**
    * Handle link quest to NPC request
    */
   async handleLinkQuestToNPC(args: any): Promise<any> {
-    try {
-      const request = LinkQuestToNPCSchema.parse(args);
+    const request = LinkQuestToNPCSchema.parse(args);
 
-      // Resolve the NPC to a REAL Actor — a quest link must point at a live document, never a dead
-      // name (ask-don't-invent). findActor returns { id, name } or null.
-      const actor = (await this.foundry.call('findActor', {
-        identifier: request.npcName,
-      })) as { id?: string; name?: string } | null;
-      if (!actor?.id) {
-        throw new FormattedToolError(
-          `NPC "${request.npcName}" not found in the world — create the actor first (or check the ` +
-            'name). A quest link must point at a real Actor; I will not insert a dead reference.'
-        );
-      }
-
-      // Build a Foundry @UUID enricher link (clickable on render) inside a GM note, labelled with the
-      // relationship. This is STRUCTURE (a real document link), not prose.
-      const link = `@UUID[Actor.${actor.id}]{${actor.name ?? request.npcName}}`;
-      const relationshipText = request.relationship
-        .replace(/([A-Z])/g, ' $1')
-        .toLowerCase()
-        .trim();
-      const linkBlocks: Block[] = [
-        {
-          type: 'gmnote',
-          html: `<p><strong>Related NPC:</strong> ${link} — ${relationshipText}</p>`,
-        },
-      ];
-
-      const current = await this.readPageContent(request.journalId, request.pageId);
-      const result = await this.foundry.call('updateJournalContent', {
-        journalId: request.journalId,
-        content: current + renderStyledHtml(linkBlocks),
-        ...(request.pageId ? { pageId: request.pageId } : {}),
-      });
-      if (!result || result.error || !result.success) {
-        throw new Error(result?.error || 'Failed to add the NPC link');
-      }
-
-      return {
-        success: true,
-        npc: { id: actor.id, name: actor.name ?? request.npcName },
-        link,
-        message: `Linked ${actor.name ?? request.npcName} to the quest as ${relationshipText}.`,
-      };
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'link-quest-to-npc', 'linking quest to NPC');
+    // Resolve the NPC to a REAL Actor — a quest link must point at a live document, never a dead
+    // name (ask-don't-invent). findActor returns { id, name } or null.
+    const actor = (await this.foundry.call('findActor', {
+      identifier: request.npcName,
+    })) as { id?: string; name?: string } | null;
+    if (!actor?.id) {
+      throw new FormattedToolError(
+        `NPC "${request.npcName}" not found in the world — create the actor first (or check the ` +
+          'name). A quest link must point at a real Actor; I will not insert a dead reference.'
+      );
     }
+
+    // Build a Foundry @UUID enricher link (clickable on render) inside a GM note, labelled with the
+    // relationship. This is STRUCTURE (a real document link), not prose.
+    const link = `@UUID[Actor.${actor.id}]{${actor.name ?? request.npcName}}`;
+    const relationshipText = request.relationship
+      .replace(/([A-Z])/g, ' $1')
+      .toLowerCase()
+      .trim();
+    const linkBlocks: Block[] = [
+      {
+        type: 'gmnote',
+        html: `<p><strong>Related NPC:</strong> ${link} — ${relationshipText}</p>`,
+      },
+    ];
+
+    const current = await this.readPageContent(request.journalId, request.pageId);
+    const result = await this.foundry.call('updateJournalContent', {
+      journalId: request.journalId,
+      content: current + renderStyledHtml(linkBlocks),
+      ...(request.pageId ? { pageId: request.pageId } : {}),
+    });
+    if (!result || result.error || !result.success) {
+      throw new Error(result?.error || 'Failed to add the NPC link');
+    }
+
+    return {
+      success: true,
+      npc: { id: actor.id, name: actor.name ?? request.npcName },
+      link,
+      message: `Linked ${actor.name ?? request.npcName} to the quest as ${relationshipText}.`,
+    };
   }
 
   /**
@@ -449,50 +438,46 @@ export class JournalTools {
    * session-log path. Structuring only: the words are the caller's blocks; the tool styles + appends.
    */
   async handleUpdateQuestJournal(args: any): Promise<any> {
-    try {
-      const request = UpdateQuestJournalSchema.parse(args);
-      const sectionHtml = renderStyledHtml(request.blocks);
-      const ownership = this.ownershipFor(request.playerVisible);
+    const request = UpdateQuestJournalSchema.parse(args);
+    const sectionHtml = renderStyledHtml(request.blocks);
+    const ownership = this.ownershipFor(request.playerVisible);
 
-      // New page: set its content directly (nothing to append to).
-      if (request.newPageName) {
-        const result = await this.foundry.call('updateJournalContent', {
-          journalId: request.journalId,
-          content: sectionHtml,
-          newPageName: request.newPageName,
-          ...(ownership ? { ownership } : {}),
-        });
-        if (!result || result.error || !result.success) {
-          throw new Error(result?.error || 'Failed to create the new page');
-        }
-        return {
-          success: true,
-          message: `New page "${request.newPageName}" added.`,
-          pageId: result.pageId,
-          pageName: result.pageName,
-        };
-      }
-
-      // Existing page: append the new styled section after the current content.
-      const current = await this.readPageContent(request.journalId, request.pageId);
+    // New page: set its content directly (nothing to append to).
+    if (request.newPageName) {
       const result = await this.foundry.call('updateJournalContent', {
         journalId: request.journalId,
-        content: current + sectionHtml,
-        ...(request.pageId ? { pageId: request.pageId } : {}),
+        content: sectionHtml,
+        newPageName: request.newPageName,
         ...(ownership ? { ownership } : {}),
       });
       if (!result || result.error || !result.success) {
-        throw new Error(result?.error || 'Failed to append the section');
+        throw new Error(result?.error || 'Failed to create the new page');
       }
       return {
         success: true,
-        message: 'Appended a new section to the journal page.',
+        message: `New page "${request.newPageName}" added.`,
         pageId: result.pageId,
         pageName: result.pageName,
       };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'update-quest-journal', 'journal update');
     }
+
+    // Existing page: append the new styled section after the current content.
+    const current = await this.readPageContent(request.journalId, request.pageId);
+    const result = await this.foundry.call('updateJournalContent', {
+      journalId: request.journalId,
+      content: current + sectionHtml,
+      ...(request.pageId ? { pageId: request.pageId } : {}),
+      ...(ownership ? { ownership } : {}),
+    });
+    if (!result || result.error || !result.success) {
+      throw new Error(result?.error || 'Failed to append the section');
+    }
+    return {
+      success: true,
+      message: 'Appended a new section to the journal page.',
+      pageId: result.pageId,
+      pageName: result.pageName,
+    };
   }
 
   /** Read a journal page's current HTML (a specific page by id, else the first text page). */
@@ -511,351 +496,316 @@ export class JournalTools {
    * Handle list journals request
    */
   async handleListJournals(args: any): Promise<any> {
-    try {
-      const request = ListJournalsSchema.parse(args);
+    const request = ListJournalsSchema.parse(args);
 
-      // Mode: Read a specific page
-      if (request.journalId && request.pageId) {
-        const pageResult = await this.foundry.call('getJournalPageContent', {
-          journalId: request.journalId,
-          pageId: request.pageId,
-        });
+    // Mode: Read a specific page
+    if (request.journalId && request.pageId) {
+      const pageResult = await this.foundry.call('getJournalPageContent', {
+        journalId: request.journalId,
+        pageId: request.pageId,
+      });
 
-        if (!pageResult || pageResult.error) {
-          throw new Error(pageResult?.error || 'Page not found');
-        }
-
-        return {
-          success: true,
-          mode: 'page',
-          journalId: request.journalId,
-          page: pageResult,
-        };
-      }
-
-      // Mode: Read a specific journal (first page + page manifest)
-      if (request.journalId) {
-        const journalContent = await this.foundry.call('getJournalContent', {
-          journalId: request.journalId,
-        });
-
-        if (!journalContent || journalContent.error) {
-          throw new Error(journalContent?.error || 'Journal not found');
-        }
-
-        return {
-          success: true,
-          mode: 'journal',
-          journalId: request.journalId,
-          content: journalContent.content,
-          currentPage: journalContent.currentPage,
-          allPages: journalContent.allPages,
-          pageCount: journalContent.pageCount,
-          note: journalContent.note,
-        };
-      }
-
-      // Mode: List all journals
-      const journals = await this.foundry.call('listJournals', {});
-
-      if (!journals || journals.error) {
-        throw new Error('Failed to retrieve journals');
-      }
-
-      let filteredJournals = journals;
-
-      // Filter for quest-related journals if requested
-      if (request.filterQuests) {
-        filteredJournals = journals.filter((journal: any) => this.isQuestRelated(journal.name));
-      }
-
-      // Include content if requested
-      if (request.includeContent) {
-        for (const journal of filteredJournals) {
-          try {
-            const content = await this.foundry.call('getJournalContent', {
-              journalId: journal.id,
-            });
-            journal.contentPreview = `${content?.content?.substring(0, 150)}...` || '';
-          } catch (_error) {
-            journal.contentPreview = 'Error loading content';
-          }
-        }
+      if (!pageResult || pageResult.error) {
+        throw new Error(pageResult?.error || 'Page not found');
       }
 
       return {
         success: true,
-        mode: 'list',
-        journals: filteredJournals,
-        total: filteredJournals.length,
-        filtered: request.filterQuests,
+        mode: 'page',
+        journalId: request.journalId,
+        page: pageResult,
       };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'list-journals', 'journal listing');
     }
+
+    // Mode: Read a specific journal (first page + page manifest)
+    if (request.journalId) {
+      const journalContent = await this.foundry.call('getJournalContent', {
+        journalId: request.journalId,
+      });
+
+      if (!journalContent || journalContent.error) {
+        throw new Error(journalContent?.error || 'Journal not found');
+      }
+
+      return {
+        success: true,
+        mode: 'journal',
+        journalId: request.journalId,
+        content: journalContent.content,
+        currentPage: journalContent.currentPage,
+        allPages: journalContent.allPages,
+        pageCount: journalContent.pageCount,
+        note: journalContent.note,
+      };
+    }
+
+    // Mode: List all journals
+    const journals = await this.foundry.call('listJournals', {});
+
+    if (!journals || journals.error) {
+      throw new Error('Failed to retrieve journals');
+    }
+
+    let filteredJournals = journals;
+
+    // Filter for quest-related journals if requested
+    if (request.filterQuests) {
+      filteredJournals = journals.filter((journal: any) => this.isQuestRelated(journal.name));
+    }
+
+    // Include content if requested
+    if (request.includeContent) {
+      for (const journal of filteredJournals) {
+        try {
+          const content = await this.foundry.call('getJournalContent', {
+            journalId: journal.id,
+          });
+          journal.contentPreview = `${content?.content?.substring(0, 150)}...` || '';
+        } catch (_error) {
+          journal.contentPreview = 'Error loading content';
+        }
+      }
+    }
+
+    return {
+      success: true,
+      mode: 'list',
+      journals: filteredJournals,
+      total: filteredJournals.length,
+      filtered: request.filterQuests,
+    };
   }
 
   /**
    * Handle search journals request
    */
   async handleSearchJournals(args: any): Promise<any> {
-    try {
-      const request = SearchJournalsSchema.parse(args);
+    const request = SearchJournalsSchema.parse(args);
 
-      // Get all journals (now includes page metadata)
-      const journals = await this.foundry.call('listJournals', {});
+    // Get all journals (now includes page metadata)
+    const journals = await this.foundry.call('listJournals', {});
 
-      if (!journals || journals.error) {
-        throw new Error('Failed to retrieve journals');
-      }
-
-      const searchResults = [];
-      const query = request.searchQuery.toLowerCase();
-
-      for (const journal of journals) {
-        let matches = false;
-        const matchInfo: any = {
-          id: journal.id,
-          name: journal.name,
-          pageCount: journal.pageCount || 0,
-          matchType: [],
-          matchedPages: [],
-        };
-
-        // Search title
-        if (request.searchType === 'title' || request.searchType === 'both') {
-          if (journal.name.toLowerCase().includes(query)) {
-            matches = true;
-            matchInfo.matchType.push('title');
-          }
-        }
-
-        // Search content across ALL pages
-        if (request.searchType === 'content' || request.searchType === 'both') {
-          const pages = journal.pages || [];
-          for (const page of pages) {
-            if (page.type !== 'text') continue;
-            try {
-              const pageContent = await this.foundry.call('getJournalPageContent', {
-                journalId: journal.id,
-                pageId: page.id,
-              });
-
-              if (pageContent?.content?.toLowerCase().includes(query)) {
-                matches = true;
-                if (!matchInfo.matchType.includes('content')) {
-                  matchInfo.matchType.push('content');
-                }
-                matchInfo.matchedPages.push({
-                  pageId: page.id,
-                  pageName: page.name,
-                  contentSnippet: this.extractSnippet(pageContent.content, request.searchQuery),
-                });
-              }
-            } catch (_error) {
-              // Skip pages with content errors
-            }
-          }
-        }
-
-        if (matches) {
-          searchResults.push(matchInfo);
-        }
-      }
-
-      return {
-        success: true,
-        searchQuery: request.searchQuery,
-        searchType: request.searchType,
-        results: searchResults,
-        totalMatches: searchResults.length,
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'search-journals', 'journal search');
+    if (!journals || journals.error) {
+      throw new Error('Failed to retrieve journals');
     }
+
+    const searchResults = [];
+    const query = request.searchQuery.toLowerCase();
+
+    for (const journal of journals) {
+      let matches = false;
+      const matchInfo: any = {
+        id: journal.id,
+        name: journal.name,
+        pageCount: journal.pageCount || 0,
+        matchType: [],
+        matchedPages: [],
+      };
+
+      // Search title
+      if (request.searchType === 'title' || request.searchType === 'both') {
+        if (journal.name.toLowerCase().includes(query)) {
+          matches = true;
+          matchInfo.matchType.push('title');
+        }
+      }
+
+      // Search content across ALL pages
+      if (request.searchType === 'content' || request.searchType === 'both') {
+        const pages = journal.pages || [];
+        for (const page of pages) {
+          if (page.type !== 'text') continue;
+          try {
+            const pageContent = await this.foundry.call('getJournalPageContent', {
+              journalId: journal.id,
+              pageId: page.id,
+            });
+
+            if (pageContent?.content?.toLowerCase().includes(query)) {
+              matches = true;
+              if (!matchInfo.matchType.includes('content')) {
+                matchInfo.matchType.push('content');
+              }
+              matchInfo.matchedPages.push({
+                pageId: page.id,
+                pageName: page.name,
+                contentSnippet: this.extractSnippet(pageContent.content, request.searchQuery),
+              });
+            }
+          } catch (_error) {
+            // Skip pages with content errors
+          }
+        }
+      }
+
+      if (matches) {
+        searchResults.push(matchInfo);
+      }
+    }
+
+    return {
+      success: true,
+      searchQuery: request.searchQuery,
+      searchType: request.searchType,
+      results: searchResults,
+      totalMatches: searchResults.length,
+    };
   }
 
   /**
    * Handle create generic journal request
    */
   async handleCreateJournal(args: any): Promise<any> {
-    try {
-      const request = CreateJournalSchema.parse(args);
+    const request = CreateJournalSchema.parse(args);
 
-      // Map each page to the bridge shape: a TEXT page forwards `content`; an IMAGE page forwards
-      // `kind:'image'` + `src` (+ optional caption). `playerVisible` -> ownership.default 2 (observe);
-      // an explicit `sort` is forwarded when given (otherwise the page side keeps the array order).
-      const pages = request.pages.map(p => ({
-        name: p.name,
-        ...(p.kind === 'image'
-          ? { kind: 'image' as const, src: p.src, ...(p.caption ? { caption: p.caption } : {}) }
-          : { content: p.content }),
-        ...(typeof p.sort === 'number' ? { sort: p.sort } : {}),
-        ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
-      }));
+    // Map each page to the bridge shape: a TEXT page forwards `content`; an IMAGE page forwards
+    // `kind:'image'` + `src` (+ optional caption). `playerVisible` -> ownership.default 2 (observe);
+    // an explicit `sort` is forwarded when given (otherwise the page side keeps the array order).
+    const pages = request.pages.map(p => ({
+      name: p.name,
+      ...(p.kind === 'image'
+        ? { kind: 'image' as const, src: p.src, ...(p.caption ? { caption: p.caption } : {}) }
+        : { content: p.content }),
+      ...(typeof p.sort === 'number' ? { sort: p.sort } : {}),
+      ...(p.playerVisible ? { ownership: { default: 2 } } : {}),
+    }));
 
-      const result = await this.foundry.call('createJournal', {
-        name: request.name,
-        pages,
-        ...(request.folderName ? { folderName: request.folderName } : {}),
-      });
+    const result = await this.foundry.call('createJournal', {
+      name: request.name,
+      pages,
+      ...(request.folderName ? { folderName: request.folderName } : {}),
+    });
 
-      if (!result || result.error) {
-        throw new Error(result?.error || 'Failed to create journal');
-      }
-
-      // Surface any page-side asset warnings (e.g. an image page src that 404s — KEEP+WARN).
-      const warns = Array.isArray(result?.warnings) ? result.warnings : [];
-      let message = `Journal "${result.name}" created with ${result.pageCount} page(s)`;
-      if (warns.length) {
-        message +=
-          '\n\n⚠️ ' +
-          warns.length +
-          ' warning(s):\n' +
-          warns.map((w: string) => `- ${w}`).join('\n');
-      }
-
-      return {
-        success: true,
-        journalId: result.id,
-        journalName: result.name,
-        pageCount: result.pageCount,
-        pages: result.pages,
-        message,
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-journal', 'journal creation');
+    if (!result || result.error) {
+      throw new Error(result?.error || 'Failed to create journal');
     }
+
+    // Surface any page-side asset warnings (e.g. an image page src that 404s — KEEP+WARN).
+    const warns = Array.isArray(result?.warnings) ? result.warnings : [];
+    let message = `Journal "${result.name}" created with ${result.pageCount} page(s)`;
+    if (warns.length) {
+      message +=
+        '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => `- ${w}`).join('\n');
+    }
+
+    return {
+      success: true,
+      journalId: result.id,
+      journalName: result.name,
+      pageCount: result.pageCount,
+      pages: result.pages,
+      message,
+    };
   }
 
   /**
    * Handle generic journal update (rename and/or set page content)
    */
   async handleUpdateJournal(args: any): Promise<any> {
-    try {
-      const request = UpdateJournalSchema.parse(args);
-      const ownership = this.ownershipFor(request.playerVisible);
+    const request = UpdateJournalSchema.parse(args);
+    const ownership = this.ownershipFor(request.playerVisible);
 
-      const result = await this.foundry.call('updateJournal', {
-        journalId: request.journalId,
-        ...(request.name !== undefined ? { name: request.name } : {}),
-        ...(request.content !== undefined ? { content: request.content } : {}),
-        ...(request.pageId !== undefined ? { pageId: request.pageId } : {}),
-        ...(request.newPageName !== undefined ? { newPageName: request.newPageName } : {}),
-        ...(ownership ? { ownership } : {}),
-      });
+    const result = await this.foundry.call('updateJournal', {
+      journalId: request.journalId,
+      ...(request.name !== undefined ? { name: request.name } : {}),
+      ...(request.content !== undefined ? { content: request.content } : {}),
+      ...(request.pageId !== undefined ? { pageId: request.pageId } : {}),
+      ...(request.newPageName !== undefined ? { newPageName: request.newPageName } : {}),
+      ...(ownership ? { ownership } : {}),
+    });
 
-      if (!result || result.error || result.success === false) {
-        throw new Error(result?.error || 'Failed to update journal');
-      }
-
-      return {
-        success: true,
-        journalId: request.journalId,
-        renamed: result.renamed ?? false,
-        pageId: result.pageId,
-        pageName: result.pageName,
-        message: 'Journal updated',
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'update-journal', 'journal update');
+    if (!result || result.error || result.success === false) {
+      throw new Error(result?.error || 'Failed to update journal');
     }
+
+    return {
+      success: true,
+      journalId: request.journalId,
+      renamed: result.renamed ?? false,
+      pageId: result.pageId,
+      pageName: result.pageName,
+      message: 'Journal updated',
+    };
   }
 
   /**
    * Flip a single journal page's player visibility without rewriting its content.
    */
   async handleSetJournalPageVisibility(args: any): Promise<any> {
-    try {
-      const request = SetJournalPageVisibilitySchema.parse(args);
+    const request = SetJournalPageVisibilitySchema.parse(args);
 
-      const result = await this.foundry.call('setJournalPageVisibility', {
-        journalId: request.journalId,
-        pageId: request.pageId,
-        playerVisible: request.playerVisible,
-      });
+    const result = await this.foundry.call('setJournalPageVisibility', {
+      journalId: request.journalId,
+      pageId: request.pageId,
+      playerVisible: request.playerVisible,
+    });
 
-      if (!result || result.error || result.success === false) {
-        throw new Error(result?.error || 'Failed to set page visibility');
-      }
-
-      return {
-        success: true,
-        journalId: request.journalId,
-        pageId: result.pageId,
-        pageName: result.pageName,
-        playerVisible: request.playerVisible,
-        message: `Page "${result.pageName}" is now ${request.playerVisible ? 'player-visible (handout)' : 'GM-only'}.`,
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(
-        error,
-        'set-journal-page-visibility',
-        'journal page visibility'
-      );
+    if (!result || result.error || result.success === false) {
+      throw new Error(result?.error || 'Failed to set page visibility');
     }
+
+    return {
+      success: true,
+      journalId: request.journalId,
+      pageId: result.pageId,
+      pageName: result.pageName,
+      playerVisible: request.playerVisible,
+      message: `Page "${result.pageName}" is now ${request.playerVisible ? 'player-visible (handout)' : 'GM-only'}.`,
+    };
   }
 
   /**
    * Delete one page from a journal by id, leaving the rest of the entry intact.
    */
   async handleDeleteJournalPage(args: any): Promise<any> {
-    try {
-      const request = DeleteJournalPageSchema.parse(args);
+    const request = DeleteJournalPageSchema.parse(args);
 
-      const result = await this.foundry.call('deleteJournalPage', {
-        journalId: request.journalId,
-        pageId: request.pageId,
-      });
+    const result = await this.foundry.call('deleteJournalPage', {
+      journalId: request.journalId,
+      pageId: request.pageId,
+    });
 
-      if (!result || result.error) {
-        throw new Error(result?.error || 'Failed to delete page');
-      }
-      if (result.deleted === false) {
-        return {
-          success: true,
-          deleted: false,
-          notFound: result.notFound,
-          message: `Page not found: "${result.notFound}". Nothing deleted.`,
-        };
-      }
-
+    if (!result || result.error) {
+      throw new Error(result?.error || 'Failed to delete page');
+    }
+    if (result.deleted === false) {
       return {
         success: true,
-        deleted: true,
-        page: result.page,
-        message: `Deleted page "${result.page?.name}" (${result.page?.id}).`,
+        deleted: false,
+        notFound: result.notFound,
+        message: `Page not found: "${result.notFound}". Nothing deleted.`,
       };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'delete-journal-page', 'journal page deletion');
     }
+
+    return {
+      success: true,
+      deleted: true,
+      page: result.page,
+      message: `Deleted page "${result.page?.name}" (${result.page?.id}).`,
+    };
   }
 
   /**
    * Handle delete journal request
    */
   async handleDeleteJournal(args: any): Promise<any> {
-    try {
-      const request = DeleteJournalSchema.parse(args);
+    const request = DeleteJournalSchema.parse(args);
 
-      const result = await this.foundry.call('deleteJournals', {
-        identifiers: request.identifiers,
-      });
+    const result = await this.foundry.call('deleteJournals', {
+      identifiers: request.identifiers,
+    });
 
-      if (!result || result.error) {
-        throw new Error(result?.error || 'Failed to delete journals');
-      }
-
-      return {
-        success: true,
-        deletedCount: result.deletedCount,
-        deleted: result.deleted,
-        notFound: result.notFound,
-        message: `Deleted ${result.deletedCount} journal(s)`,
-      };
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'delete-journal', 'journal deletion');
+    if (!result || result.error) {
+      throw new Error(result?.error || 'Failed to delete journals');
     }
+
+    return {
+      success: true,
+      deletedCount: result.deletedCount,
+      deleted: result.deleted,
+      notFound: result.notFound,
+      message: `Deleted ${result.deletedCount} journal(s)`,
+    };
   }
 
   /**

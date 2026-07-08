@@ -1,11 +1,12 @@
 /**
- * Unit tests for ErrorHandler — the keyword-based classifier every tool failure now routes through
- * (centrally in index.ts, plus the five tools that curate their own errors). Previously untested
- * despite being pure and order-dependent.
+ * Unit tests for ErrorHandler — the keyword-based classifier EVERY tool failure routes through, in
+ * exactly one place (the central dispatch wrapper in index.ts). Tools no longer map their own
+ * errors; they throw FormattedToolError for curated messages and let everything else bubble here.
+ * Pure and order-dependent, so tested directly.
  */
 
 import { describe, it, expect } from 'vitest';
-import { ErrorHandler, FormattedToolError } from './error-handler.js';
+import { ErrorHandler } from './error-handler.js';
 
 // Minimal logger stub — ErrorHandler only needs child()/warn/error.
 const noopLogger: any = {
@@ -61,20 +62,6 @@ describe('ErrorHandler.toUserMessage — never degrades already-specific message
 
   it('handles non-Error throwables', () => {
     expect(eh.toUserMessage('a string was thrown', 'x')).toBe('a string was thrown');
-  });
-});
-
-describe('ErrorHandler.handleToolError', () => {
-  it('throws a FormattedToolError carrying the curated message', () => {
-    expect(() =>
-      eh.handleToolError(new Error('access denied'), 'create-actor-from-compendium', 'ctx')
-    ).toThrow(FormattedToolError);
-    try {
-      eh.handleToolError(new Error('access denied'), 'create-actor-from-compendium', 'ctx');
-    } catch (e) {
-      expect((e as Error).message).toContain('Permission denied');
-      expect(e).toBeInstanceOf(Error);
-    }
   });
 });
 

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { formatImportReport } from '../../utils/format.js';
 import { toInputSchema } from '../../utils/schema.js';
@@ -546,12 +545,10 @@ export interface DnD5eAddFeatureToolOptions {
 export class DnD5eAddFeatureTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eAddFeatureToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eAddFeatureTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -667,20 +664,16 @@ export class DnD5eAddFeatureTool {
       featureName: parsed.featureName,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (passive)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (passive)');
 
-      const result = await this.foundry.call('addPassiveFeatureToActor', parsed);
+    const result = await this.foundry.call('addPassiveFeatureToActor', parsed);
 
-      this.logger.info('Passive feature added successfully', {
-        actorId: result.actor?.id,
-        itemId: result.item?.id,
-      });
+    this.logger.info('Passive feature added successfully', {
+      actorId: result.actor?.id,
+      itemId: result.item?.id,
+    });
 
-      return this.formatPassiveResponse(result, parsed);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'passive feature creation');
-    }
+    return this.formatPassiveResponse(result, parsed);
   }
 
   private formatPassiveResponse(result: any, params: any): any {
@@ -739,20 +732,16 @@ export class DnD5eAddFeatureTool {
       areaType: parsed.areaType || 'none',
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (save)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (save)');
 
-      const result = await this.foundry.call('addSaveFeatureToActor', parsed);
+    const result = await this.foundry.call('addSaveFeatureToActor', parsed);
 
-      this.logger.info('Save feature added successfully', {
-        actorId: result.actor?.id,
-        itemId: result.item?.id,
-      });
+    this.logger.info('Save feature added successfully', {
+      actorId: result.actor?.id,
+      itemId: result.item?.id,
+    });
 
-      return this.formatSaveResponse(result, parsed);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'save feature creation');
-    }
+    return this.formatSaveResponse(result, parsed);
   }
 
   private formatSaveResponse(result: any, params: any): any {
@@ -817,23 +806,19 @@ export class DnD5eAddFeatureTool {
       warnings: warnings.length,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (attack)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (attack)');
 
-      const result = await this.foundry.call('addAttackToActor', {
-        ...parsed,
-        effectiveAbility,
-      });
+    const result = await this.foundry.call('addAttackToActor', {
+      ...parsed,
+      effectiveAbility,
+    });
 
-      this.logger.info('Attack feature added successfully', {
-        actorId: result.actor?.id,
-        itemId: result.item?.id,
-      });
+    this.logger.info('Attack feature added successfully', {
+      actorId: result.actor?.id,
+      itemId: result.item?.id,
+    });
 
-      return this.formatAttackResponse(result, { ...parsed, effectiveAbility }, warnings);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'attack feature creation');
-    }
+    return this.formatAttackResponse(result, { ...parsed, effectiveAbility }, warnings);
   }
 
   private formatAttackResponse(result: any, params: any, warnings: string[]): any {
@@ -900,23 +885,19 @@ export class DnD5eAddFeatureTool {
       warnings: warnings.length,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (attack-with-save)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (attack-with-save)');
 
-      const result = await this.foundry.call('addAttackWithSaveToActor', {
-        ...parsed,
-        effectiveAbility,
-      });
+    const result = await this.foundry.call('addAttackWithSaveToActor', {
+      ...parsed,
+      effectiveAbility,
+    });
 
-      this.logger.info('Attack+save feature added successfully', {
-        actorId: result.actor?.id,
-        itemId: result.item?.id,
-      });
+    this.logger.info('Attack+save feature added successfully', {
+      actorId: result.actor?.id,
+      itemId: result.item?.id,
+    });
 
-      return this.formatAttackWithSaveResponse(result, { ...parsed, effectiveAbility }, warnings);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'attack+save feature creation');
-    }
+    return this.formatAttackWithSaveResponse(result, { ...parsed, effectiveAbility }, warnings);
   }
 
   private formatAttackWithSaveResponse(result: any, params: any, warnings: string[]): any {
@@ -977,20 +958,16 @@ export class DnD5eAddFeatureTool {
       warnings: warnings.length,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (aura)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (aura)');
 
-      const result = await this.foundry.call('addAuraToActor', parsed);
+    const result = await this.foundry.call('addAuraToActor', parsed);
 
-      this.logger.info('Aura feature added successfully', {
-        actorId: result.actor?.id,
-        itemId: result.item?.id,
-      });
+    this.logger.info('Aura feature added successfully', {
+      actorId: result.actor?.id,
+      itemId: result.item?.id,
+    });
 
-      return this.formatAuraResponse(result, parsed, warnings);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'aura feature creation');
-    }
+    return this.formatAuraResponse(result, parsed, warnings);
   }
 
   private formatAuraResponse(result: any, params: any, warnings: string[]): any {
@@ -1040,20 +1017,16 @@ export class DnD5eAddFeatureTool {
       ability: effectiveAbility,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (spellcasting)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (spellcasting)');
 
-      const result = await this.foundry.call('setActorSpellcasting', {
-        ...parsed,
-        effectiveAbility,
-      });
+    const result = await this.foundry.call('setActorSpellcasting', {
+      ...parsed,
+      effectiveAbility,
+    });
 
-      this.logger.info('Actor spellcasting set successfully', { actorId: result.actor?.id });
+    this.logger.info('Actor spellcasting set successfully', { actorId: result.actor?.id });
 
-      return this.formatSpellcastingResponse(result, { ...parsed, effectiveAbility });
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'spellcasting setup');
-    }
+    return this.formatSpellcastingResponse(result, { ...parsed, effectiveAbility });
   }
 
   private formatSpellcastingResponse(result: any, params: any): any {
@@ -1106,23 +1079,19 @@ export class DnD5eAddFeatureTool {
       packs: parsed.compendiumPacks,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (spells)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (spells)');
 
-      const result = await this.foundry.call('addSpellsToActor', parsed);
+    const result = await this.foundry.call('addSpellsToActor', parsed);
 
-      this.logger.info('Spells import complete', {
-        actorId: result.actor?.id,
-        added: result.added?.length,
-        skipped: result.skipped?.length,
-        notFound: result.notFound?.length,
-        failed: result.failed?.length,
-      });
+    this.logger.info('Spells import complete', {
+      actorId: result.actor?.id,
+      added: result.added?.length,
+      skipped: result.skipped?.length,
+      notFound: result.notFound?.length,
+      failed: result.failed?.length,
+    });
 
-      return formatImportReport(result, parsed.spellNames.length, 'Spells');
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'spell import');
-    }
+    return formatImportReport(result, parsed.spellNames.length, 'Spells');
   }
 
   // ---------------------------------------------------------------------------
@@ -1221,33 +1190,29 @@ export class DnD5eAddFeatureTool {
       spellActivity: parsed.spellActivity ?? 'none',
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'add-feature (homebrew-spell)');
+    await assertDnd5e(this.foundry, this.logger, 'add-feature (homebrew-spell)');
 
-      const result = await this.foundry.call('addHomebrewSpellToActor', {
-        actorIdentifier: parsed.actorIdentifier,
-        name: parsed.featureName,
-        img: parsed.img,
-        level: parsed.spellLevel,
-        school: parsed.spellSchool,
-        method: parsed.spellMethod,
-        prepared: parsed.spellPrepared,
-        components: parsed.spellComponents,
-        materials: parsed.spellMaterials,
-        description: parsed.description,
-        activationType: parsed.activationType,
-        rangeValue: parsed.spellRange,
-        rangeUnits: parsed.spellRangeUnits,
-        durationValue: parsed.spellDuration,
-        durationUnits: parsed.spellDurationUnits,
-        sourceRules: parsed.sourceRules,
-        ...(activity ? { activity } : {}),
-      });
+    const result = await this.foundry.call('addHomebrewSpellToActor', {
+      actorIdentifier: parsed.actorIdentifier,
+      name: parsed.featureName,
+      img: parsed.img,
+      level: parsed.spellLevel,
+      school: parsed.spellSchool,
+      method: parsed.spellMethod,
+      prepared: parsed.spellPrepared,
+      components: parsed.spellComponents,
+      materials: parsed.spellMaterials,
+      description: parsed.description,
+      activationType: parsed.activationType,
+      rangeValue: parsed.spellRange,
+      rangeUnits: parsed.spellRangeUnits,
+      durationValue: parsed.spellDuration,
+      durationUnits: parsed.spellDurationUnits,
+      sourceRules: parsed.sourceRules,
+      ...(activity ? { activity } : {}),
+    });
 
-      return this.formatHomebrewSpellResponse(result, parsed, warnings);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'add-feature', 'homebrew spell authoring');
-    }
+    return this.formatHomebrewSpellResponse(result, parsed, warnings);
   }
 
   private formatHomebrewSpellResponse(result: any, params: any, warnings: string[]): any {

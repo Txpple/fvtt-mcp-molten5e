@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
+import { FormattedToolError } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
 
 export interface OwnershipToolsOptions {
@@ -84,18 +85,13 @@ export class OwnershipTools {
    * Handle tool execution
    */
   async handleToolCall(name: string, args: any) {
-    try {
-      switch (name) {
-        case 'set-actor-ownership':
-          return await this.assignActorOwnership(args);
-        case 'list-actor-ownership':
-          return await this.listActorOwnership(args);
-        default:
-          throw new Error(`Unknown ownership tool: ${name}`);
-      }
-    } catch (error) {
-      this.logger.error(`Error in ownership tool ${name}:`, error);
-      throw error;
+    switch (name) {
+      case 'set-actor-ownership':
+        return await this.assignActorOwnership(args);
+      case 'list-actor-ownership':
+        return await this.listActorOwnership(args);
+      default:
+        throw new Error(`Unknown ownership tool: ${name}`);
     }
   }
 
@@ -118,16 +114,13 @@ export class OwnershipTools {
     const actors = await this.resolveActors(actorIdentifier);
     const players = await this.resolvePlayers(playerIdentifier);
 
-    // Check for bulk operations
+    // Bulk-operation guard: a precondition failure, thrown (like every other tool's guards) so the
+    // guidance surfaces verbatim rather than as a masquerading success:false payload.
     const isBulkOperation = actors.length > 1 || players.length > 1;
     if (isBulkOperation && !confirmBulkOperation) {
-      return {
-        success: false,
-        error: `Bulk operation detected: ${actors.length} actors × ${players.length} players = ${actors.length * players.length} ownership changes. Please set confirmBulkOperation to true to proceed.`,
-        actorsFound: actors.length,
-        playersFound: players.length,
-        totalChanges: actors.length * players.length,
-      };
+      throw new FormattedToolError(
+        `Bulk operation detected: ${actors.length} actors × ${players.length} players = ${actors.length * players.length} ownership changes. Set confirmBulkOperation to true to proceed.`
+      );
     }
 
     // Apply ownership changes
@@ -181,23 +174,15 @@ export class OwnershipTools {
       `Listing actor ownership for actor: "${actorIdentifier || 'all'}", player: "${playerIdentifier || 'all'}"`
     );
 
-    try {
-      const ownershipData = await this.foundry.call('getActorOwnership', {
-        actorIdentifier,
-        playerIdentifier,
-      });
+    const ownershipData = await this.foundry.call('getActorOwnership', {
+      actorIdentifier,
+      playerIdentifier,
+    });
 
-      return {
-        success: true,
-        ownership: ownershipData,
-      };
-    } catch (error) {
-      this.logger.error('Failed to list actor ownership:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+    return {
+      success: true,
+      ownership: ownershipData,
+    };
   }
 
   /**

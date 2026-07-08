@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler, FormattedToolError } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
@@ -318,12 +317,10 @@ export interface DnD5eUpdateActorToolOptions {
 export class DnD5eUpdateActorTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eUpdateActorToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eUpdateActorTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -357,23 +354,18 @@ export class DnD5eUpdateActorTool {
   }
 
   async handleUpdateActor(args: any): Promise<any> {
-    try {
-      const parsed = UpdateActorSchema.parse(args ?? {});
-      this.logger.info('Updating dnd5e actor', { actorIdentifier: parsed.actorIdentifier });
+    const parsed = UpdateActorSchema.parse(args ?? {});
+    this.logger.info('Updating dnd5e actor', { actorIdentifier: parsed.actorIdentifier });
 
-      await assertDnd5e(this.foundry, this.logger, 'update-actor');
-      const result = await this.foundry.call('updateActor', parsed);
+    await assertDnd5e(this.foundry, this.logger, 'update-actor');
+    const result = await this.foundry.call('updateActor', parsed);
 
-      this.logger.info('Actor updated', {
-        actorId: result?.actor?.id,
-        applied: result?.applied?.length,
-        warnings: result?.warnings?.length,
-      });
-      return this.formatResponse(result);
-    } catch (error) {
-      if (error instanceof FormattedToolError) throw error;
-      this.errorHandler.handleToolError(error, 'update-actor', 'updating actor');
-    }
+    this.logger.info('Actor updated', {
+      actorId: result?.actor?.id,
+      applied: result?.applied?.length,
+      warnings: result?.warnings?.length,
+    });
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

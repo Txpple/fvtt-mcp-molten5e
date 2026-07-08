@@ -140,14 +140,14 @@ describe('set-actor-ownership (assignActorOwnership)', () => {
       if (method === 'findPlayers') return [{ id: 'u', name: 'John' }];
       return {};
     });
-    const out = await tools.handleToolCall('set-actor-ownership', {
-      actorIdentifier: 'all friendly npcs',
-      playerIdentifier: 'John',
-      permissionLevel: 'OBSERVER',
-    });
-    expect(out.success).toBe(false);
-    expect(out.error).toContain('Bulk operation detected');
-    expect(out).toMatchObject({ actorsFound: 2, playersFound: 1, totalChanges: 2 });
+    // The guard throws (a curated FormattedToolError), reporting the change count in its message.
+    await expect(
+      tools.handleToolCall('set-actor-ownership', {
+        actorIdentifier: 'all friendly npcs',
+        playerIdentifier: 'John',
+        permissionLevel: 'OBSERVER',
+      })
+    ).rejects.toThrow(/Bulk operation detected: 2 actors × 1 players = 2/);
     // It must NOT have written anything when unconfirmed.
     expect(calls.some(c => c[0] === 'setActorOwnership')).toBe(false);
   });
@@ -199,12 +199,13 @@ describe('list-actor-ownership (listActorOwnership)', () => {
     expect(out).toEqual({ success: true, ownership });
   });
 
-  it('returns a failure object (not a throw) when the bridge query rejects', async () => {
+  it('lets a failed ownership query bubble to the central mapper (throws, not error-as-data)', async () => {
     const { tools } = build(() => {
       throw new Error('connection lost');
     });
-    const out = await tools.handleToolCall('list-actor-ownership', { actorIdentifier: 'all' });
-    expect(out).toEqual({ success: false, error: 'connection lost' });
+    await expect(
+      tools.handleToolCall('list-actor-ownership', { actorIdentifier: 'all' })
+    ).rejects.toThrow(/connection lost/);
   });
 });
 

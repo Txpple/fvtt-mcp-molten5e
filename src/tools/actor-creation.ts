@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
-import { ErrorHandler } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
 import { assertNoSrdPacks } from '../utils/compendium-sources.js';
 import { formatUnresolvedScale } from '../utils/format.js';
@@ -133,12 +132,10 @@ const DeleteFolderSchema = z.object({
 export class ActorCreationTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: ActorCreationToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'ActorCreationTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   /**
@@ -208,50 +205,46 @@ export class ActorCreationTools {
       addToScene,
     });
 
-    try {
-      // Ensure we have enough names for the quantity
-      const customNames = [...names];
-      while (customNames.length < finalQuantity) {
-        const baseName = names[0] || 'Unnamed';
-        customNames.push(`${baseName} ${customNames.length + 1}`);
-      }
-
-      // Create the actors page-side (foundry.call) using exact pack/item IDs
-      const result = await this.foundry.call('createActorFromCompendium', {
-        packId,
-        itemId,
-        customNames: customNames.slice(0, finalQuantity),
-        quantity: finalQuantity,
-        addToScene,
-        placement: placement
-          ? {
-              type: placement.type,
-              coordinates: placement.coordinates,
-            }
-          : undefined,
-        // Prefab-as-base: layer these edits onto the world copy (never the compendium source).
-        ...(modifications ? { modifications } : {}),
-        ...(disposition ? { disposition } : {}),
-        ...(folder ? { folder } : {}),
-      });
-
-      this.logger.info('Actor creation completed', {
-        totalCreated: result.totalCreated,
-        totalRequested: result.totalRequested,
-        tokensPlaced: result.tokensPlaced || 0,
-        hasErrors: !!result.errors,
-      });
-
-      // Format response for Claude
-      return this.formatSimpleActorCreationResponse(
-        result,
-        packId,
-        itemId,
-        customNames.slice(0, finalQuantity)
-      );
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-actor-from-compendium', 'actor creation');
+    // Ensure we have enough names for the quantity
+    const customNames = [...names];
+    while (customNames.length < finalQuantity) {
+      const baseName = names[0] || 'Unnamed';
+      customNames.push(`${baseName} ${customNames.length + 1}`);
     }
+
+    // Create the actors page-side (foundry.call) using exact pack/item IDs
+    const result = await this.foundry.call('createActorFromCompendium', {
+      packId,
+      itemId,
+      customNames: customNames.slice(0, finalQuantity),
+      quantity: finalQuantity,
+      addToScene,
+      placement: placement
+        ? {
+            type: placement.type,
+            coordinates: placement.coordinates,
+          }
+        : undefined,
+      // Prefab-as-base: layer these edits onto the world copy (never the compendium source).
+      ...(modifications ? { modifications } : {}),
+      ...(disposition ? { disposition } : {}),
+      ...(folder ? { folder } : {}),
+    });
+
+    this.logger.info('Actor creation completed', {
+      totalCreated: result.totalCreated,
+      totalRequested: result.totalRequested,
+      tokensPlaced: result.tokensPlaced || 0,
+      hasErrors: !!result.errors,
+    });
+
+    // Format response for Claude
+    return this.formatSimpleActorCreationResponse(
+      result,
+      packId,
+      itemId,
+      customNames.slice(0, finalQuantity)
+    );
   }
 
   /**
@@ -262,22 +255,18 @@ export class ActorCreationTools {
 
     this.logger.info('Deleting actor(s)', { identifiers, removeEmptyFolder });
 
-    try {
-      const result = await this.foundry.call('deleteActor', {
-        identifiers,
-        removeEmptyFolder,
-      });
+    const result = await this.foundry.call('deleteActor', {
+      identifiers,
+      removeEmptyFolder,
+    });
 
-      this.logger.info('Actor deletion completed', {
-        deletedCount: result.deletedCount,
-        notFound: result.notFound?.length || 0,
-        removedFolders: result.removedFolders?.length || 0,
-      });
+    this.logger.info('Actor deletion completed', {
+      deletedCount: result.deletedCount,
+      notFound: result.notFound?.length || 0,
+      removedFolders: result.removedFolders?.length || 0,
+    });
 
-      return this.formatDeleteActorResponse(result);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'delete-actor', 'actor deletion');
-    }
+    return this.formatDeleteActorResponse(result);
   }
 
   /**
@@ -321,23 +310,19 @@ export class ActorCreationTools {
 
     this.logger.info('Deleting folder', { identifier, type, deleteContents });
 
-    try {
-      const result = await this.foundry.call('deleteFolder', {
-        identifier,
-        type,
-        deleteContents,
-      });
+    const result = await this.foundry.call('deleteFolder', {
+      identifier,
+      type,
+      deleteContents,
+    });
 
-      this.logger.info('Folder deletion completed', {
-        deleted: result.deleted,
-        notFound: result.notFound || null,
-        deletedContents: result.deletedContents || false,
-      });
+    this.logger.info('Folder deletion completed', {
+      deleted: result.deleted,
+      notFound: result.notFound || null,
+      deletedContents: result.deletedContents || false,
+    });
 
-      return this.formatDeleteFolderResponse(result, identifier);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'delete-folder', 'folder deletion');
-    }
+    return this.formatDeleteFolderResponse(result, identifier);
   }
 
   /**

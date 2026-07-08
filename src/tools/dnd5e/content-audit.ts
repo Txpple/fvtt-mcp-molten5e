@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler } from '../../utils/error-handler.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 import { toInputSchema } from '../../utils/schema.js';
 
@@ -41,12 +40,10 @@ export interface DnD5eContentAuditToolOptions {
 export class DnD5eContentAuditTool {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5eContentAuditToolOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5eContentAuditTool' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -82,13 +79,9 @@ export class DnD5eContentAuditTool {
       worldItems: parsed.worldItemIds?.length ?? 0,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'content-audit');
-      const result = await this.foundry.call('auditContent', parsed);
-      return this.formatResponse(result);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'content-audit', 'content audit');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'content-audit');
+    const result = await this.foundry.call('auditContent', parsed);
+    return this.formatResponse(result);
   }
 
   private formatResponse(result: any): any {

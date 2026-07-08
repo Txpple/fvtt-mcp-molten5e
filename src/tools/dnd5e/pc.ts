@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FoundryBridge } from '../../foundry.js';
 import { Logger } from '../../logger.js';
-import { ErrorHandler } from '../../utils/error-handler.js';
 import { toInputSchema } from '../../utils/schema.js';
 import { assertDnd5e } from '../../utils/system-detection.js';
 
@@ -198,12 +197,10 @@ export interface DnD5ePcToolsOptions {
 export class DnD5ePcTools {
   private foundry: FoundryBridge;
   private logger: Logger;
-  private errorHandler: ErrorHandler;
 
   constructor({ foundry, logger }: DnD5ePcToolsOptions) {
     this.foundry = foundry;
     this.logger = logger.child({ component: 'DnD5ePcTools' });
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   getToolDefinitions() {
@@ -242,30 +239,22 @@ export class DnD5ePcTools {
       acceptDefaults: parsed.acceptDefaults,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'create-pc');
-      const result = await this.foundry.call('createPcActor', parsed);
-      this.logger.info('PC build returned', {
-        success: result?.success,
-        actorId: result?.actor?.id,
-        needsChoices: result?.needsChoices?.length ?? 0,
-      });
-      return this.formatPcResponse(result, parsed);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-pc', 'PC creation');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'create-pc');
+    const result = await this.foundry.call('createPcActor', parsed);
+    this.logger.info('PC build returned', {
+      success: result?.success,
+      actorId: result?.actor?.id,
+      needsChoices: result?.needsChoices?.length ?? 0,
+    });
+    return this.formatPcResponse(result, parsed);
   }
 
   async handleInspectPcAdvancement(args: any): Promise<any> {
     const parsed = InspectPcAdvancementSchema.parse(args);
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'inspect-pc-advancement');
-      const result = await this.foundry.call('inspectAdvancementChoices', parsed);
-      return this.formatInspectResponse(result);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'inspect-pc-advancement', 'advancement inspection');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'inspect-pc-advancement');
+    const result = await this.foundry.call('inspectAdvancementChoices', parsed);
+    return this.formatInspectResponse(result);
   }
 
   async handleLevelUpPc(args: any): Promise<any> {
@@ -277,18 +266,14 @@ export class DnD5ePcTools {
       acceptDefaults: parsed.acceptDefaults,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'level-up-pc');
-      const result = await this.foundry.call('levelUpPc', parsed);
-      this.logger.info('Level-up returned', {
-        success: result?.success,
-        level: result?.actor?.level,
-        needsChoices: result?.needsChoices?.length ?? 0,
-      });
-      return this.formatLevelUpResponse(result, parsed);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'level-up-pc', 'PC level-up');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'level-up-pc');
+    const result = await this.foundry.call('levelUpPc', parsed);
+    this.logger.info('Level-up returned', {
+      success: result?.success,
+      level: result?.actor?.level,
+      needsChoices: result?.needsChoices?.length ?? 0,
+    });
+    return this.formatLevelUpResponse(result, parsed);
   }
 
   async handleCreatePcFromPrefab(args: any): Promise<any> {
@@ -301,18 +286,14 @@ export class DnD5ePcTools {
       actorId: parsed.actorId,
     });
 
-    try {
-      await assertDnd5e(this.foundry, this.logger, 'create-pc-from-prefab');
-      const result = await this.foundry.call('createPcFromPrefab', parsed);
-      this.logger.info('PC prefab build returned', {
-        success: result?.success,
-        actorId: result?.actor?.id,
-        from: result?.from,
-      });
-      return this.formatPrefabResponse(result);
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'create-pc-from-prefab', 'PC prefab creation');
-    }
+    await assertDnd5e(this.foundry, this.logger, 'create-pc-from-prefab');
+    const result = await this.foundry.call('createPcFromPrefab', parsed);
+    this.logger.info('PC prefab build returned', {
+      success: result?.success,
+      actorId: result?.actor?.id,
+      from: result?.from,
+    });
+    return this.formatPrefabResponse(result);
   }
 
   // -------------------------------------------------------------------------
