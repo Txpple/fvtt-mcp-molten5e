@@ -97,8 +97,30 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
     per PC or so, e.g. "Arrow of the Day", "Finest Masonry in Faerûn"). NO meta, NO player
     names, NO technical-issues talk anywhere in recap.html — UI/audio/browser troubles belong
     in gm-notes.md only.
+  - **Register: toned DOWN a notch (owner feedback 2026-07-15, session 2).** Narrative, not
+    purple: plain direct sentences, one flourish per paragraph is plenty. The first session-2
+    draft was rejected as "a bit too flowery" — cut phrases like "on the lair's own dark
+    heartbeat" / "truer than true"; keep the beats and the humor, lose the ornament.
+  - **Combat beats must be factually precise and credit smart play.** Who killed what is not
+    style-flexible (session-2 corrections: Gren's magic missiles killed the Broodmother, NOT
+    the wisp — the wisp escaped; Morgash earned explicit credit for reading the ettercap's
+    glances and dashing to block the door BEFORE the Broodmother burst through). When a
+    sentence about attacking X sits next to a kill of Y, make the target of each unmistakable.
+  - **Quote found-item text verbatim when it matters.** For a plot-loaded item, include the
+    full in-world item description — e.g. the Greenrest Tonic's vial description plus its
+    label line ("One swallow, seventh-day, as ever. — Selma.") — then note who read it aloud,
+    before any paraphrase.
   - recap.md (the canonical GM record) is exempt: exact rolls/damage numbers are welcome there.
-  - Reference implementation: campaign repo `sessions/2026-07-07/recap.html`.
+  - Reference implementations: campaign repo `sessions/2026-07-14/recap.html` (the approved
+    register, after the tone-down) and `sessions/2026-07-07/recap.html` (structure/endmatter;
+    its prose runs a notch more florid than the approved register).
+- **The Foundry adventure-log journal is a standard artifact (established session 2):** after
+  recap.html, create/update a world journal `Session N — <title>` with ONE player-visible text
+  page `Session N — YYYY-MM-DD` in the `mcp-journal` format (p.lead TL;DR → h2.spaced story
+  beats → readaloud blocks for item/lore quotes → "Where Things Stand" ul). Same player-safe
+  boundary and the SAME toned-down register as recap.html — it's the in-game handout twin of
+  the email recap, minus Quotable Quotes / Deeds of the Day. Match the existing Session 1/2
+  journals.
 - **Attribution is per-speaker-track and trustworthy** — quote players verbatim when it's good
   ("quotes of the night" in gm-notes). Whisper text is GM-only by definition: usable in
   recap.md/gm-notes.md, NEVER in recap.html.
