@@ -118,7 +118,9 @@ function dump(doc: any): Record<string, unknown> {
     vision: doc.vision,
     dim: c.dim,
     bright: c.bright,
-    color: c.color,
+    // v14 stores config.color as a Color instance (Number subclass) — serialize to its CSS hex;
+    // the node↔page seam rejects non-plain returns. Pre-Color string data passes through as-is.
+    color: c.color?.css ?? c.color ?? null,
     angle: c.angle,
     animation: c.animation?.type ?? null,
   };

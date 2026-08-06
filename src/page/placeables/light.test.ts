@@ -90,4 +90,17 @@ describe('lightDescriptor.dump', () => {
       animation: 'torch',
     });
   });
+
+  it('serializes a v14 Color instance to its CSS hex (plain-JSON seam rule)', () => {
+    // Mimic foundry.utils.Color: a Number subclass carrying .css — NOT plain-JSON serializable.
+    const color = Object.assign(Object.create(Number.prototype), { css: '#fcd674' });
+    const doc = { id: 'l2', x: 1, y: 2, config: { dim: 40, color } };
+    expect(lightDescriptor.dump(doc)).toMatchObject({ color: '#fcd674' });
+  });
+
+  it('reports null when no color is set', () => {
+    expect(lightDescriptor.dump({ id: 'l3', x: 0, y: 0, config: {} })).toMatchObject({
+      color: null,
+    });
+  });
 });
