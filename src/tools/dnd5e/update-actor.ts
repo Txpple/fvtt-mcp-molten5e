@@ -100,6 +100,22 @@ const UpdateActorSchema = z.object({
         'AUTO-UNLOCKS rotation (and warns) so the facing shows. (elevation / hidden / x / y are ' +
         'PLACEMENT-only — a prototype has no such fields; set those on a dropped token with update-token.)'
     ),
+  tokenDisplayName: z
+    .enum(['none', 'control', 'owner-hover', 'hover', 'owner', 'always'])
+    .optional()
+    .describe(
+      'Prototype-token NAMEPLATE visibility — the default for tokens dragged from this actor: ' +
+        'none (never) · control (only when selected) · owner-hover · hover (anyone hovering) · ' +
+        'owner (always, to owners) · always (always, to everyone). Same modes as update-token for ' +
+        'placed tokens; set "none" for window-dressing NPCs that should show no name.'
+    ),
+  tokenDisplayBars: z
+    .enum(['none', 'control', 'owner-hover', 'hover', 'owner', 'always'])
+    .optional()
+    .describe(
+      'Prototype-token RESOURCE-BAR (HP) visibility — the default for dropped tokens, same modes as ' +
+        'tokenDisplayName. Set "none" to hide the health bar on background / window-dressing NPCs.'
+    ),
 
   // details (most NPC-only)
   size: z
@@ -332,7 +348,8 @@ export class DnD5eUpdateActorTool {
           '• identity + prototype token — name, tokenName (prototype nameplate ≠ actor name), img, ' +
           'disposition (friend/foe), tokenAutoRotate ' +
           '(face movement / lockRotation), tokenRing (dynamic ring), tokenScale (art size), ' +
-          'tokenRotation (facing) — the PROTOTYPE-token editor. (elevation / hidden / x / y are ' +
+          'tokenRotation (facing), tokenDisplayName / tokenDisplayBars (nameplate / HP-bar ' +
+          'visibility) — the PROTOTYPE-token editor. (elevation / hidden / x / y are ' +
           'placement-only: edit those on a dropped token with update-token)\n' +
           '• details — size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source\n' +
           '• abilities — abilities.{str..cha}, savingThrows (replace), skills (merge; proficiency none/proficient/expert)\n' +

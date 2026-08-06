@@ -139,6 +139,30 @@ describe('handleUpdateActor', () => {
     ).rejects.toThrow();
   });
 
+  it('forwards the prototype-token nameplate / HP-bar visibility', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Villager 01', type: 'npc' },
+      applied: ['tokenDisplayName', 'tokenDisplayBars'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Villager 01',
+      tokenDisplayName: 'none',
+      tokenDisplayBars: 'none',
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].tokenDisplayName).toBe('none');
+    expect(call?.[1].tokenDisplayBars).toBe('none');
+  });
+
+  it('rejects an invalid token display mode', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', tokenDisplayName: 'sometimes' })
+    ).rejects.toThrow();
+  });
+
   it('applies the default replace mode to Set fields', async () => {
     const { tool, calls } = makeTool({
       success: true,

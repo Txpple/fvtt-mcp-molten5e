@@ -52,6 +52,18 @@ const ActorClass: any = (globalThis as any).Actor;
 // module is uninstalled (an unregistered scope throws on getFlag/setFlag).
 const MODULE_ID = 'foundry-mcp-bridge';
 
+// Nameplate / resource-bar visibility keys → CONST.TOKEN_DISPLAY_MODES numbers. Mirrors the same
+// map in src/page/placeables/token.ts (update-token, for placed tokens) — keep the two in step so a
+// prototype token and a dropped token speak the same visibility modes.
+const TOKEN_DISPLAY_MODES: Record<string, number> = {
+  none: 0,
+  control: 10,
+  'owner-hover': 20,
+  hover: 30,
+  owner: 40,
+  always: 50,
+};
+
 // ---------------------------------------------------------------------------
 // Local helpers (kept in-file; cross-domain candidates listed in the handoff).
 // ---------------------------------------------------------------------------
@@ -1376,7 +1388,8 @@ export async function removeActorItems(params: {
  * `actor.update()` patch from whichever field groups the caller supplied:
  *
  *  - identity:   name, tokenName (prototype nameplate ≠ actor name), img, disposition,
- *                tokenAutoRotate (= !lockRotation), tokenRing (ring.enabled)
+ *                tokenAutoRotate (= !lockRotation), tokenRing (ring.enabled), tokenScale,
+ *                tokenRotation, tokenDisplayName / tokenDisplayBars (nameplate / HP-bar visibility)
  *  - details:    size, cr*, creatureType*, creatureSubtype*, swarmSize*, alignment, biography, source
  *  - abilities:  abilities.<ab>, savingThrows (replace), skills (merge)
  *  - vitals:     hp, ac, initiative
@@ -1495,6 +1508,27 @@ export async function updateActor(params: any): Promise<unknown> {
       warnings.push(
         'prototype token: auto-unlocked rotation (lockRotation was true, which would have hidden the facing).'
       );
+    }
+  }
+  // Prototype-token nameplate / HP-bar visibility (map friendly key → CONST.TOKEN_DISPLAY_MODES
+  // number), matching update-token for placed tokens. "none" hides the name / health bar on every
+  // token dragged from this actor — the window-dressing default for background NPCs.
+  if (typeof params.tokenDisplayName === 'string') {
+    const m = TOKEN_DISPLAY_MODES[params.tokenDisplayName];
+    if (m === undefined) {
+      warnings.push(`prototype token: unknown tokenDisplayName mode "${params.tokenDisplayName}".`);
+    } else {
+      update['prototypeToken.displayName'] = m;
+      applied.push('tokenDisplayName');
+    }
+  }
+  if (typeof params.tokenDisplayBars === 'string') {
+    const m = TOKEN_DISPLAY_MODES[params.tokenDisplayBars];
+    if (m === undefined) {
+      warnings.push(`prototype token: unknown tokenDisplayBars mode "${params.tokenDisplayBars}".`);
+    } else {
+      update['prototypeToken.displayBars'] = m;
+      applied.push('tokenDisplayBars');
     }
   }
 
