@@ -74,7 +74,15 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
      solely in gm-notes.md or GM whispers may appear here. The user pastes this into an email —
      it must render in Gmail/Outlook (keep the inline-style table structure intact).
      **House style (owner-locked 2026-07-08, session 1):** see "recap.html house style" below.
-6. **Commit** — in the campaign repo: `git add sessions/<date>` → commit
+6. **Snapshot the party (owner directive 2026-08-06)** — write
+   `<campaign-repo>\party-snapshots\YYYY-MM-DD.md` (session date) from the LIVE sheets
+   (`get-actor` on each party PC — the party roster only, per the campaign repo's PC rules;
+   never DM test PCs like Salyth). Per PC: class/subclass + LEVEL, HP max, AC, the six
+   ability scores, feats/ASIs taken, weapon masteries, spell slots, attuned + equipped magic
+   items, notable consumables. This is the point-in-time record that answers "what did
+   <PC> have before?" after level-ups, deaths, or loot disputes — one file per session
+   date, diffable against the last.
+7. **Commit** — in the campaign repo: `git add sessions/<date> party-snapshots` → commit
    (`session: <date> — <short title>`) → push. `audio/` is gitignored (bulky, and the
    transcript is the durable artifact); tell the user audio stays local and can be deleted
    once they're happy with the transcript.
