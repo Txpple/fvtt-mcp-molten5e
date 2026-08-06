@@ -7,6 +7,9 @@
 //   • list reads them back with the salient fields (size = width/height, image zoom = texture.scaleX).
 //   • update RESIZES (width/height) + MOVES (x/y) + zooms the image (texture.scaleX) via dot-paths.
 //   • delete removes by id and reports a missing id, never fatal.
+//   • TL↔anchor conversion (v14 stores a tile's x/y as its texture-anchor point, default 0.5 =
+//     CENTER; live-probed 14.364): tools speak TOP-LEFT, the doc holds TL + size/2, list round-trips
+//     the TL back, a resize without x/y keeps the corner fixed, and the RENDERED bounds match.
 // Fixture scene is deleted in `finally`.
 //
 // Build first: npm run build.  Run: node scripts/verify-placeables-tooling.mjs
@@ -78,16 +81,18 @@ try {
         occlusionMode: 1,
       },
       { src: 'icons/svg/hazard.svg', x: 400, y: 100, width: 300, height: 300, scaleX: 1.25 },
+      // Clean probe (no rotation/zoom) — its RENDERED bounds are checked against the TL in B.
+      { src: 'icons/svg/door-closed.svg', x: 700, y: 100, width: 200, height: 100 },
       { src: 'icons/svg/bad.svg', x: 0, y: 0 /* missing width/height */ },
     ],
   });
-  assert(created?.created === 2, `A — created 2 tiles (got ${created?.created})`);
+  assert(created?.created === 3, `A — created 3 tiles (got ${created?.created})`);
   assert(
     Array.isArray(created?.errors) && created.errors.some(e => /height|width/.test(e)),
     'A — the bad tile was isolated + reported, not fatal'
   );
   const ids = (created?.items ?? []).map(t => t.id);
-  assert(ids.length === 2, 'A — returned 2 created ids');
+  assert(ids.length === 3, 'A — returned 3 created ids');
   // Confirm the occlusion Set + nested texture persisted live.
   const liveOcc = await f.evaluate(
     ({ sId, tId }) => {
@@ -105,19 +110,53 @@ try {
     `A — occlusion.modes persisted as a Set [1] (got ${JSON.stringify(liveOcc.modes)})`
   );
   assert(liveOcc.rot === 45, 'A — rotation persisted');
+  // TL→anchor conversion: tool x/y (100,100) for a 200×200 tile lands as doc anchor point (200,200).
+  const liveXY = await f.evaluate(
+    ({ sId, tId }) => {
+      const t = game.scenes.get(sId).tiles.get(tId);
+      return { x: t.x, y: t.y, ax: t.texture?.anchorX, ay: t.texture?.anchorY };
+    },
+    { sId: sceneId, tId: ids[0] }
+  );
+  assert(
+    liveXY.x === 200 && liveXY.y === 200,
+    `A — doc x/y is the CENTER anchor point, TL + size/2 (got ${liveXY.x},${liveXY.y})`
+  );
+  assert(
+    liveXY.ax === 0.5 && liveXY.ay === 0.5,
+    `A — v14 texture anchor defaulted to 0.5/0.5 (got ${liveXY.ax},${liveXY.ay})`
+  );
 
   // --- B: list — read back ids + salient fields ---
   console.log('\n# B: list-tiles');
   const listed = await f.call('listSceneTiles', { sceneIdentifier: sceneId });
   assert(
-    listed?.found === true && listed?.count === 2,
-    `B — lists 2 tiles (count ${listed?.count})`
+    listed?.found === true && listed?.count === 3,
+    `B — lists 3 tiles (count ${listed?.count})`
   );
   const t0 = (listed?.items ?? []).find(t => t.id === ids[0]);
   assert(t0?.width === 200 && t0?.height === 200, 'B — reports size = width/height');
   assert(
+    t0?.x === 100 && t0?.y === 100,
+    `B — round-trips the tool TOP-LEFT (anchor→TL conversion; got ${t0?.x},${t0?.y})`
+  );
+  assert(
     listed.items.find(t => t.id === ids[1])?.scaleX === 1.25,
     'B — reports image zoom = texture.scaleX'
+  );
+  // Rendered truth: view the fixture scene and check the CLEAN tile's bounds sit at the reported
+  // TL (ids[0] is rotated → its bounds are a rotated AABB, useless for this check).
+  await f.call('prepareSceneShot', { sceneIdentifier: sceneId, fit: true });
+  const bounds = await f.evaluate(
+    ({ tId }) => {
+      const t = globalThis.canvas?.tiles?.get?.(tId);
+      return t ? { x: t.bounds?.x, y: t.bounds?.y, w: t.bounds?.width } : null;
+    },
+    { tId: ids[2] }
+  );
+  assert(
+    bounds?.x === 700 && bounds?.y === 100 && bounds?.w === 200,
+    `B — RENDERED bounds TL matches the reported x/y (got ${JSON.stringify(bounds)})`
   );
 
   // --- C: update — resize (w/h) + move (x/y) + image zoom (texture.scaleX) + one bad id ---
@@ -140,7 +179,7 @@ try {
   const after = await f.evaluate(
     ({ sId, tId }) => {
       const t = game.scenes.get(sId).tiles.get(tId);
-      return { w: t.width, h: t.height, x: t.x, scaleX: t.texture?.scaleX };
+      return { w: t.width, h: t.height, x: t.x, y: t.y, scaleX: t.texture?.scaleX };
     },
     { sId: sceneId, tId: ids[0] }
   );
@@ -148,16 +187,25 @@ try {
     after.w === 512 && after.h === 512,
     `C — RESIZED via width/height (${after.w}x${after.h})`
   );
-  assert(after.x === 150, 'C — MOVED via x');
+  // Tool said TL x=150 at the new 512 width → doc anchor x = 150 + 256; no y given, so the TL y
+  // (100) stays FIXED through the resize → doc anchor y = 100 + 256.
+  assert(after.x === 406, `C — MOVED via x: doc anchor = new TL + width/2 (got ${after.x})`);
+  assert(after.y === 356, `C — resize kept the TL y corner fixed (doc y ${after.y})`);
   assert(after.scaleX === 2, 'C — image zoom via texture.scaleX (distinct from resize)');
+  const relisted = await f.call('listSceneTiles', { sceneIdentifier: sceneId });
+  const rt0 = (relisted?.items ?? []).find(t => t.id === ids[0]);
+  assert(
+    rt0?.x === 150 && rt0?.y === 100,
+    `C — list round-trips the post-update TOP-LEFT (got ${rt0?.x},${rt0?.y})`
+  );
 
   // --- D: delete — by id, missing id reported ---
   console.log('\n# D: delete-tiles');
   const deleted = await f.call('deleteSceneTiles', {
     sceneIdentifier: sceneId,
-    ids: [ids[0], ids[1], 'ghostTile00'],
+    ids: [ids[0], ids[1], ids[2], 'ghostTile00'],
   });
-  assert(deleted?.deleted === 2, `D — deleted 2 (got ${deleted?.deleted})`);
+  assert(deleted?.deleted === 3, `D — deleted 3 (got ${deleted?.deleted})`);
   assert(deleted?.notFoundIds?.includes('ghostTile00'), 'D — missing id reported');
   const remaining = await f.call('listSceneTiles', { sceneIdentifier: sceneId });
   assert(remaining?.count === 0, `D — 0 tiles remain (got ${remaining?.count})`);
@@ -188,7 +236,7 @@ try {
       const l = game.scenes.get(sId).lights.get(lId);
       return {
         dim: l.config?.dim,
-        color: l.config?.color,
+        color: l.config?.color?.css ?? l.config?.color ?? null, // v14 Color → CSS hex for the wire
         anim: l.config?.animation?.type,
         dMin: l.config?.darkness?.min,
       };
@@ -219,7 +267,7 @@ try {
         dim: l.config?.dim,
         bright: l.config?.bright,
         anim: l.config?.animation?.type,
-        color: l.config?.color,
+        color: l.config?.color?.css ?? l.config?.color ?? null, // v14 Color → CSS hex for the wire
       };
     },
     { sId: sceneId, lId: lightIds[0] }

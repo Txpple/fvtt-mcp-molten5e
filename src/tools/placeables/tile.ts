@@ -12,8 +12,9 @@ import { sceneTarget, type PlaceableModuleFactory } from './_module.js';
 
 // The editable Tile fields shared by create-tiles and update-tiles. A tile's on-map SIZE is
 // width/height (px) — that is the "scale" you resize a prop with; texture.scaleX/scaleY instead
-// zoom the image WITHIN that frame. x/y are absolute canvas pixels (see get-scene-dimensions for the
-// padding-aware cell→px math).
+// zoom the image WITHIN that frame. x/y are absolute canvas pixels, TOP-LEFT of the tile (see
+// get-scene-dimensions for the padding-aware cell→px math) — the page layer converts to/from the
+// v14 doc's center-anchored x/y, so callers never see the anchor math.
 const tileFields = {
   rotation: z.number().optional().describe('Rotation in degrees (0–359).'),
   alpha: z.number().min(0).max(1).optional().describe('Opacity 0–1 (default 1).'),
@@ -68,8 +69,13 @@ const CreateTilesSchema = z.object({
           .string()
           .min(1)
           .describe('Data-relative image (or video) path for the tile texture.'),
-        x: z.number().describe('Top-left X in absolute canvas pixels.'),
-        y: z.number().describe('Top-left Y in absolute canvas pixels.'),
+        x: z
+          .number()
+          .describe(
+            "Top-left X in absolute canvas pixels (converted to the v14 doc's center-anchored " +
+              'x/y for you).'
+          ),
+        y: z.number().describe('Top-left Y in absolute canvas pixels (converted likewise).'),
         width: z.number().positive().describe('Tile width in canvas pixels (its on-map size).'),
         height: z.number().positive().describe('Tile height in canvas pixels (its on-map size).'),
         ...tileFields,
@@ -86,8 +92,20 @@ const UpdateTileSchema = z
     id: z.string().min(1).describe('Tile id (from list-tiles).'),
     x: z.number().optional().describe('New top-left X in canvas pixels.'),
     y: z.number().optional().describe('New top-left Y in canvas pixels.'),
-    width: z.number().positive().optional().describe('New width in px (resize the tile).'),
-    height: z.number().positive().optional().describe('New height in px (resize the tile).'),
+    width: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'New width in px (resize; the top-left corner stays fixed unless x is also given).'
+      ),
+    height: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'New height in px (resize; the top-left corner stays fixed unless y is also given).'
+      ),
     src: z.string().min(1).optional().describe('Swap the texture (Data-relative path).'),
     ...tileFields,
   })
@@ -115,8 +133,9 @@ export const tileToolModule: PlaceableModuleFactory = foundry => ({
       description:
         'Place one or more TILES (props, roof/overhead pieces, decals, video overlays) on a scene ' +
         "from Data-relative image paths. A tile's on-map SIZE is width/height in canvas pixels; " +
-        'x/y are the absolute-canvas-pixel top-left (see get-scene-dimensions for padding-aware ' +
-        'cell→px math). Optionally set rotation, alpha, elevation, sort, texture tint/fit/scale, ' +
+        'x/y are the absolute-canvas-pixel TOP-LEFT (see get-scene-dimensions for padding-aware ' +
+        "cell→px math; the tool converts to v14's center-anchored doc coords — never pre-add " +
+        'width/2 yourself). Optionally set rotation, alpha, elevation, sort, texture tint/fit/scale, ' +
         'roof occlusion (occlusionMode: 1 fade / 4 radial so it fades when a token walks under), ' +
         'light/weather restrictions, video loop/autoplay/volume, hidden, locked. Per-tile error ' +
         'isolation; a 404 texture keeps the path but warns. Returns created ids. GM-only.',
@@ -125,7 +144,8 @@ export const tileToolModule: PlaceableModuleFactory = foundry => ({
     {
       name: 'list-tiles',
       description:
-        'List every Tile on a scene — id, position (x/y), size (width/height), rotation, elevation, ' +
+        'List every Tile on a scene — id, position (x/y = the TOP-LEFT in canvas pixels, converted ' +
+        "from v14's center-anchored doc coords), size (width/height), rotation, elevation, " +
         'sort, texture src, image scale, hidden/locked. Read-only; the inspect step before ' +
         'update-tiles / delete-tiles (you need the ids + current values to edit).',
       inputSchema: toInputSchema(ListTilesSchema),
@@ -134,7 +154,9 @@ export const tileToolModule: PlaceableModuleFactory = foundry => ({
       name: 'update-tiles',
       description:
         "Edit one or more placed TILES by id (from list-tiles). RESIZE via width/height (the tile's " +
-        'on-map size — this is "tile scale"); MOVE via x/y; also rotation, alpha, elevation, sort, ' +
+        'on-map size — this is "tile scale"; the top-left corner stays put unless x/y is also ' +
+        'given); MOVE via x/y (the new TOP-LEFT in canvas pixels — center-anchor conversion is ' +
+        'handled for you); also rotation, alpha, elevation, sort, ' +
         'texture src/tint/fit/scaleX/scaleY (image zoom within the frame), occlusion, light/weather ' +
         'restrictions, video, hidden, locked. Patches only the fields you pass; unresolved ids are ' +
         'reported, not fatal. GM-only.',
