@@ -12,12 +12,14 @@
 //
 // Build first: npm run build. Run: node scripts/spike-native-scene-import.mjs
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Foundry } from '../dist/foundry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SIDECAR = 'C:/Users/sippelmc/Desktop/scene/map.json';
+// Machine-local fixture — set SCENE_SIDECAR to where the scene folder lives on this box.
+const SIDECAR = process.env.SCENE_SIDECAR ?? join(homedir(), 'Desktop', 'scene', 'map.json');
 
 function loadEnv() {
   const txt = readFileSync(join(__dirname, '..', '.env'), 'utf8');

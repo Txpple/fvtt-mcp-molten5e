@@ -9,13 +9,15 @@
 // Prereq: the map image is already uploaded to BACKGROUND (see upload-asset).
 // Build first: npm run build. Run: node scripts/verify-scene-sidecar.mjs
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Foundry } from '../dist/foundry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCENE_NAME = 'Eerie Temple';
-const SIDECAR = 'C:/Users/sippelmc/Desktop/scene/map.json';
+// Machine-local fixture — set SCENE_SIDECAR to where the scene folder lives on this box.
+const SIDECAR = process.env.SCENE_SIDECAR ?? join(homedir(), 'Desktop', 'scene', 'map.json');
 const BACKGROUND = 'worlds/sandbox/assets/maps/eerie-temple.jpg';
 
 function loadEnv() {

@@ -6,7 +6,7 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -411,7 +411,10 @@ describe('discoverTiles + summarizeTileDir', () => {
 
 // --- integration (real pack on disk) ---------------------------------------
 
-const REAL_PACK = 'C:/Users/sippelmc/Desktop/tom-cartos-temple-of-night';
+// Machine-local fixture packs, not in the repo — point FVTT_PACK_FIXTURES at the folder
+// holding them (defaults to the user's Desktop, their original home).
+const PACK_FIXTURES = process.env.FVTT_PACK_FIXTURES ?? join(homedir(), 'Desktop');
+const REAL_PACK = join(PACK_FIXTURES, 'tom-cartos-temple-of-night');
 const have = existsSync(REAL_PACK);
 const logger: any = { child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) };
 
@@ -466,7 +469,7 @@ const logger: any = { child: () => ({ info() {}, debug() {}, warn() {}, error() 
   }, 30000);
 });
 
-const LEGACY_PACK = 'C:/Users/sippelmc/Desktop/tomcartos-into-the-wilds-dungeons';
+const LEGACY_PACK = join(PACK_FIXTURES, 'tomcartos-into-the-wilds-dungeons');
 const haveLegacy = existsSync(LEGACY_PACK);
 
 (haveLegacy ? describe : describe.skip)(
@@ -520,7 +523,7 @@ const haveLegacy = existsSync(LEGACY_PACK);
   }
 );
 
-const TILES_PACK = 'C:/Users/sippelmc/Desktop/tom-cartos-hilltop-ritual-temple';
+const TILES_PACK = join(PACK_FIXTURES, 'tom-cartos-hilltop-ritual-temple');
 const haveTiles = existsSync(TILES_PACK);
 
 (haveTiles ? describe : describe.skip)(
