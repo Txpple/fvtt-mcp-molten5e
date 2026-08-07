@@ -27,7 +27,8 @@ for (const line of readFileSync(join(__dirname, '..', '.env'), 'utf8').split(/\r
 }
 
 const MODULE_ID = 'fvtt-mod-partystash';
-const MANIFEST = 'https://github.com/Txpple/fvtt-mod-partystash/releases/latest/download/module.json';
+const MANIFEST =
+  'https://github.com/Txpple/fvtt-mod-partystash/releases/latest/download/module.json';
 const BASE = env.MOLTEN_SERVER_URL.replace(/\/$/, '');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -51,18 +52,32 @@ async function joinState() {
 
 /** Evaluate a Setup post in the page, raced against a timeout so it can never wedge us. */
 async function setupPost(page, body, label, timeoutMs = 30_000) {
-  const result = await page.evaluate(async ({ body, timeoutMs }) => {
-    const timeout = new Promise(r => setTimeout(() => r({ ok: false, error: 'in-page timeout' }), timeoutMs));
-    const post = (async () => {
-      try {
-        const res = await globalThis.game.post(body);
-        return { ok: true, res: (() => { try { return JSON.stringify(res).slice(0, 300); } catch { return String(res); } })() };
-      } catch (err) {
-        return { ok: false, error: String(err?.message || err) };
-      }
-    })();
-    return Promise.race([post, timeout]);
-  }, { body, timeoutMs });
+  const result = await page.evaluate(
+    async ({ body, timeoutMs }) => {
+      const timeout = new Promise(r =>
+        setTimeout(() => r({ ok: false, error: 'in-page timeout' }), timeoutMs)
+      );
+      const post = (async () => {
+        try {
+          const res = await globalThis.game.post(body);
+          return {
+            ok: true,
+            res: (() => {
+              try {
+                return JSON.stringify(res).slice(0, 300);
+              } catch {
+                return String(res);
+              }
+            })(),
+          };
+        } catch (err) {
+          return { ok: false, error: String(err?.message || err) };
+        }
+      })();
+      return Promise.race([post, timeout]);
+    },
+    { body, timeoutMs }
+  );
   console.log(`[register] ${label}:`, JSON.stringify(result));
   return result;
 }
@@ -76,7 +91,10 @@ async function setupPost(page, body, label, timeoutMs = 30_000) {
  */
 async function ensureSetup(page) {
   await page.goto(`${BASE}/setup`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForSelector('#join-game-setup input[name="adminPassword"], input[name="adminPassword"]', { timeout: 60_000 });
+  await page.waitForSelector(
+    '#join-game-setup input[name="adminPassword"], input[name="adminPassword"]',
+    { timeout: 60_000 }
+  );
   const viaJoin = await page.$('#join-game-setup input[name="adminPassword"]');
   if (viaJoin) {
     console.log('[register] world active — submitting the join page "Return to Setup" form');
@@ -84,20 +102,36 @@ async function ensureSetup(page) {
     await page.click('#join-game-setup button[type="submit"]');
     // v14 pops a confirm dialog when other users are connected ("… will be disconnected.
     // Do you wish to proceed? Yes/No") — answer Yes.
-    const confirmed = await page.waitForFunction(() => {
-      const btn = [...document.querySelectorAll('dialog button')]
-        .find(b => b.textContent.trim().toLowerCase() === 'yes');
-      if (btn) { btn.click(); return 'clicked'; }
-      return false;
-    }, null, { timeout: 15_000 }).catch(() => null);
-    console.log(`[register] disconnect-confirm dialog: ${confirmed ? 'answered Yes' : 'did not appear'}`);
+    const confirmed = await page
+      .waitForFunction(
+        () => {
+          const btn = [...document.querySelectorAll('dialog button')].find(
+            b => b.textContent.trim().toLowerCase() === 'yes'
+          );
+          if (btn) {
+            btn.click();
+            return 'clicked';
+          }
+          return false;
+        },
+        null,
+        { timeout: 15_000 }
+      )
+      .catch(() => null);
+    console.log(
+      `[register] disconnect-confirm dialog: ${confirmed ? 'answered Yes' : 'did not appear'}`
+    );
   } else {
     console.log('[register] idle auth form — logging in');
     await page.fill('input[name="adminPassword"]', env.MOLTEN_ADMIN_KEY);
-    await page.click('button[name="action"], form:has(input[name="adminPassword"]) button[type="submit"]');
+    await page.click(
+      'button[name="action"], form:has(input[name="adminPassword"]) button[type="submit"]'
+    );
   }
   await page.waitForURL(/\/setup/, { timeout: 90_000 });
-  await page.waitForFunction(() => typeof globalThis.game?.post === 'function', null, { timeout: 45_000 });
+  await page.waitForFunction(() => typeof globalThis.game?.post === 'function', null, {
+    timeout: 45_000,
+  });
 }
 
 const browser = await chromium.launch();
@@ -137,7 +171,11 @@ try {
   await sleep(10_000); // extraction/vend settle — the zip is 5 KB
 
   // --- 3. relaunch the world -------------------------------------------------------------------
-  const launch = await setupPost(page, { action: 'launchWorld', world: env.MOLTEN_WORLD_ID }, 'launchWorld');
+  const launch = await setupPost(
+    page,
+    { action: 'launchWorld', world: env.MOLTEN_WORLD_ID },
+    'launchWorld'
+  );
   if (!launch.ok) throw new Error(`launchWorld failed: ${launch.error}`);
 
   console.log('[register] waiting for /join form…');

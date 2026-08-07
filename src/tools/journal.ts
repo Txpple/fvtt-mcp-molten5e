@@ -684,8 +684,7 @@ export class JournalTools {
     const warns = Array.isArray(result?.warnings) ? result.warnings : [];
     let message = `Journal "${result.name}" created with ${result.pageCount} page(s)`;
     if (warns.length) {
-      message +=
-        '\n\n⚠️ ' + warns.length + ' warning(s):\n' + warns.map((w: string) => `- ${w}`).join('\n');
+      message += `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`;
     }
 
     return {
