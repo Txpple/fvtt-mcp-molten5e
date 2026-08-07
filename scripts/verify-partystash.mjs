@@ -1,0 +1,263 @@
+// E2E verification for fvtt-mod-partystash (Party Stash — move semantics for the group inventory).
+//
+// Drives REAL synthetic drag-and-drop through the sheets' own bound listeners (dragstart on the
+// source item row -> dragover -> drop on the target sheet), so the module's wrapped
+// _defaultDropBehavior, dnd5e's DragDrop5e payload/dropEffect caching, and the full
+// _onDropItem -> _onDropCreateItems pipeline (create on target, delete source) all execute
+// exactly as they do for a human drag. Asserts:
+//
+//   A. PC -> PC control drag  : stock COPY (scope guard — module must not touch it)
+//   B. member -> group        : MOVE (created on group, source deleted)
+//   C. group -> member        : MOVE back
+//   D. member -> group + Ctrl : forced COPY (dnd5e dragCopy modifier still wins)
+//
+// Also handles first-run plumbing: if the module isn't registered yet (fresh WebDAV upload),
+// game.shutDown() -> reconnect (setup rescans Data/modules, bridge auto-relaunches), and if it
+// isn't enabled, flips core.moduleConfiguration and reconnects so the esmodule loads.
+//
+// Creates + cleans a ZZ-PSTASH fixture item on the first two character members of the group.
+// Run: node scripts/verify-partystash.mjs   (build dist first if stale: npm run build)
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { Foundry } from '../dist/foundry.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const env = {};
+for (const line of readFileSync(join(__dirname, '..', '.env'), 'utf8').split(/\r?\n/)) {
+  if (line.trimStart().startsWith('#')) continue;
+  const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+  if (m) env[m[1]] = m[2];
+}
+
+const MODULE_ID = 'fvtt-mod-partystash';
+const TAG = 'ZZ-PSTASH Probe Torch';
+const GROUP_ID = 'm2iibo7g0b1YFFjQ'; // "The Party" (re-derived below if missing)
+
+const mkFoundry = () =>
+  new Foundry({
+    serverUrl: env.MOLTEN_SERVER_URL,
+    magicUrl: env.MOLTEN_MAGIC_URL,
+    user: env.FOUNDRY_USER || 'Claude',
+    password: env.FOUNDRY_PASSWORD,
+    adminKey: env.MOLTEN_ADMIN_KEY,
+    worldId: env.MOLTEN_WORLD_ID,
+  });
+
+let fails = 0;
+function assert(cond, msg) {
+  console.log(`  ${cond ? 'PASS' : 'FAIL'}  ${msg}`);
+  if (!cond) fails++;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** One synthetic drag probe, fully inside the page. Single-arg evaluate (bridge rule). */
+const PROBE = async ({ sourceId, itemId, targetId, ctrl, tag }) => {
+  const out = { };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  try {
+    const source = game.actors.get(sourceId);
+    const target = game.actors.get(targetId);
+    if (!source || !target) return { error: 'actor missing' };
+    const sSheet = source.sheet;
+    const tSheet = target.sheet;
+    await sSheet.render({ force: true });
+    await tSheet.render({ force: true });
+    await sleep(1200);
+
+    // Source row: core DragDrop.bind stamps draggable=true on drag-selector matches, so the
+    // dragstart listener lives on exactly these elements.
+    let row = null;
+    for (const el of sSheet.element.querySelectorAll('[draggable="true"]')) {
+      if (el.closest('[data-item-id]')?.dataset.itemId === itemId) { row = el; break; }
+    }
+    if (!row) return { error: `no draggable row for ${itemId} on ${source.name}` };
+
+    const dt = new DataTransfer();
+    const mk = type => new DragEvent(type, {
+      bubbles: true, cancelable: true, dataTransfer: dt, ctrlKey: !!ctrl
+    });
+
+    row.dispatchEvent(mk('dragstart'));
+    await sleep(300); // _handleDragStart caches the payload in a microtask
+    out.payloadCached = !!CONFIG.ux.DragDrop.getPayload?.(null);
+
+    // Find a listening drop element on the target sheet — dragover is side-effect-free and
+    // stamps the static dropEffect when a bound listener fires.
+    const candidates = [];
+    const push = (label, el) => { if (el) candidates.push([label, el]); };
+    push('dnd5e-inventory', tSheet.element.querySelector('dnd5e-inventory'));
+    push('.tab[data-tab=inventory]', tSheet.element.querySelector('.tab[data-tab="inventory"]'));
+    push('.window-content', tSheet.element.querySelector('.window-content'));
+    push('sheet root', tSheet.element);
+
+    let dropEl = null;
+    for (const [label, el] of candidates) {
+      CONFIG.ux.DragDrop.dropEffect = null;
+      el.dispatchEvent(mk('dragover'));
+      await sleep(150);
+      if (CONFIG.ux.DragDrop.dropEffect !== null) { dropEl = el; out.dropTarget = label; break; }
+    }
+    if (!dropEl) return { ...out, error: `no listening drop element on ${target.name}` };
+    out.dropEffect = CONFIG.ux.DragDrop.dropEffect;
+
+    const beforeTgt = new Set(target.items.map(i => i.id));
+    dropEl.dispatchEvent(mk('drop'));
+
+    let created = null;
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && !created) {
+      await sleep(300);
+      created = target.items.find(i => !beforeTgt.has(i.id) && i.name === tag) ?? null;
+    }
+    await sleep(800); // let a trailing source delete land
+    row.dispatchEvent(mk('dragend')); // clear DragDrop5e statics
+    await sleep(150);
+
+    out.createdOnTarget = !!created;
+    out.createdId = created?.id ?? null;
+    out.createdQty = created?.system?.quantity ?? null;
+    out.sourceRetained = source.items.some(i => i.id === itemId);
+    await sSheet.close();
+    await tSheet.close();
+    return out;
+  } catch (err) {
+    return { ...out, error: String(err?.stack || err) };
+  }
+};
+
+let f = mkFoundry();
+try {
+  console.log('[pstash] connecting…');
+  await f.connect();
+
+  // --- 0. module registered? ------------------------------------------------------------------
+  // NOTE (learned live 2026-08-07): Foundry's package registry on this box is scanned at server
+  // PROCESS start — a world shutDown+relaunch does NOT pick up files dropped into Data/modules.
+  // Registration is scripts/register-partystash.mjs's job (server-side installPackage via admin
+  // /setup); this script only verifies behavior.
+  let mod = await f.evaluate(id => {
+    const m = game.modules.get(id);
+    return m ? { present: true, active: m.active, version: m.version } : { present: false };
+  }, MODULE_ID);
+  console.log('# registration');
+  assert(mod.present, `module registered (version ${mod.version ?? 'n/a'})`);
+  if (!mod.present) {
+    throw new Error(
+      'module not in game.modules — run scripts/register-partystash.mjs first '
+      + '(world relaunch alone cannot register a new module on this box)'
+    );
+  }
+
+  // --- 1. enabled? ---------------------------------------------------------------------------
+  if (!mod.active) {
+    console.log('[pstash] enabling module in core.moduleConfiguration…');
+    await f.evaluate(async id => {
+      const cfg = foundry.utils.deepClone(game.settings.get('core', 'moduleConfiguration'));
+      cfg[id] = true;
+      await game.settings.set('core', 'moduleConfiguration', cfg);
+    }, MODULE_ID);
+    await f.dispose();
+    await sleep(5000);
+    f = mkFoundry();
+    await f.connect(); // fresh page load serves the module esmodule
+    mod = await f.evaluate(id => ({ active: !!game.modules.get(id)?.active }), MODULE_ID);
+  }
+  assert(mod.active, 'module active in the world');
+
+  const wrap = await f.evaluate(() => {
+    const p = globalThis.dnd5e?.applications?.actor?.BaseActorSheet?.prototype?._defaultDropBehavior;
+    return { wrapped: !!p && p.toString().includes('isStashMove') };
+  }, null);
+  assert(wrap.wrapped, 'BaseActorSheet#_defaultDropBehavior carries the Party Stash wrap');
+
+  // --- 2. fixture ----------------------------------------------------------------------------
+  const setup = await f.evaluate(async ({ groupId, tag }) => {
+    const group = game.actors.get(groupId)
+      ?? game.actors.find(a => a.type === 'group' && a.name === 'The Party');
+    if (!group) return { error: 'group actor not found' };
+    const members = group.system.members.map(m => m.actor).filter(a => a?.type === 'character');
+    if (members.length < 2) return { error: 'need two character members' };
+    // stale probes from a previous crashed run
+    for (const a of [group, ...members]) {
+      const stale = a.items.filter(i => i.name === tag).map(i => i.id);
+      if (stale.length) await a.deleteEmbeddedDocuments('Item', stale);
+    }
+    const [item] = await members[0].createEmbeddedDocuments('Item', [
+      { name: tag, type: 'loot', system: { quantity: 3 } }
+    ]);
+    return {
+      groupId: group.id, groupName: group.name,
+      aId: members[0].id, aName: members[0].name,
+      bId: members[1].id, bName: members[1].name,
+      itemId: item.id
+    };
+  }, { groupId: GROUP_ID, tag: TAG });
+  if (setup.error) throw new Error(setup.error);
+  console.log(`# fixture: "${TAG}" x3 on ${setup.aName}; group="${setup.groupName}", control PC=${setup.bName}`);
+
+  // --- A. PC -> PC control: must stay a stock COPY -------------------------------------------
+  console.log('# probe A — PC -> PC (scope guard, expect copy)');
+  const A = await f.evaluate(PROBE, {
+    sourceId: setup.aId, itemId: setup.itemId, targetId: setup.bId, ctrl: false, tag: TAG
+  });
+  if (A.error) console.log('  probe error:', A.error);
+  assert(A.payloadCached === true, `drag payload cached by DragDrop5e (harness sanity)`);
+  assert(A.dropEffect === 'copy', `dropEffect is "copy" (got "${A.dropEffect}")`);
+  assert(A.createdOnTarget === true, `copy created on ${setup.bName} (via ${A.dropTarget})`);
+  assert(A.sourceRetained === true, `source retained on ${setup.aName} — PC↔PC unchanged`);
+  if (A.createdId) {
+    await f.evaluate(async ({ bId, cid }) => {
+      await game.actors.get(bId)?.deleteEmbeddedDocuments('Item', [cid]);
+    }, { bId: setup.bId, cid: A.createdId });
+  }
+
+  // --- B. member -> group: MOVE ---------------------------------------------------------------
+  console.log('# probe B — member -> group (expect move)');
+  const B = await f.evaluate(PROBE, {
+    sourceId: setup.aId, itemId: setup.itemId, targetId: setup.groupId, ctrl: false, tag: TAG
+  });
+  if (B.error) console.log('  probe error:', B.error);
+  assert(B.dropEffect === 'move', `dropEffect is "move" (got "${B.dropEffect}")`);
+  assert(B.createdOnTarget === true, `item created on ${setup.groupName} (via ${B.dropTarget})`);
+  assert(B.createdQty === 3, `quantity preserved (got ${B.createdQty})`);
+  assert(B.sourceRetained === false, `source DELETED from ${setup.aName} — true move`);
+
+  // --- C. group -> member: MOVE back ----------------------------------------------------------
+  console.log('# probe C — group -> member (expect move)');
+  const C = await f.evaluate(PROBE, {
+    sourceId: setup.groupId, itemId: B.createdId, targetId: setup.aId, ctrl: false, tag: TAG
+  });
+  if (C.error) console.log('  probe error:', C.error);
+  assert(C.dropEffect === 'move', `dropEffect is "move" (got "${C.dropEffect}")`);
+  assert(C.createdOnTarget === true, `item back on ${setup.aName} (via ${C.dropTarget})`);
+  assert(C.sourceRetained === false, `source DELETED from ${setup.groupName} — true move`);
+
+  // --- D. Ctrl-drag member -> group: forced COPY ----------------------------------------------
+  console.log('# probe D — member -> group with Ctrl (expect forced copy)');
+  const D = await f.evaluate(PROBE, {
+    sourceId: setup.aId, itemId: C.createdId, targetId: setup.groupId, ctrl: true, tag: TAG
+  });
+  if (D.error) console.log('  probe error:', D.error);
+  assert(D.dropEffect === 'copy', `dropEffect is "copy" (got "${D.dropEffect}")`);
+  assert(D.createdOnTarget === true, `copy created on ${setup.groupName}`);
+  assert(D.sourceRetained === true, `source retained on ${setup.aName} — Ctrl still copies`);
+
+  // --- cleanup --------------------------------------------------------------------------------
+  await f.evaluate(async ({ ids, tag }) => {
+    for (const id of ids) {
+      const a = game.actors.get(id);
+      if (!a) continue;
+      const doomed = a.items.filter(i => i.name === tag).map(i => i.id);
+      if (doomed.length) await a.deleteEmbeddedDocuments('Item', doomed);
+    }
+  }, { ids: [setup.aId, setup.bId, setup.groupId], tag: TAG });
+  console.log('# fixture cleaned up');
+} catch (e) {
+  console.error('[pstash] ERROR:', e?.message || e);
+  fails++;
+} finally {
+  await f.dispose();
+  console.log(fails === 0 ? '\nVERDICT: BEHAVIOR-OK (all probes passed)' : `\nVERDICT: FAILED (${fails} failing assertion${fails === 1 ? '' : 's'})`);
+  process.exit(fails === 0 ? 0 : 1);
+}
