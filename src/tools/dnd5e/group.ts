@@ -203,9 +203,7 @@ export class DnD5eGroupTools {
       lines.push(`- **Added:** ${r.added.map((a: any) => a.name).join(', ')}`);
     }
     if (r.removed.length) {
-      lines.push(
-        `- **Removed:** ${r.removed.map((a: any) => a.name ?? `\`${a.id}\``).join(', ')}`
-      );
+      lines.push(`- **Removed:** ${r.removed.map((a: any) => a.name ?? `\`${a.id}\``).join(', ')}`);
     }
     for (const s of r.skipped ?? []) {
       lines.push(`- ⚠️ Skipped "${s.identifier}" — ${s.reason}`);

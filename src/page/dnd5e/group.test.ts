@@ -93,9 +93,9 @@ describe('assertCreatableMembers', () => {
   });
 
   it('FAIL-CLOSED: a group member rejects, and all problems are listed together', () => {
-    expect(() =>
-      assertCreatableMembers([r('Old Stash', stash), r('Ghost', null)])
-    ).toThrow(/not found in this world: "Ghost".*group actors cannot be members.*"Old Stash"/);
+    expect(() => assertCreatableMembers([r('Old Stash', stash), r('Ghost', null)])).toThrow(
+      /not found in this world: "Ghost".*group actors cannot be members.*"Old Stash"/
+    );
   });
 
   it('empty member list is a valid create', () => {

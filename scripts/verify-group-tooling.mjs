@@ -85,7 +85,8 @@ try {
     threw = e;
   }
   assert(
-    threw && /nothing was created.*zz-definitely-no-such-actor-zz/.test(String(threw.message ?? threw)),
+    threw &&
+      /nothing was created.*zz-definitely-no-such-actor-zz/.test(String(threw.message ?? threw)),
     'rejected, listing the unresolved member'
   );
   const ghost = await f.evaluate(
@@ -121,7 +122,10 @@ try {
   const info = await f.call('getGroupInfo', { groupIdentifier: GROUP_NAME });
   assert(info.id === groupId, 'resolves by name');
   assert(
-    info.members.map(m => m.id).sort().join() === [...memberIds].sort().join(),
+    info.members
+      .map(m => m.id)
+      .sort()
+      .join() === [...memberIds].sort().join(),
     'roster matches'
   );
   assert(info.currency.gp === 25 && info.currency.sp === 10, 'seeded currency persisted');

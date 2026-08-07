@@ -92,9 +92,7 @@ describe('create-group', () => {
 
   it('rejects a negative coin amount (zod)', async () => {
     const { tool } = makeTool();
-    await expect(
-      tool.handleCreateGroup({ name: 'X', currency: { gp: -5 } })
-    ).rejects.toThrow();
+    await expect(tool.handleCreateGroup({ name: 'X', currency: { gp: -5 } })).rejects.toThrow();
   });
 
   it('rejects a missing name (zod)', async () => {
@@ -147,9 +145,9 @@ describe('manage-group-members', () => {
 
   it('rejects a call with neither add nor remove (zod refine)', async () => {
     const { tool } = makeTool();
-    await expect(
-      tool.handleManageGroupMembers({ groupIdentifier: 'The Party' })
-    ).rejects.toThrow(/at least one actor/);
+    await expect(tool.handleManageGroupMembers({ groupIdentifier: 'The Party' })).rejects.toThrow(
+      /at least one actor/
+    );
   });
 });
 
