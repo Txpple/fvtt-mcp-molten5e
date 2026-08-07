@@ -166,6 +166,12 @@ import {
   inspectAdvancementChoices,
   levelUpPc,
 } from './dnd5e/advancement.js';
+import {
+  createGroupActor,
+  manageGroupMembers,
+  getGroupInfo,
+  configurePrimaryParty,
+} from './dnd5e/group.js';
 
 const api = {
   // world / scene (scene-DOCUMENT ops only — placeables live below)
@@ -322,6 +328,12 @@ const api = {
   createPcFromPrefab,
   inspectAdvancementChoices,
   levelUpPc,
+  // dnd5e group actors (party stash / travel group: create, membership, group-shaped read,
+  // the primaryParty world setting)
+  createGroupActor,
+  manageGroupMembers,
+  getGroupInfo,
+  configurePrimaryParty,
 } satisfies Record<string, (...args: any[]) => unknown>;
 
 /**

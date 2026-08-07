@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 138 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 142 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -68,7 +68,10 @@ describe('tool registry', () => {
     // + add-region-behavior (wire a behavior onto an EXISTING region — the create-region/
     //   update-region gap; teleportTo resolves the destination UUID and warns on off-grid landing
     //   pads, the silent teleport no-op found live 2026-07-08)
-    expect(names.length).toBe(138);
+    // + create-group / manage-group-members / get-group / set-primary-party (dnd5e group
+    //   actors — the shared party stash; membership via system.addMember/removeMember, the
+    //   group-shaped read, and the dnd5e primaryParty world setting, one typed tool per setting)
+    expect(names.length).toBe(142);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

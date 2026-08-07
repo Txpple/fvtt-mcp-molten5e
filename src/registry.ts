@@ -32,6 +32,7 @@ import { DnD5eAddItemTool } from './tools/dnd5e/add-item.js';
 import { DnD5eImportItemTool } from './tools/dnd5e/import-item.js';
 import { DnD5eContentAuditTool } from './tools/dnd5e/content-audit.js';
 import { DnD5eDdbImportTools } from './tools/dnd5e/ddb-import.js';
+import { DnD5eGroupTools } from './tools/dnd5e/group.js';
 import { buildAddFeatureTool } from './tools/dnd5e/grant-to-actor.js';
 
 import { MoltenTools } from './tools/molten/index.js';
@@ -93,6 +94,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const dnd5eContentAuditTool = new DnD5eContentAuditTool({ foundry, logger });
   // DDB import: a Node-only tool (no Foundry — it fetches a public character or parses pasted JSON).
   const dnd5eDdbImportTools = new DnD5eDdbImportTools({ logger });
+  const dnd5eGroupTools = new DnD5eGroupTools({ foundry, logger });
 
   const journalTools = new JournalTools({ foundry, logger });
   const ownershipTools = new OwnershipTools({ foundry, logger });
@@ -139,6 +141,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...dnd5eImportItemTool.getToolDefinitions(),
     ...dnd5eContentAuditTool.getToolDefinitions(),
     ...dnd5eDdbImportTools.getToolDefinitions(),
+    ...dnd5eGroupTools.getToolDefinitions(),
     addFeatureTool,
     ...journalTools.getToolDefinitions(),
     ...ownershipTools.getToolDefinitions(),
@@ -214,6 +217,12 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     // DDB import (design.md §7): parse a D&D Beyond character → a normalized plan for the ddb-import
     // skill. Pure + Node-only (public fetch or pasted JSON); the skill does canonicalization + build.
     'parse-ddb-character': args => dnd5eDdbImportTools.handleParseDdbCharacter(args),
+
+    // dnd5e group actors (party stash / travel group) + the primaryParty world setting
+    'create-group': args => dnd5eGroupTools.handleCreateGroup(args),
+    'manage-group-members': args => dnd5eGroupTools.handleManageGroupMembers(args),
+    'get-group': args => dnd5eGroupTools.handleGetGroup(args),
+    'set-primary-party': args => dnd5eGroupTools.handleSetPrimaryParty(args),
 
     // Actor authoring — unified add-feature entry (composes feature / compendium / items modes)
     'add-feature': args => {
