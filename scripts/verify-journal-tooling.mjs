@@ -91,6 +91,37 @@ try {
   );
   assert(gmPage?.playerVisible === false, 'GM Notes page is GM-only');
 
+  // --- 1b. the ENTRY-level half of the ownership contract ------------------
+  // A player-visible PAGE inside a GM-only ENTRY is unreachable: the journal never appears in a
+  // player's sidebar. createJournal must therefore open the entry when any page is a handout, and
+  // pin the other pages GM-only so they don't inherit that open entry.
+  console.log('\n# entry-level ownership contract');
+  const perms = await f.evaluate(id => {
+    const j = game.journal.get(id);
+    const player = game.users.find(u => !u.isGM);
+    return {
+      entryDefault: j?.ownership?.default,
+      playerSeesJournal: j?.testUserPermission(player, 'LIMITED') ?? null,
+      pages: [...(j?.pages ?? [])].map(p => ({
+        name: p.name,
+        raw: p.ownership?.default,
+        playerSees: p.testUserPermission(player, 'OBSERVER'),
+      })),
+    };
+  }, journalId);
+  assert(perms.entryDefault === 2, `entry opened to players (default ${perms.entryDefault})`);
+  assert(perms.playerSeesJournal === true, 'a player can actually SEE the journal');
+  const gmPerm = perms.pages.find(p => p.name === 'GM Notes');
+  assert(
+    gmPerm?.raw === 0,
+    `GM page pinned explicitly GM-only, not inheriting (raw ${gmPerm?.raw})`
+  );
+  assert(gmPerm?.playerSees === false, 'GM page stays hidden inside the open entry');
+  assert(
+    perms.pages.find(p => p.name === 'Player Handout')?.playerSees === true,
+    'handout page is reachable by a player'
+  );
+
   // --- 2. block renderer round-trips on the page content -------------------
   console.log('\n# block renderer round-trip');
   const handoutContent =

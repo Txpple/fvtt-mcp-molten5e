@@ -166,10 +166,14 @@ export async function updateJournalContent(request: {
         text: {
           content: request.content,
         },
-        ...(request.ownership ? { ownership: request.ownership } : {}),
+        ...appendPageOwnership(journal, request.ownership),
       },
     ]);
     const newPage = created?.[0];
+    // A handout page is only reachable once the ENTRY is open too.
+    if (request.ownership && isHandoutPage({ ownership: request.ownership })) {
+      await openEntryForHandouts(journal);
+    }
     return { success: true, pageId: newPage?.id || '', pageName: request.newPageName };
   }
 
@@ -183,6 +187,9 @@ export async function updateJournalContent(request: {
       'text.content': request.content,
       ...(request.ownership ? { ownership: request.ownership } : {}),
     });
+    if (request.ownership && isHandoutPage({ ownership: request.ownership })) {
+      await openEntryForHandouts(journal);
+    }
     return { success: true, pageId: page.id, pageName: page.name };
   }
 
@@ -204,11 +211,97 @@ export async function updateJournalContent(request: {
         text: {
           content: request.content,
         },
+        ...appendPageOwnership(journal),
       },
     ]);
     const newPage = created?.[0];
     return { success: true, pageId: newPage?.id || '', pageName: 'Quest Details' };
   }
+}
+
+// --- the journal ownership contract (design.md §5) ---------------------------------------------
+//
+// Foundry stores ownership at BOTH levels, and the two interact in ways that silently defeat a
+// naive per-page grant:
+//   1. a player-visible PAGE inside a GM-only ENTRY is unreachable — the journal never appears in a
+//      player's sidebar, so the "handout" is a handout nobody can open;
+//   2. a page whose ownership default is -1 INHERITS the entry — so opening an entry would reveal
+//      every inheriting page along with the one handout that asked for it.
+// Both rules live here so no caller has to remember them.
+
+/** Players can OBSERVE this document. */
+export const OWNERSHIP_OBSERVER = 2;
+/** GM-only. */
+export const OWNERSHIP_GM_ONLY = 0;
+/** Take the parent entry's level (Foundry's default for a page that never set one). */
+export const OWNERSHIP_INHERIT = -1;
+
+type OwnedPage = { ownership?: { default: number } };
+
+/** True when this page is a handout — players can observe it in its own right. */
+export function isHandoutPage(page: OwnedPage): boolean {
+  return (page.ownership?.default ?? OWNERSHIP_INHERIT) >= OWNERSHIP_OBSERVER;
+}
+
+/**
+ * Pure. Given the pages of a journal about to be CREATED, return the entry ownership it needs and
+ * the pages with the contract applied: if any page is a handout the entry must open (rule 1), and
+ * every other page then needs an EXPLICIT GM-only default so it doesn't inherit that open entry
+ * (rule 2). A journal with no handouts is left entirely alone — GM-only entry, untouched pages.
+ */
+export function applyEntryOwnershipContract<T extends OwnedPage>(
+  pages: T[]
+): { pages: T[]; entryOwnership: { default: number } } {
+  if (!pages.some(isHandoutPage)) {
+    return { pages, entryOwnership: { default: OWNERSHIP_GM_ONLY } };
+  }
+  return {
+    pages: pages.map(p => (p.ownership ? p : { ...p, ownership: { default: OWNERSHIP_GM_ONLY } })),
+    entryOwnership: { default: OWNERSHIP_OBSERVER },
+  };
+}
+
+/**
+ * Pure. The page updates needed before an entry at `entryDefault` is opened: every page that is
+ * currently INHERITING gets pinned to what it effectively is today, so opening the entry changes
+ * nothing but the one page the caller asked to reveal.
+ */
+export function pinInheritingPages(
+  entryDefault: number,
+  pages: Array<{ id: string } & OwnedPage>
+): Array<{ _id: string; 'ownership.default': number }> {
+  return pages
+    .filter(p => (p.ownership?.default ?? OWNERSHIP_INHERIT) < OWNERSHIP_GM_ONLY)
+    .map(p => ({ _id: p.id, 'ownership.default': entryDefault }));
+}
+
+/**
+ * Make a journal entry reachable by players, without changing what any existing page shows: pin the
+ * inheriting pages first, then open the entry. No-op when the entry is already open. Call this
+ * whenever a page becomes player-visible — the page grant alone is not enough.
+ */
+export async function openEntryForHandouts(journal: any): Promise<void> {
+  const entryDefault = journal?.ownership?.default ?? OWNERSHIP_GM_ONLY;
+  if (entryDefault >= OWNERSHIP_OBSERVER) return;
+  const pins = pinInheritingPages(entryDefault, journal.pages?.contents ?? []);
+  if (pins.length > 0) {
+    await journal.updateEmbeddedDocuments('JournalEntryPage', pins);
+  }
+  await journal.update({ 'ownership.default': OWNERSHIP_OBSERVER });
+}
+
+/**
+ * The ownership a page being APPENDED should carry. An explicit request wins; otherwise a page
+ * joining an OPEN entry is pinned GM-only rather than left to inherit it (rule 2), and a page
+ * joining a GM-only entry keeps Foundry's inherit default (nothing to leak).
+ */
+export function appendPageOwnership(
+  journal: any,
+  requested?: { default: number } | undefined
+): { ownership: { default: number } } | Record<string, never> {
+  if (requested) return { ownership: requested };
+  const entryDefault = journal?.ownership?.default ?? OWNERSHIP_GM_ONLY;
+  return entryDefault >= OWNERSHIP_OBSERVER ? { ownership: { default: OWNERSHIP_GM_ONLY } } : {};
 }
 
 /**
@@ -218,7 +311,8 @@ export async function updateJournalContent(request: {
  * skill composes structure, this just stores it). Takes an explicit pages array; only folders the
  * journal when folderName is given. Each page is a text page with HTML content and OPTIONAL per-page
  * `ownership` (`{ default: 2 }` = players observe — a handout; omitted/`{ default: 0 }` = GM-only).
- * Per-page ownership is what lets one journal hold a player handout beside GM-only notes (design.md §5).
+ * Per-page ownership is what lets one journal hold a player handout beside GM-only notes (design.md §5);
+ * the ENTRY opens automatically when any page is a handout, or players could never reach it.
  */
 export async function createJournal(params: {
   name: string;
@@ -289,10 +383,14 @@ export async function createJournal(params: {
     })
   );
 
+  // A page-level handout is useless inside a GM-only entry (players never see the journal at all),
+  // so the entry opens when any page is player-visible — and the remaining pages are pinned GM-only
+  // so they don't inherit that open entry. See applyEntryOwnershipContract.
+  const contract = applyEntryOwnershipContract(pages as Array<{ ownership?: { default: number } }>);
   const journalData: any = {
     name: params.name,
-    pages,
-    ownership: { default: 0 }, // GM only by default (per-page ownership above can re-open a handout)
+    pages: contract.pages,
+    ownership: contract.entryOwnership,
   };
   if (params.folderName && params.folderName.trim().length > 0) {
     journalData.folder = await getOrCreateFolder(params.folderName.trim(), 'JournalEntry');
@@ -381,7 +479,12 @@ export async function setJournalPageVisibility(args: {
     throw new Error(`Page not found: ${args.pageId}`);
   }
   // Patch ONLY the ownership default (dot-path), preserving any per-user overrides.
-  await page.update({ 'ownership.default': args.playerVisible ? 2 : 0 });
+  await page.update({
+    'ownership.default': args.playerVisible ? OWNERSHIP_OBSERVER : OWNERSHIP_GM_ONLY,
+  });
+  // Revealing a page also has to open the ENTRY, or the players still can't reach it. Hiding one
+  // deliberately does NOT close the entry — its other handouts stay reachable.
+  if (args.playerVisible) await openEntryForHandouts(journal);
   return { success: true, pageId: page.id, pageName: page.name };
 }
 

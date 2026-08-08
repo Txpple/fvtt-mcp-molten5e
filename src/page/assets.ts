@@ -14,6 +14,7 @@
 
 import { normalizeAssetPath, basename, isVideoPath, resolveJournalStrict } from './_shared.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
+import { appendPageOwnership, openEntryForHandouts, OWNERSHIP_OBSERVER } from './journals.js';
 import { resolveCreatureIcon } from './dnd5e/icons.js';
 
 /**
@@ -230,10 +231,16 @@ export async function addJournalImage(data: {
     src,
   };
   if (data.caption) pageData.image = { caption: data.caption };
-  // playerVisible -> page ownership OBSERVER (2); omitted inherits the journal's GM-only default.
-  if (data.playerVisible) pageData.ownership = { default: 2 };
+  // playerVisible -> page ownership OBSERVER (2). Otherwise appendPageOwnership pins the page
+  // GM-only when the entry is already open, so it can't inherit its way into view.
+  Object.assign(
+    pageData,
+    appendPageOwnership(journal, data.playerVisible ? { default: OWNERSHIP_OBSERVER } : undefined)
+  );
   const created = await journal.createEmbeddedDocuments('JournalEntryPage', [pageData]);
   const page = created?.[0];
+  // A handout image is only reachable once the ENTRY is open to players too.
+  if (data.playerVisible) await openEntryForHandouts(journal);
   return {
     success: true,
     updated: true,
