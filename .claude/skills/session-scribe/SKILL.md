@@ -122,13 +122,20 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
   - Reference implementations: campaign repo `sessions/2026-07-14/recap.html` (the approved
     register, after the tone-down) and `sessions/2026-07-07/recap.html` (structure/endmatter;
     its prose runs a notch more florid than the approved register).
-- **The Foundry adventure-log journal is a standard artifact (established session 2):** after
-  recap.html, create/update a world journal `Session N — <title>` with ONE player-visible text
-  page `Session N — YYYY-MM-DD` in the `mcp-journal` format (p.lead TL;DR → h2.spaced story
-  beats → readaloud blocks for item/lore quotes → "Where Things Stand" ul). Same player-safe
-  boundary and the SAME toned-down register as recap.html — it's the in-game handout twin of
-  the email recap, minus Quotable Quotes / Deeds of the Day. Match the existing Session 1/2
-  journals.
+- **The Foundry session journal is a standard artifact (established session 2):** after
+  recap.html, append ONE player-visible text page to the world's single **`Session Diary`**
+  journal (folder *Adventure Log*) — **never a new journal per session** (revised 2026-08-08:
+  the per-session journals were consolidated). Page name = `Session N — <title>`, e.g.
+  "Session 3 — The Road Interlude"; the date lives in the page body. Use `update-journal` with
+  `newPageName` + `playerVisible: true`, then keep the pages in order (they sort by name, so the
+  `Session N` prefix does the work). Content is the `mcp-journal` format (p.lead TL;DR →
+  h2.spaced story beats → readaloud blocks for item/lore quotes → "Where Things Stand" ul), the
+  same player-safe boundary and the SAME toned-down register as recap.html — it's the in-game
+  handout twin of the email recap, minus Quotable Quotes / Deeds of the Day. Match the existing
+  Session 1/2 pages.
+- **Monsters the party fought go in the Bestiary** — after the recap, hand off to the
+  `bestiary-builder` skill for anything newly killed; it files a page (MM art + narrative) in the
+  single `Bestiary` journal.
 - **Attribution is per-speaker-track and trustworthy** — quote players verbatim when it's good
   ("quotes of the night" in gm-notes). Whisper text is GM-only by definition: usable in
   recap.md/gm-notes.md, NEVER in recap.html.
