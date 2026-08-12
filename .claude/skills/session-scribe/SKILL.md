@@ -105,8 +105,14 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
     Mark, Displacement — wrapped in a bit of flavor but direct about what was used. Do NOT
     narrate around the ability ("magic that cannot miss", "his oath's enmity", "his orcish
     blood refused the fall"): the session-3 first draft did exactly that and the owner sent it
-    back. Approved shape: "Gren answered with Magic Missile — darts that do not argue with
-    Displacement" / "his Relentless Endurance refused the fall." Numerals stay out; names go in.
+    back. Numerals stay out; names go in. **Styling (owner, 2026-08-12, two-part):** ability/
+    spell/feature names are ITALICS in Title Case when named or invoked — "<em>Magic
+    Missile</em>", "his <em>Relentless Endurance</em> refused the fall", "swore a <em>Vow of
+    Enmity</em>", "<em>Displacement</em> kept its true body a step away" (first introduction).
+    BUT once a trait has been introduced and prose refers to it as a phenomenon, drop to
+    lowercase — "its light tore the <em>displacement</em> off the pack"; capitalizing it
+    mid-sentence there "is weird" (owner). Named magic items and NPCs keep plain Title Case
+    (First Light, Lantern of Revealing, Lae'zel).
   - **Never surface the DM's narration prompts (owner feedback 2026-08-12).** When the DM asks
     a player to narrate ("how would you like to kill him?"), the OUTPUT of that exchange is
     the fiction — render it as straight narration/quote and never mention the asking. Rejected
