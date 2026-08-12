@@ -324,9 +324,10 @@ export async function updateFolder(data: {
   const update: Record<string, unknown> = {};
   if (typeof data.name === 'string' && data.name.trim().length > 0) update.name = data.name.trim();
   if (typeof data.color === 'string') update.color = data.color;
-  // Sidebar position among siblings. Foundry orders sibling folders by this integer, NOT by name —
-  // list-folders renders alphabetically for determinism, so read `sort` from there, never infer it
-  // from the listing order.
+  // The Folder's raw `sort`. ⚠️ It persists and reads back, but it does NOT reposition a folder:
+  // the v14 sidebar renders sibling FOLDERS alphabetically by name and ignores this (verified live
+  // 2026-08-12 — Scene folders at 100000/200000/300000 stayed put among siblings at 0). Exposed for
+  // fidelity/diagnostics; renaming is the only real lever on folder order.
   if (typeof data.sort === 'number' && Number.isFinite(data.sort)) {
     update.sort = Math.trunc(data.sort);
   }

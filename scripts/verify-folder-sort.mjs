@@ -1,10 +1,10 @@
-// Live verification for update-folder's new `sort` param — sidebar position among siblings.
+// Live verification for update-folder's `sort` param — ROUND-TRIP FIDELITY of the Folder field.
 //
-// Foundry orders sibling folders by the Folder `sort` integer, NOT by name; list-folders renders
-// alphabetically for determinism, so `sort` is the only honest read of sidebar position. This
-// drives a real headless session (fresh dist/, no CC restart): builds three RollTable folders,
-// proves listFolders surfaces `sort`, reorders them via update-folder, and reads the new order
-// back. Everything created is deleted in `finally`.
+// ⚠️ Read the ground-truth note below before trusting `sort` to order anything: the v14 sidebar
+// renders sibling FOLDERS alphabetically by name and ignores it. This drives a real headless
+// session (fresh dist/, no CC restart): builds three RollTable folders, proves listFolders
+// surfaces `sort`, writes a new value, and reads it back. Everything created is deleted in
+// `finally`.
 //
 // Build first: npm run build.  Run: node scripts/verify-folder-sort.mjs
 import { readFileSync } from 'node:fs';
@@ -70,8 +70,11 @@ try {
     'every folder reports a numeric sort'
   );
   // GROUND TRUTH: unlike documents, Folder.create does NOT space sort values — every new folder
-  // lands on sort 0, and Foundry breaks that tie by NAME. So a virgin sidebar looks alphabetical,
-  // and one explicit non-zero sort is all it takes to lift a folder out of that alphabetical block.
+  // lands on sort 0. And the tie is never broken by sort at all: the v14 sidebar renders sibling
+  // FOLDERS alphabetically by name and IGNORES `sort` (confirmed live on the Greenrest Scene
+  // folders — 100000/200000/300000 against siblings at 0 did not move them, so they were renamed
+  // "99 - " instead). This script therefore proves round-trip fidelity of the field, NOT that it
+  // repositions anything. Rename is the only lever on folder order.
   assert(
     Object.values(before).every(v => v === 0),
     'a freshly created folder gets sort 0 (Foundry does not auto-space folders)'
@@ -90,7 +93,6 @@ try {
   const after = await readSorts();
   console.log(`  sorts: ${JSON.stringify(after)}`);
   assert(after.A === parked, 'A persisted at the parked sort');
-  assert(after.A > after.B && after.A > after.C, 'A now sorts LAST among its siblings');
   assert(after.B === before.B && after.C === before.C, 'siblings were left untouched');
 
   console.log('\n— sort survives a rename in the same patch —');

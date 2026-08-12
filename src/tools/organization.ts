@@ -67,9 +67,11 @@ const UpdateFolderSchema = z
       .int()
       .optional()
       .describe(
-        'Sidebar position among sibling folders (lower = higher in the list). Foundry orders ' +
-          'siblings by this integer, NOT alphabetically. Read the current values from ' +
-          'list-folders and pick one above/below them (Foundry spaces them by 100000).'
+        "The Folder document's sort value. ⚠️ ADVISORY, not a lever: writing it persists and " +
+          'reads back, but the v14 sidebar was observed rendering sibling FOLDERS ALPHABETICALLY ' +
+          'BY NAME regardless of it (verified live 2026-08-12 on Scene folders — 100000/200000/' +
+          '300000 against siblings at 0 did not move them). To control folder ORDER, control the ' +
+          'NAME (this world uses "NN - " prefixes, 99 for undetermined).'
       ),
   })
   .refine(
@@ -123,10 +125,10 @@ export class OrganizationTools {
         name: 'list-folders',
         description:
           'Read the sidebar folder TREE — every world folder (or one document type) in tree order ' +
-          'with its id, nesting depth + "/"-joined path, hex color, sidebar sort value, parent, ' +
-          'direct document count, and subfolder count. NOTE: siblings are rendered ALPHABETICALLY ' +
-          'for determinism — the real sidebar orders them by `sort`, so read that field rather ' +
-          'than inferring position from this listing. The inspect step the folder tools were ' +
+          'with its id, nesting depth + "/"-joined path, hex color, raw `sort` value, parent, ' +
+          'direct document count, and subfolder count. Siblings are listed ALPHABETICALLY — which ' +
+          'matches how the v14 sidebar actually renders FOLDERS (it ignores `sort` for them), so ' +
+          'this listing order IS the sidebar order. The inspect step the folder tools were ' +
           'missing: find the ids/names ' +
           'for update-folder (rename/recolor/reparent), delete-folder, move-documents, and the ' +
           'folder params on the create tools — without guessing what exists. Read-only.',
@@ -142,11 +144,11 @@ export class OrganizationTools {
       {
         name: 'update-folder',
         description:
-          'Update a sidebar Folder in place — rename it, recolor it, reposition it among its ' +
-          'siblings (sort), and/or reparent it (nest under another folder of the same type, or ' +
-          'pass parentFolder:"" to move it to the root). Resolves the folder by exact id or exact ' +
-          'name+type. Use this to RENAME a folder without the move-documents + delete-folder ' +
-          'dance, or to park a folder at the top/bottom of the sidebar. GM-only.',
+          'Update a sidebar Folder in place — rename it, recolor it, set its raw `sort`, and/or ' +
+          'reparent it (nest under another folder of the same type, or pass parentFolder:"" to ' +
+          'move it to the root). Resolves the folder by exact id or exact name+type. Use this to ' +
+          'RENAME a folder without the move-documents + delete-folder dance. To reposition a ' +
+          'folder, RENAME it — `sort` does not drive folder order in the v14 sidebar. GM-only.',
         inputSchema: toInputSchema(UpdateFolderSchema),
       },
       {
