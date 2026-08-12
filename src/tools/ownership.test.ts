@@ -48,7 +48,18 @@ describe('OwnershipTools.getToolDefinitions', () => {
       'LIMITED',
       'OBSERVER',
       'OWNER',
+      'INHERIT',
     ]);
+  });
+
+  it('documents NONE as an explicit deny and INHERIT as the fallback-to-default', () => {
+    const { tools } = build();
+    const def = tools.getToolDefinitions().find(t => t.name === 'set-actor-ownership')!;
+    const levelDoc = (def.inputSchema.properties as any).permissionLevel.description as string;
+    // NONE must NOT read as "remove it" — that's INHERIT's job.
+    expect(levelDoc).toMatch(/NONE \(explicitly DENY/);
+    expect(levelDoc).toMatch(/INHERIT \(remove the player's entry/);
+    expect(def.description).toMatch(/INHERIT/);
   });
 });
 
@@ -110,6 +121,21 @@ describe('set-actor-ownership (assignActorOwnership)', () => {
       const ownershipCall = calls.find(c => c[0] === 'setActorOwnership');
       expect(ownershipCall![1].permission).toBe(numeric);
     }
+  });
+
+  it('forwards INHERIT as permission:null (delete the key) — NOT as a numeric level', async () => {
+    const { tools, calls } = build(singleAssignResponse);
+    const out = await tools.handleToolCall('set-actor-ownership', {
+      actorIdentifier: 'Aragorn',
+      playerIdentifier: 'John',
+      permissionLevel: 'INHERIT',
+    });
+
+    const ownershipCall = calls.find(c => c[0] === 'setActorOwnership');
+    expect(ownershipCall![1]).toEqual({ actorId: 'actor1', userId: 'user1', permission: null });
+    // Explicitly not 0 — an explicit 0 would override a permissive default instead of falling back.
+    expect(ownershipCall![1].permission).not.toBe(0);
+    expect(out.results[0]).toMatchObject({ permission: 'INHERIT', success: true });
   });
 
   it('reports a per-pair failure when the bridge returns success:false', async () => {

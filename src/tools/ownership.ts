@@ -17,7 +17,11 @@ const OwnershipLevels = {
   OWNER: 3,
 } as const;
 
-const ownershipLevelSchema = z.enum(['NONE', 'LIMITED', 'OBSERVER', 'OWNER']);
+// INHERIT is not a level — it means "no explicit entry for this user", so the actor's
+// `ownership.default` applies. It travels to the page as `permission: null`, which
+// setActorOwnership implements by REMOVING the user's key. An explicit NONE (0) is a
+// different thing: it OVERRIDES a permissive default and actively denies the user.
+const ownershipLevelSchema = z.enum(['NONE', 'LIMITED', 'OBSERVER', 'OWNER', 'INHERIT']);
 
 // Single source of truth for each tool's input contract: the handler parses with these
 // schemas and getToolDefinitions() advertises toInputSchema(...) of the same schema.
@@ -33,7 +37,7 @@ const SetActorOwnershipSchema = z.object({
       'Player name, character name, or "party" for all connected players. Supports partial matching.'
     ),
   permissionLevel: ownershipLevelSchema.describe(
-    'Permission level to assign: NONE (no access), LIMITED (basic view), OBSERVER (full view, no control), OWNER (full control)'
+    "Permission level to assign: LIMITED (basic view), OBSERVER (full view, no control), OWNER (full control), NONE (explicitly DENY — stores a level-0 entry that overrides the actor's default, so it revokes access the player would otherwise inherit), INHERIT (remove the player's entry entirely so the actor's default ownership applies again)"
   ),
   confirmBulkOperation: z
     .boolean()
@@ -69,7 +73,7 @@ export class OwnershipTools {
       {
         name: 'set-actor-ownership',
         description:
-          'Set ownership permissions for actors. Use permissionLevel OWNER/OBSERVER/LIMITED to grant access, or NONE to remove it. Supports individual assignments like "Make John the owner of Aragorn" and bulk operations like "Give the party observer access to all friendly NPCs".',
+          'Set ownership permissions for actors. Use permissionLevel OWNER/OBSERVER/LIMITED to grant access, NONE to explicitly deny it (a stored level-0 entry that OVERRIDES the actor\'s default ownership), or INHERIT to remove the player\'s entry so the actor\'s default applies again. On an actor whose default is permissive (e.g. a shared party stash defaulting to OWNER), NONE revokes access the player would otherwise inherit and INHERIT is what restores it. Supports individual assignments like "Make John the owner of Aragorn" and bulk operations like "Give the party observer access to all friendly NPCs".',
         inputSchema: toInputSchema(SetActorOwnershipSchema),
       },
       {
@@ -106,9 +110,10 @@ export class OwnershipTools {
       `Assigning ${permissionLevel} ownership of "${actorIdentifier}" to "${playerIdentifier}"`
     );
 
-    // Validate permission level
+    // Validate permission level. INHERIT has no numeric level — null tells the page side to
+    // DELETE the user's ownership key (falling back to the actor's default) rather than store one.
     const validatedLevel = permissionLevel;
-    const numericLevel = OwnershipLevels[validatedLevel];
+    const numericLevel = validatedLevel === 'INHERIT' ? null : OwnershipLevels[validatedLevel];
 
     // Resolve actors and players
     const actors = await this.resolveActors(actorIdentifier);

@@ -90,14 +90,26 @@ export function getActorOwnership(args?: {
 }
 
 /**
- * Set a single user's ownership permission on an actor. Merges the new level
- * into the actor's existing ownership map and persists it. Best-effort: returns
- * a { success, message, error? } result rather than throwing.
+ * Set a single user's ownership permission on an actor, or (permission === null)
+ * remove the user's entry so the actor's `ownership.default` applies again.
+ *
+ * The distinction matters: an explicit 0 is NOT the same as an absent key. On an
+ * actor whose default is permissive (a shared party stash defaulting to OWNER),
+ * storing 0 actively DENIES the user, and only deleting the key restores the
+ * inherited level.
+ *
+ * Both paths write the whole ownership object with `{ diff: false, recursive: false }`.
+ * That is load-bearing for the delete: the `{"ownership.-=<id>": null}` deletion idiom
+ * SILENTLY NO-OPS on this field (verified live 2026-08-12 — it left 14 stale entries
+ * across three actors; see scripts/clean-stale-ownership.mjs), and a recursive update
+ * would merge the removed key straight back in.
+ *
+ * Best-effort: returns a { success, message, error? } result rather than throwing.
  */
 export async function setActorOwnership(args: {
   actorId: string;
   userId: string;
-  permission: number;
+  permission: number | null;
 }): Promise<{ success: boolean; message: string; error?: string }> {
   try {
     const actor = game.actors?.get(args.actorId);
@@ -110,17 +122,42 @@ export async function setActorOwnership(args: {
       return { success: false, error: `User not found: ${args.userId}`, message: '' };
     }
 
+    const currentOwnership: Record<string, number> = actor.ownership || {};
+
+    // INHERIT: rebuild the map WITHOUT this user's key.
+    if (args.permission === null) {
+      const hadEntry = Object.hasOwn(currentOwnership, args.userId);
+      const next: Record<string, number> = {};
+      for (const [id, level] of Object.entries(currentOwnership)) {
+        if (id !== args.userId) next[id] = level;
+      }
+
+      await actor.update({ ownership: next }, { diff: false, recursive: false });
+
+      const defaultLevel = next.default ?? 0;
+      const inherited = PERMISSION_NAMES[defaultLevel] ?? String(defaultLevel);
+      return {
+        success: true,
+        message: hadEntry
+          ? `Removed ${user.name}'s explicit ownership entry on ${actor.name} — now inherits the actor default (${inherited})`
+          : `${user.name} had no explicit ownership entry on ${actor.name} — already inheriting the actor default (${inherited})`,
+      };
+    }
+
     // Merge the new permission into the actor's existing ownership map.
-    const currentOwnership = actor.ownership || {};
     const newOwnership = { ...currentOwnership, [args.userId]: args.permission };
 
-    await actor.update({ ownership: newOwnership });
+    await actor.update({ ownership: newOwnership }, { diff: false, recursive: false });
 
     const permissionName = PERMISSION_NAMES[args.permission] ?? args.permission.toString();
 
     return {
       success: true,
-      message: `Set ${actor.name} ownership to ${permissionName} for ${user.name}`,
+      message:
+        `Set ${actor.name} ownership to ${permissionName} for ${user.name}` +
+        (args.permission === 0
+          ? ` (explicit deny — overrides the actor default; use INHERIT to fall back to it)`
+          : ''),
     };
   } catch (error) {
     return {
