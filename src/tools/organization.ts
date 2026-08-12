@@ -62,10 +62,24 @@ const UpdateFolderSchema = z
       .string()
       .optional()
       .describe('Reparent under this folder id or exact name (same type). "" = move to root.'),
+    sort: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Sidebar position among sibling folders (lower = higher in the list). Foundry orders ' +
+          'siblings by this integer, NOT alphabetically. Read the current values from ' +
+          'list-folders and pick one above/below them (Foundry spaces them by 100000).'
+      ),
   })
-  .refine(v => v.name !== undefined || v.color !== undefined || v.parentFolder !== undefined, {
-    message: 'Provide at least one of: name, color, parentFolder',
-  });
+  .refine(
+    v =>
+      v.name !== undefined ||
+      v.color !== undefined ||
+      v.parentFolder !== undefined ||
+      v.sort !== undefined,
+    { message: 'Provide at least one of: name, color, parentFolder, sort' }
+  );
 
 const MoveDocumentsSchema = z.object({
   documentType: z.enum(DOC_TYPES).describe('Type of the documents being moved.'),
@@ -109,8 +123,11 @@ export class OrganizationTools {
         name: 'list-folders',
         description:
           'Read the sidebar folder TREE — every world folder (or one document type) in tree order ' +
-          'with its id, nesting depth + "/"-joined path, hex color, parent, direct document count, ' +
-          'and subfolder count. The inspect step the folder tools were missing: find the ids/names ' +
+          'with its id, nesting depth + "/"-joined path, hex color, sidebar sort value, parent, ' +
+          'direct document count, and subfolder count. NOTE: siblings are rendered ALPHABETICALLY ' +
+          'for determinism — the real sidebar orders them by `sort`, so read that field rather ' +
+          'than inferring position from this listing. The inspect step the folder tools were ' +
+          'missing: find the ids/names ' +
           'for update-folder (rename/recolor/reparent), delete-folder, move-documents, and the ' +
           'folder params on the create tools — without guessing what exists. Read-only.',
         inputSchema: toInputSchema(ListFoldersSchema),
@@ -125,10 +142,11 @@ export class OrganizationTools {
       {
         name: 'update-folder',
         description:
-          'Update a sidebar Folder in place — rename it, recolor it, and/or reparent it (nest under ' +
-          'another folder of the same type, or pass parentFolder:"" to move it to the root). Resolves ' +
-          'the folder by exact id or exact name+type. Use this to RENAME a folder without the ' +
-          'move-documents + delete-folder dance. GM-only.',
+          'Update a sidebar Folder in place — rename it, recolor it, reposition it among its ' +
+          'siblings (sort), and/or reparent it (nest under another folder of the same type, or ' +
+          'pass parentFolder:"" to move it to the root). Resolves the folder by exact id or exact ' +
+          'name+type. Use this to RENAME a folder without the move-documents + delete-folder ' +
+          'dance, or to park a folder at the top/bottom of the sidebar. GM-only.',
         inputSchema: toInputSchema(UpdateFolderSchema),
       },
       {
@@ -165,6 +183,7 @@ export class OrganizationTools {
       for (const f of ofType) {
         const bits = [
           f.color ? `${f.color}` : null,
+          `sort ${f.sort ?? 0}`,
           `${f.documentCount} doc(s)`,
           f.subfolderCount > 0 ? `${f.subfolderCount} subfolder(s)` : null,
           f.orphaned ? 'ORPHANED (dangling parent)' : null,
@@ -187,7 +206,9 @@ export class OrganizationTools {
     if (result?.updated === false) {
       return `Folder not found: "${result?.notFound ?? parsed.identifier}" (type ${parsed.type}). Nothing changed.`;
     }
-    return `Updated ${result?.folder?.type} folder → "${result?.folder?.name}" (${result?.folder?.id}).`;
+    const sortBit =
+      parsed.sort !== undefined ? ` [sort ${result?.folder?.sort ?? parsed.sort}]` : '';
+    return `Updated ${result?.folder?.type} folder → "${result?.folder?.name}" (${result?.folder?.id})${sortBit}.`;
   }
 
   async handleMoveDocuments(args: any): Promise<string> {

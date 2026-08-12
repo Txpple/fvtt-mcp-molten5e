@@ -206,6 +206,7 @@ export function listFolders(args?: { type?: string }): unknown {
           depth,
           path,
           color: colorOf(f),
+          sort: typeof f.sort === 'number' ? f.sort : 0,
           parentId: f.folder?.id ?? null,
           parentName: f.folder?.name ?? null,
           documentCount: documents,
@@ -227,6 +228,7 @@ export function listFolders(args?: { type?: string }): unknown {
         depth: 0,
         path: String(f.name ?? ''),
         color: colorOf(f),
+        sort: typeof f.sort === 'number' ? f.sort : 0,
         parentId: f.folder?.id ?? null,
         parentName: f.folder?.name ?? null,
         documentCount: documents,
@@ -309,6 +311,7 @@ export async function updateFolder(data: {
   name?: string;
   color?: string;
   parentFolder?: string;
+  sort?: number;
 }): Promise<unknown> {
   const type = data.type || 'Actor';
   const folder =
@@ -321,6 +324,12 @@ export async function updateFolder(data: {
   const update: Record<string, unknown> = {};
   if (typeof data.name === 'string' && data.name.trim().length > 0) update.name = data.name.trim();
   if (typeof data.color === 'string') update.color = data.color;
+  // Sidebar position among siblings. Foundry orders sibling folders by this integer, NOT by name —
+  // list-folders renders alphabetically for determinism, so read `sort` from there, never infer it
+  // from the listing order.
+  if (typeof data.sort === 'number' && Number.isFinite(data.sort)) {
+    update.sort = Math.trunc(data.sort);
+  }
   if (typeof data.parentFolder === 'string') {
     const p = data.parentFolder.trim();
     if (p === '') {
@@ -340,7 +349,7 @@ export async function updateFolder(data: {
   }
 
   if (Object.keys(update).length === 0) {
-    throw new Error('Provide at least one of: name, color, parentFolder');
+    throw new Error('Provide at least one of: name, color, parentFolder, sort');
   }
 
   try {
@@ -348,7 +357,12 @@ export async function updateFolder(data: {
     return {
       success: true,
       updated: true,
-      folder: { id: folder.id ?? data.identifier, name: folder.name ?? '', type: folder.type },
+      folder: {
+        id: folder.id ?? data.identifier,
+        name: folder.name ?? '',
+        type: folder.type,
+        sort: typeof folder.sort === 'number' ? folder.sort : 0,
+      },
     };
   } catch (error) {
     throw new Error(

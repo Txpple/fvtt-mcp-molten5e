@@ -58,6 +58,7 @@ describe('handleListFolders', () => {
           path: '_DM',
           color: '#7c4dff',
           parentId: null,
+          sort: 100000,
           documentCount: 1,
           subfolderCount: 1,
         },
@@ -69,6 +70,7 @@ describe('handleListFolders', () => {
           path: '_DM/Corpses',
           color: null,
           parentId: 'fA',
+          sort: 0,
           documentCount: 4,
           subfolderCount: 0,
         },
@@ -89,8 +91,8 @@ describe('handleListFolders', () => {
     expect(calls[0][0]).toBe('listFolders');
     expect(out).toContain('Folders (3 across 2 type(s)):');
     expect(out).toContain('Actor (2):');
-    expect(out).toContain('  - "_DM" (fA) — #7c4dff, 1 doc(s), 1 subfolder(s)');
-    expect(out).toContain('    - "Corpses" (fB) — 4 doc(s)'); // depth 1 → deeper indent, no color
+    expect(out).toContain('  - "_DM" (fA) — #7c4dff, sort 100000, 1 doc(s), 1 subfolder(s)');
+    expect(out).toContain('    - "Corpses" (fB) — sort 0, 4 doc(s)'); // depth 1 → deeper indent, no color
     expect(out).toContain('Scene (1):');
   });
 
@@ -204,6 +206,46 @@ describe('handleUpdateFolder', () => {
       parentFolder: 'Treasure',
     });
     expect(calls[0][1]).toMatchObject({ color: '#4a90e2', parentFolder: 'Treasure' });
+  });
+
+  it('passes sort through and echoes the resulting position', async () => {
+    const { tools, calls } = build({
+      updated: true,
+      folder: { id: 'f3', name: '0? - Hag Encounters', type: 'Scene', sort: 900000 },
+    });
+    const out = await tools.handleUpdateFolder({
+      identifier: 'f3',
+      type: 'Scene',
+      sort: 900000,
+    });
+    expect(calls[0][1]).toMatchObject({ sort: 900000 });
+    expect(out).toBe('Updated Scene folder → "0? - Hag Encounters" (f3) [sort 900000].');
+  });
+
+  it('accepts sort as the ONLY updatable field', async () => {
+    const { tools } = build({
+      updated: true,
+      folder: { id: 'f4', name: 'Maps', type: 'Scene', sort: 10 },
+    });
+    await expect(
+      tools.handleUpdateFolder({ identifier: 'Maps', type: 'Scene', sort: 10 })
+    ).resolves.toContain('[sort 10]');
+  });
+
+  it('rejects a non-integer sort', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleUpdateFolder({ identifier: 'Maps', type: 'Scene', sort: 1.5 })
+    ).rejects.toThrow();
+  });
+
+  it('omits the sort suffix when sort was not requested', async () => {
+    const { tools } = build({
+      updated: true,
+      folder: { id: 'f5', name: 'Loot', type: 'Item', sort: 400000 },
+    });
+    const out = await tools.handleUpdateFolder({ identifier: 'Loot', type: 'Item', name: 'Loot' });
+    expect(out).toBe('Updated Item folder → "Loot" (f5).');
   });
 
   it('reports not found when the folder does not resolve', async () => {
