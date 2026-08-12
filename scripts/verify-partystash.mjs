@@ -363,9 +363,17 @@ try {
         'Item',
         member.items.filter(i => i.name === tag).map(i => i.id)
       );
-      await member.update({ [`ownership.-=${userId}`]: null });
+      // Revoke by rewriting the ownership object: `{"ownership.-=<id>": null}` silently no-ops
+      // on this field, and past runs of this script each left an OBSERVER entry pointing at a
+      // deleted user (found 2026-08-12, see scripts/clean-stale-ownership.mjs).
+      const next = {};
+      for (const [uid, level] of Object.entries(member.ownership ?? {})) {
+        if (uid !== userId) next[uid] = level;
+      }
+      await member.update({ ownership: next }, { diff: false, recursive: false });
+      const ownershipResidue = userId in (game.actors.get(bId)?.ownership ?? {});
       await game.users.get(userId)?.delete();
-      return { groupTagCount, onMember };
+      return { groupTagCount, onMember, ownershipResidue };
     },
     {
       bId: setup.bId,
@@ -380,6 +388,7 @@ try {
     `GM view agrees: group inventory unchanged (${eAfter.groupTagCount} = ${eSetup.groupTagCount} fixture items)`
   );
   assert(eAfter.onMember === true, 'GM view agrees: member kept the item');
+  assert(eAfter.ownershipResidue === false, 'temp player ownership fully revoked');
 
   // --- cleanup --------------------------------------------------------------------------------
   await f.evaluate(
