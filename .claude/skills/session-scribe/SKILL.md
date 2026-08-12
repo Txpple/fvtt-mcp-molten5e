@@ -99,6 +99,26 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
     will to shake it"; near-death → "beaten to the ragged edge of standing." NO raw numerals
     in the prose (owner tried a numbers version — "27 to hit, 15 radiant" — and rejected it as
     hard to read; the narrative-weave rewrite is the approved form).
+  - **Name the mechanics (owner feedback 2026-08-12, session 3).** When a PC or monster
+    invokes a spell, feature, feat, maneuver, or mastery, CALL IT BY ITS GAME NAME — Magic
+    Missile, Vow of Enmity, Relentless Endurance, Thunderous Smite, Action Surge, Hunter's
+    Mark, Displacement — wrapped in a bit of flavor but direct about what was used. Do NOT
+    narrate around the ability ("magic that cannot miss", "his oath's enmity", "his orcish
+    blood refused the fall"): the session-3 first draft did exactly that and the owner sent it
+    back. Approved shape: "Gren answered with Magic Missile — darts that do not argue with
+    Displacement" / "his Relentless Endurance refused the fall." Numerals stay out; names go in.
+  - **Never surface the DM's narration prompts (owner feedback 2026-08-12).** When the DM asks
+    a player to narrate ("how would you like to kill him?"), the OUTPUT of that exchange is
+    the fiction — render it as straight narration/quote and never mention the asking. Rejected
+    form: "— Thomas, asked how he'd like to finish the alpha." The ask is table process, same
+    category as UI talk.
+  - **Dreams get bullets and specificity (owner feedback 2026-08-12).** The dream sequences are
+    the campaign's central reveal engine — never compress them into a summary paragraph. Give
+    the dream section a short framing paragraph, then ONE BULLET PER DREAMER carrying the
+    specific content: the imagery, the named people (Lae'zel, the sister, the wife and
+    children, the village elders), the emotional turn, and any anomalies (Jetten's moonstone
+    necklace glowing, dreaming in trance). Same treatment in the Session Diary page. When a
+    night is DREAMLESS, that absence is itself a called-out beat.
   - **Fun endmatter, in-character only.** After Spoils & Progress, add two sections:
     **Quotable Quotes** (the night's best verbatim table lines with dry one-line attributions
     — in-character/in-world only) and **Deeds of the Day** (in-world superlative awards, one
@@ -109,6 +129,13 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
     purple: plain direct sentences, one flourish per paragraph is plenty. The first session-2
     draft was rejected as "a bit too flowery" — cut phrases like "on the lair's own dark
     heartbeat" / "truer than true"; keep the beats and the humor, lose the ornament.
+  - **Combat register: PUNCHY (owner feedback 2026-08-12, session 3).** Fight scenes are
+    exciting, with strong beats — short sentences, hard verbs, one beat per sentence, momentum
+    over ornament. "Thunder cracked across the ruin. The beast flew backward through Morgash's
+    reach — his opportunity strike killed it in the air." Long braided clauses and lyrical
+    similes are for the quiet scenes; in combat they read as flowery. Pair this with the
+    name-the-mechanics rule: named ability + hard verb + consequence is the unit of combat
+    prose.
   - **Combat beats must be factually precise and credit smart play.** Who killed what is not
     style-flexible (session-2 corrections: Gren's magic missiles killed the Broodmother, NOT
     the wisp — the wisp escaped; Morgash earned explicit credit for reading the ettercap's
