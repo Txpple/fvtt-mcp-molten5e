@@ -38,6 +38,15 @@ function findActorByIdentifier(identifier: string): any {
 /**
  * List ownership permissions per actor/player. Optionally narrow to a single
  * actor (or "all"), and/or a single player. GM users are always excluded.
+ *
+ * Reports the EFFECTIVE level and where it came from. `testUserPermission` alone
+ * collapses the two states setActorOwnership is careful to keep apart: an explicit
+ * level-0 entry and an absent key both read as NONE, and an inherited OWNER reads
+ * the same as a granted one. So each row also carries `source` ('explicit' when the
+ * actor's ownership map holds a key for that user, 'inherited' when the actor
+ * `default` is supplying the level) plus the raw explicit level, and each actor
+ * carries its `default`. Without that, a GM cannot tell whether to call
+ * set-actor-ownership with NONE or INHERIT.
  */
 export function getActorOwnership(args?: {
   actorIdentifier?: string;
@@ -59,10 +68,15 @@ export function getActorOwnership(args?: {
   const ownershipInfo: any[] = [];
 
   for (const actor of actors) {
+    const map: Record<string, number> = actor.ownership ?? {};
+    const defaultLevel = typeof map.default === 'number' ? map.default : 0;
+
     const actorInfo: any = {
       id: actor.id,
       name: actor.name,
       type: actor.type,
+      defaultPermission: PERMISSION_NAMES[defaultLevel] ?? String(defaultLevel),
+      numericDefaultPermission: defaultLevel,
       ownership: [],
     };
 
@@ -75,11 +89,20 @@ export function getActorOwnership(args?: {
             ? 1
             : 0;
 
+      // An explicit entry can hold ANY level, 0 included — presence of the key is the
+      // question, not its value, so hasOwn rather than a truthiness/`?? null` test.
+      const hasExplicit = Object.hasOwn(map, user.id);
+      const explicitLevel = hasExplicit ? map[user.id] : null;
+
       actorInfo.ownership.push({
         userId: user.id,
         userName: user.name,
         permission: PERMISSION_NAMES[permission],
         numericPermission: permission,
+        source: hasExplicit ? 'explicit' : 'inherited',
+        explicitPermission:
+          explicitLevel === null ? null : (PERMISSION_NAMES[explicitLevel] ?? String(explicitLevel)),
+        numericExplicitPermission: explicitLevel,
       });
     }
 

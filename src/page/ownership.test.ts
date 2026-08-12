@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { setActorOwnership } from './ownership.js';
+import { getActorOwnership, setActorOwnership } from './ownership.js';
 
 type UpdateCall = { data: any; options?: any };
 
@@ -110,6 +110,97 @@ describe('setActorOwnership — explicit levels', () => {
     const out = await setActorOwnership({ actorId: 'actor1', userId: 'u1', permission: 3 });
     expect(actor.ownership).toEqual({ default: 0, u2: 2, u1: 3 });
     expect(out.message).toBe('Set The Party ownership to OWNER for John');
+  });
+});
+
+/**
+ * Install a fake `game` for the READ path: one actor carrying `ownership`, plus a
+ * player and a GM. `testUserPermission` mirrors Foundry's cascade — GMs are always
+ * OWNER, everyone else gets their explicit entry or falls back to `default`.
+ */
+function stubReadWorld(ownership: Record<string, number> | undefined) {
+  const LEVELS: Record<string, number> = { NONE: 0, LIMITED: 1, OBSERVER: 2, OWNER: 3 };
+  const actor: any = {
+    id: 'actor1',
+    name: 'The Party',
+    type: 'group',
+    ownership: ownership ? { ...ownership } : undefined,
+    testUserPermission: (user: any, level: string) => {
+      const map = actor.ownership ?? {};
+      const held = user.isGM ? 3 : (map[user.id] ?? map.default ?? 0);
+      return held >= LEVELS[level];
+    },
+  };
+  const users = [
+    { id: 'u1', name: 'John', isGM: false },
+    { id: 'gm', name: 'Gamemaster', isGM: true },
+  ];
+  (globalThis as any).game = {
+    actors: { contents: [actor] },
+    users: { contents: users, get: (id: string) => users.find(u => u.id === id) },
+  };
+  return { actor };
+}
+
+/** The single row getActorOwnership produces for the lone player. */
+function readRow(): any {
+  return (getActorOwnership({ actorIdentifier: 'all' }) as any[])[0];
+}
+
+describe('getActorOwnership — explicit vs inherited', () => {
+  it('marks an explicit level-0 entry as an explicit DENY, not an absent one', async () => {
+    // The party-stash shape: default OWNER, one player pinned to an explicit 0. Both this
+    // and "no entry at all on a default-NONE actor" read as NONE — only `source` separates
+    // them, and that is what decides between set-actor-ownership NONE and INHERIT.
+    stubReadWorld({ default: 3, u1: 0 });
+
+    const info = readRow();
+    expect(info.defaultPermission).toBe('OWNER');
+    expect(info.numericDefaultPermission).toBe(3);
+    expect(info.ownership).toEqual([
+      {
+        userId: 'u1',
+        userName: 'John',
+        permission: 'NONE',
+        numericPermission: 0,
+        source: 'explicit',
+        explicitPermission: 'NONE',
+        numericExplicitPermission: 0,
+      },
+    ]);
+  });
+
+  it('marks a level the player only gets from the actor default as inherited', async () => {
+    stubReadWorld({ default: 3 });
+
+    const row = readRow().ownership[0];
+    expect(row.permission).toBe('OWNER');
+    expect(row.source).toBe('inherited');
+    expect(row.explicitPermission).toBeNull();
+    expect(row.numericExplicitPermission).toBeNull();
+  });
+
+  it('reports a granted entry as explicit even when it matches the default', async () => {
+    stubReadWorld({ default: 2, u1: 2 });
+
+    const row = readRow().ownership[0];
+    expect(row.permission).toBe('OBSERVER');
+    expect(row.source).toBe('explicit');
+    expect(row.explicitPermission).toBe('OBSERVER');
+  });
+
+  it('defaults to NONE when the actor carries no ownership map at all', async () => {
+    stubReadWorld(undefined);
+
+    const info = readRow();
+    expect(info.defaultPermission).toBe('NONE');
+    expect(info.numericDefaultPermission).toBe(0);
+    expect(info.ownership[0]).toMatchObject({ permission: 'NONE', source: 'inherited' });
+  });
+
+  it('still excludes GM users, who test as OWNER on everything', async () => {
+    stubReadWorld({ default: 0 });
+    expect(readRow().ownership.map((r: any) => r.userId)).toEqual(['u1']);
   });
 });
 

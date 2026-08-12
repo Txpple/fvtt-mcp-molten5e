@@ -79,7 +79,7 @@ export class OwnershipTools {
       {
         name: 'list-actor-ownership',
         description:
-          'List current ownership permissions for actors, showing which players have what access levels.',
+          "List current ownership permissions for actors, showing which players have what access levels. Each row reports the EFFECTIVE level plus its `source`: 'explicit' (the actor's ownership map holds an entry for that player) or 'inherited' (the actor's `default`, also reported per actor as defaultPermission). Use it to tell an explicit NONE — a stored deny that overrides a permissive default — from a player who simply has no entry.",
         inputSchema: toInputSchema(ListActorOwnershipSchema),
       },
     ];
