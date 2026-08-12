@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 142 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 143 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -71,7 +71,10 @@ describe('tool registry', () => {
     // + create-group / manage-group-members / get-group / set-primary-party (dnd5e group
     //   actors — the shared party stash; membership via system.addMember/removeMember, the
     //   group-shaped read, and the dnd5e primaryParty world setting, one typed tool per setting)
-    expect(names.length).toBe(142);
+    // + disconnect-bridge (bridge-lifecycle courtesy logout: dispose the Playwright session so the
+    //   DM Assistant user goes inactive; the next tool call reconnects lazily — "log out please"
+    //   no longer requires exiting Claude Code)
+    expect(names.length).toBe(143);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -108,6 +111,18 @@ describe('tool registry', () => {
     expect(names.has('delete-note')).toBe(true);
     expect(typeof handlers['update-note']).toBe('function');
     expect(typeof handlers['delete-note']).toBe('function');
+  });
+
+  it('registers disconnect-bridge and dispatches it to the seam lifecycle, not foundry.call', async () => {
+    const { foundry, calls } = makeFoundry();
+    const { tools, handlers, dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
+    expect(tools.map(t => t.name)).toContain('disconnect-bridge');
+    expect(typeof handlers['disconnect-bridge']).toBe('function');
+
+    const result = await dispatch('disconnect-bridge', {});
+    expect(foundry.dispose).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]); // a page call would reconnect the session being closed
+    expect(result).toContain('Disconnected');
   });
 
   it('registers screenshot-scene (headless canvas capture for visual QA)', () => {

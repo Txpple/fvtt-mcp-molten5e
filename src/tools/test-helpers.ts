@@ -42,6 +42,10 @@ export function makeFoundry(response: any = {}): {
     // The bridge seam also exposes screenshot(outPath) (Playwright-level). Recorded as a no-op so
     // tool handlers that capture screenshots can be exercised offline.
     screenshot: vi.fn(async (_outPath: string) => {}),
+    // Session lifecycle (used by disconnect-bridge): a "connected" default so the logout path is
+    // the one exercised; override isReady per-test for the already-disconnected branch.
+    isReady: vi.fn(() => true),
+    dispose: vi.fn(async () => {}),
   };
   return { foundry, calls };
 }

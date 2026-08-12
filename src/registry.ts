@@ -46,6 +46,7 @@ import { MacroTools } from './tools/macros.js';
 import { CombatTrackerTools } from './tools/combat-tracker.js';
 import { OrganizationTools } from './tools/organization.js';
 import { PackReaderTools } from './tools/pack-reader.js';
+import { BridgeTools } from './tools/bridge.js';
 
 export interface ToolRegistry {
   /** Advertised tool definitions — one per dispatchable handler, derived from `handlers`. */
@@ -116,6 +117,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   // foundryvtt-cli child process. Seeds the tom-cartos-import skill (docs/tom-cartos-import-plan.md).
   const packReaderTools = new PackReaderTools({ logger });
 
+  // Bridge session lifecycle: disconnect-bridge logs the DM Assistant user out of the live world
+  // (disposes the Playwright session) without ending the MCP process; the next tool call
+  // reconnects lazily. Drives the seam's isReady/dispose directly — no foundry.call().
+  const bridgeTools = new BridgeTools({ foundry, logger });
+
   // Unified add-feature tool: composes the three mode schemas (feature / compendium-features /
   // items) — each generated from the owning handler's zod — into a single-entry `add-feature`.
   const addFeatureTool = buildAddFeatureTool();
@@ -156,6 +162,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...combatTrackerTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
     ...packReaderTools.getToolDefinitions(),
+    ...bridgeTools.getToolDefinitions(),
   ]) {
     defByName.set(def.name, def);
   }
@@ -373,6 +380,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
     // Combat tracker (the core.combatTrackerConfig world setting — custom turn marker etc.)
     'configure-combat-tracker': args => combatTrackerTools.handleConfigureCombatTracker(args),
+
+    // Bridge session lifecycle (courtesy logout — the next tool call reconnects)
+    'disconnect-bridge': args => bridgeTools.handleDisconnectBridge(args),
 
     // Organization & batch
     'list-folders': args => organizationTools.handleListFolders(args),

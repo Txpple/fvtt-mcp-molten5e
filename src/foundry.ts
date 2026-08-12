@@ -39,6 +39,15 @@ export interface FoundryBridge {
    * overlay) to shoot a specific scene. Visual QA for scene/import work.
    */
   screenshot(outPath: string): Promise<void>;
+  /** Is the live session currently up (page open + bridge marked ready)? */
+  isReady(): boolean;
+  /**
+   * Tear down the live session: close the headless browser so the bridge user leaves the world
+   * (goes inactive). Idempotent and safe while disconnected. The bridge stays usable — the next
+   * `call()` reconnects lazily (wake -> join -> game.ready -> inject), which is what lets the
+   * disconnect-bridge tool log out without ending the MCP process.
+   */
+  dispose(): Promise<void>;
 }
 
 export interface FoundryConfig {
@@ -499,6 +508,10 @@ export class Foundry implements FoundryBridge {
   }
 
   async dispose(): Promise<void> {
+    // A dispose racing an in-flight connect (e.g. disconnect-bridge fired while the first tool
+    // call is still joining) must not tear down half a session and leave a freshly-opened browser
+    // orphaned: let the connect settle either way, then close everything it opened.
+    await this.connecting?.catch(() => {});
     this.ready = false;
     await this.context?.close().catch(() => {});
     await this.browser?.close().catch(() => {});
