@@ -1,11 +1,13 @@
 /**
- * Offline unit tests for the journal OWNERSHIP CONTRACT helpers (src/page/journals.ts).
+ * Offline unit tests for the journal OWNERSHIP CONTRACT + APPEND-SORT helpers (src/page/journals.ts).
  *
- * These encode the two rules that a per-page grant alone gets wrong, and that cost a live campaign
- * a set of unreachable handouts:
+ * These encode the two ownership rules that a per-page grant alone gets wrong, and that cost a live
+ * campaign a set of unreachable handouts:
  *   1. a player-visible PAGE inside a GM-only ENTRY is invisible — players never see the journal;
  *   2. a page at ownership -1 INHERITS the entry, so opening an entry can reveal pages nobody meant
  *      to reveal.
+ * Plus the append-sort rule that put the Session Diary out of order: a created page defaults to
+ * sort 0 and displays BEFORE siblings with positive sorts, so appends must carry max+DENSITY.
  * The page-coupled write paths themselves are exercised by scripts/verify-journal-tooling.mjs.
  */
 
@@ -15,6 +17,7 @@ import {
   applyEntryOwnershipContract,
   pinInheritingPages,
   appendPageOwnership,
+  appendPageSort,
   OWNERSHIP_OBSERVER,
   OWNERSHIP_GM_ONLY,
   OWNERSHIP_INHERIT,
@@ -112,5 +115,41 @@ describe('appendPageOwnership', () => {
 
   it('leaves an unspecified page to inherit a GM-only entry (nothing to leak)', () => {
     expect(appendPageOwnership(closedEntry)).toEqual({});
+  });
+});
+
+describe('appendPageSort', () => {
+  // Offline (no Foundry CONST) the helper falls back to the documented v14 value.
+  const DENSITY = 100000;
+  const journalWith = (...sorts: Array<number | undefined>) => ({
+    pages: { contents: sorts.map((sort, i) => ({ id: `p${i}`, sort })) },
+  });
+
+  it('appends AFTER the highest existing sort — a created page must never display first', () => {
+    expect(appendPageSort(journalWith(100000, 300000, 200000))).toEqual({
+      sort: 300000 + DENSITY,
+    });
+  });
+
+  it('spaces from 0 when every existing page still sits at the Foundry default', () => {
+    expect(appendPageSort(journalWith(0, 0))).toEqual({ sort: DENSITY });
+  });
+
+  it('treats a missing sort as 0 and ignores negative sorts below it', () => {
+    expect(appendPageSort(journalWith(undefined, -100000))).toEqual({ sort: DENSITY });
+  });
+
+  it('handles an empty journal and a journal shape without pages', () => {
+    expect(appendPageSort(journalWith())).toEqual({ sort: DENSITY });
+    expect(appendPageSort({})).toEqual({ sort: DENSITY });
+  });
+
+  it('reads CONST.SORT_INTEGER_DENSITY off the page global when Foundry provides it', () => {
+    (globalThis as any).CONST = { SORT_INTEGER_DENSITY: 1000 };
+    try {
+      expect(appendPageSort(journalWith(5000))).toEqual({ sort: 6000 });
+    } finally {
+      delete (globalThis as any).CONST;
+    }
   });
 });

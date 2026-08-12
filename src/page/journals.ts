@@ -166,6 +166,7 @@ export async function updateJournalContent(request: {
         text: {
           content: request.content,
         },
+        ...appendPageSort(journal),
         ...appendPageOwnership(journal, request.ownership),
       },
     ]);
@@ -211,6 +212,7 @@ export async function updateJournalContent(request: {
         text: {
           content: request.content,
         },
+        ...appendPageSort(journal),
         ...appendPageOwnership(journal),
       },
     ]);
@@ -302,6 +304,27 @@ export function appendPageOwnership(
   if (requested) return { ownership: requested };
   const entryDefault = journal?.ownership?.default ?? OWNERSHIP_GM_ONLY;
   return entryDefault >= OWNERSHIP_OBSERVER ? { ownership: { default: OWNERSHIP_GM_ONLY } } : {};
+}
+
+// CONST.SORT_INTEGER_DENSITY — read off the page global at call time so offline tests
+// (no Foundry) get the documented v14 value.
+function sortDensity(): number {
+  return (globalThis as any).CONST?.SORT_INTEGER_DENSITY ?? 100000;
+}
+
+/**
+ * Pure. The sort a page being APPENDED should carry. Foundry defaults a created page's sort
+ * to 0, which orders it BEFORE every sibling holding a positive sort — an appended page that
+ * displays FIRST. max(existing sorts) + SORT_INTEGER_DENSITY puts it last, with Foundry's own
+ * inter-key spacing.
+ */
+export function appendPageSort(journal: any): { sort: number } {
+  const pages: any[] = journal?.pages?.contents ?? [];
+  const maxSort = pages.reduce(
+    (max, p) => Math.max(max, typeof p?.sort === 'number' ? p.sort : 0),
+    0
+  );
+  return { sort: maxSort + sortDensity() };
 }
 
 /**

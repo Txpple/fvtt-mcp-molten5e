@@ -14,7 +14,12 @@
 
 import { normalizeAssetPath, basename, isVideoPath, resolveJournalStrict } from './_shared.js';
 import { imgResolves, badAssetWarning } from './img-resolve.js';
-import { appendPageOwnership, openEntryForHandouts, OWNERSHIP_OBSERVER } from './journals.js';
+import {
+  appendPageOwnership,
+  appendPageSort,
+  openEntryForHandouts,
+  OWNERSHIP_OBSERVER,
+} from './journals.js';
 import { resolveCreatureIcon } from './dnd5e/icons.js';
 
 /**
@@ -229,6 +234,7 @@ export async function addJournalImage(data: {
     type: 'image',
     name: data.pageName || basename(src),
     src,
+    ...appendPageSort(journal),
   };
   if (data.caption) pageData.image = { caption: data.caption };
   // playerVisible -> page ownership OBSERVER (2). Otherwise appendPageOwnership pins the page
