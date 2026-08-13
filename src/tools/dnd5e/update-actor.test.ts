@@ -233,6 +233,68 @@ describe('handleUpdateActor', () => {
     expect(call?.[1].currency).toEqual({ mode: 'add', gp: -10 });
   });
 
+  it('forwards the NPC spellcasting group (caster level + casting ability)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Skeletal Mage', type: 'npc' },
+      applied: ['spellcasting.level', 'spellcasting.ability'],
+      warnings: [],
+    });
+    const res = await tool.handleUpdateActor({
+      actorIdentifier: 'Skeletal Mage',
+      spellcasting: { level: 3, ability: 'int' },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].spellcasting).toEqual({ level: 3, ability: 'int' });
+    expect(res.applied).toEqual(['spellcasting.level', 'spellcasting.ability']);
+  });
+
+  it('accepts a caster level of 0 (not a slot caster — the 2024-MM free-cast default)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Wight', type: 'npc' },
+      applied: ['spellcasting.level'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Wight',
+      spellcasting: { level: 0 },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].spellcasting).toEqual({ level: 0 });
+  });
+
+  it('accepts an empty-string casting ability (clears it)', async () => {
+    const { tool, calls } = makeTool({
+      success: true,
+      actor: { id: 'a1', name: 'Wight', type: 'npc' },
+      applied: ['spellcasting.ability'],
+      warnings: [],
+    });
+    await tool.handleUpdateActor({
+      actorIdentifier: 'Wight',
+      spellcasting: { ability: '' },
+    });
+    const call = calls.find(([n]) => n === 'updateActor');
+    expect(call?.[1].spellcasting).toEqual({ ability: '' });
+  });
+
+  it('rejects a caster level outside 0-20 and an unknown casting ability', async () => {
+    const { tool } = makeTool();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', spellcasting: { level: 21 } })
+    ).rejects.toThrow();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', spellcasting: { level: -1 } })
+    ).rejects.toThrow();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', spellcasting: { level: 2.5 } })
+    ).rejects.toThrow();
+    await expect(
+      tool.handleUpdateActor({ actorIdentifier: 'X', spellcasting: { ability: 'luck' } })
+    ).rejects.toThrow();
+  });
+
   it('rejects a non-integer coin amount', async () => {
     const { tool } = makeTool();
     await expect(

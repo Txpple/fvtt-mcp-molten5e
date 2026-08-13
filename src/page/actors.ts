@@ -1550,6 +1550,8 @@ export async function removeActorItems(params: {
  *  - defenses:   damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities
  *                (Set fields with mode replace|add|remove via read-modify-write), languages, telepathy
  *  - resources*: legendaryActions, legendaryResistances, lair
+ *  - spellcasting*: {level, ability} — caster level (attributes.spell.level, what slot pools derive
+ *                from) + casting ability (attributes.spellcasting, what save DC / attack derive from)
  *  - 2024*:      habitat, treasure
  *
  * Fields marked * are NPC-only; on a non-NPC actor they are skipped with a warning (we don't grow PC
@@ -1972,6 +1974,25 @@ export async function updateActor(params: any): Promise<unknown> {
       update['system.resources.lair.initiative'] = params.lair.initiative;
     }
     applied.push('lair');
+  }
+
+  // --- spellcasting (NPC) ---
+  // `attributes.spell.level` is the NPC sheet's "Spellcasting Level" (migrated from the legacy
+  // details.spellLevel). It is the field slot pools DERIVE from: dnd5e recomputes
+  // system.spells.spellN.max every prepareDerivedData cycle, so writing .max directly does NOT
+  // stick — a slot pool written that way reads back as "<value>/0" and a long rest restores it to
+  // 0. Setting the caster level here is what makes the derived max real. PCs derive both this and
+  // the casting ability from class advancement, so the whole group is NPC-gated.
+  if (params.spellcasting && typeof params.spellcasting === 'object') {
+    const sc = params.spellcasting;
+    if (typeof sc.level === 'number' && npcOnly('spellcasting.level')) {
+      update['system.attributes.spell.level'] = sc.level;
+      applied.push('spellcasting.level');
+    }
+    if (typeof sc.ability === 'string' && npcOnly('spellcasting.ability')) {
+      update['system.attributes.spellcasting'] = sc.ability;
+      applied.push('spellcasting.ability');
+    }
   }
 
   // --- 2024 fields (NPC) ---

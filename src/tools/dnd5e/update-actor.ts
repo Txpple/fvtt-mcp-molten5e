@@ -297,6 +297,36 @@ const UpdateActorSchema = z.object({
       '[NPC] Lair actions — sets the lair initiative count (marks the creature as having a lair).'
     ),
 
+  // spellcasting (NPC)
+  spellcasting: z
+    .object({
+      level: z
+        .number()
+        .int()
+        .min(0)
+        .max(20)
+        .optional()
+        .describe(
+          'Caster level — the NPC sheet\'s "Spellcasting Level" (system.attributes.spell.level). ' +
+            'This is what DERIVES the spell-slot pools: leave it 0 and the sheet shows slots as "4/0" ' +
+            'and a long rest restores them to nothing. 0 = not a slot caster (the 2024-MM default, ' +
+            'where monsters use 1/Day free casts instead of slots — see add-free-cast).'
+        ),
+      ability: z
+        .union([ABILITY, z.literal('')])
+        .optional()
+        .describe(
+          'Casting ability (system.attributes.spellcasting) — drives spell save DC (8 + prof + mod) ' +
+            'and spell attack bonus. "" clears it. A caster left unset computes off a +0 modifier, ' +
+            'so an INT 16 mage reads DC 10 instead of DC 13 until this is set.'
+        ),
+    })
+    .optional()
+    .describe(
+      '[NPC] Spellcasting configuration — caster level and/or casting ability. PCs derive both from ' +
+        'their class advancement, so this group is skipped with a warning on a player character.'
+    ),
+
   // 2024 fields (NPC)
   habitat: z
     .array(z.object({ type: z.string(), subtype: z.string().optional() }))
@@ -360,6 +390,8 @@ export class DnD5eUpdateActorTool {
           '• defenses — damageImmunities / damageResistances / damageVulnerabilities / conditionImmunities / languages ' +
           '(each {mode: replace|add|remove, values, custom?}), telepathy\n' +
           '• resources* — legendaryActions, legendaryResistances, lair\n' +
+          '• spellcasting* — {level, ability}: caster level (the sheet\'s "Spellcasting Level", which ' +
+          'DERIVES the slot pools) + casting ability (which drives save DC / attack bonus)\n' +
           '• 2024* — habitat, treasure\n' +
           '• currency — coins {mode: set|add, pp, gp, ep, sp, cp} (carried money)\n\n' +
           'Fields marked * are NPC-only (skipped with a warning on player characters). This authors the ' +
