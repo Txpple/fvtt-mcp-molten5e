@@ -88,8 +88,10 @@ export class UserTools {
         name: 'list-users',
         description:
           'List every user account in the world: id, name, role (player/trusted/assistant/' +
-          'gamemaster), whether they are currently connected, player color, pronouns, avatar, and ' +
-          'their assigned character. The read to run before update-user.',
+          'gamemaster), whether they are currently connected, player color, pronouns, avatar, ' +
+          'their assigned character, and their LANDING SCENE if one is set (where they come up at ' +
+          'login — shown only when assigned, since an unassigned user just follows the active ' +
+          'scene). The read to run before update-user and set-landing-scene.',
         inputSchema: toInputSchema(ListUsersSchema),
       },
       {
@@ -117,10 +119,18 @@ export class UserTools {
     const r = await this.foundry.call('listUsers');
     const users = Array.isArray(r?.users) ? r.users : [];
     const lines = users.map((u: any) => {
+      // A landing scene is only reported when SET: an unassigned user follows the active scene,
+      // which is core's own behavior and not worth a line each. A dangling id (the scene was
+      // deleted out from under the flag) has no name to print, so show the id — that is exactly
+      // the case someone needs to see in order to clear it.
+      const landing = u.landingScene
+        ? [`lands on: ${u.landingScene.name ?? `⚠️ deleted scene ${u.landingScene.id}`}`]
+        : [];
       const bits = [
         `role ${u.role} (${u.roleLabel})`,
         u.active ? 'CONNECTED' : 'offline',
         ...(u.character ? [`character: ${u.character.name}`] : []),
+        ...landing,
         ...(u.isBridgeUser ? ['← bridge user'] : []),
       ];
       return `- **${u.name}** (\`${u.id}\`) — ${bits.join(' · ')}`;

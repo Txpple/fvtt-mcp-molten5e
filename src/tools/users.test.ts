@@ -58,6 +58,61 @@ describe('list-users', () => {
     const out = await tools.handleListUsers({});
     expect(out).toContain('← bridge user');
   });
+
+  // list-users is the read for set-landing-scene, so an assignment has to be VISIBLE here.
+  it('reports a landing scene when one is set, and stays quiet when it is not', async () => {
+    const { tools } = build({
+      count: 2,
+      users: [
+        {
+          id: 'p1',
+          name: 'Tom',
+          role: 2,
+          roleLabel: 'trusted',
+          active: false,
+          character: { id: 'a1', name: 'Gren Greenmantle' },
+          landingScene: { id: 's1', name: "Former Adventurers' Camp" },
+          isBridgeUser: false,
+        },
+        {
+          id: 'p2',
+          name: 'Andrew',
+          role: 1,
+          roleLabel: 'player',
+          active: false,
+          character: null,
+          landingScene: null,
+          isBridgeUser: false,
+        },
+      ],
+    });
+    const out = await tools.handleListUsers({});
+    expect(out).toContain("lands on: Former Adventurers' Camp");
+    // An unassigned user follows the active scene — core's own behavior, not worth a line each.
+    expect(out).toContain('**Andrew** (`p2`) — role 1 (player) · offline');
+    expect(out).not.toContain('**Andrew** (`p2`) — role 1 (player) · offline · lands on');
+  });
+
+  // The flag outlives the scene it points at; that dangling id is the one a GM must see to clear.
+  it('flags a landing scene whose target was deleted, showing the id', async () => {
+    const { tools } = build({
+      count: 1,
+      users: [
+        {
+          id: 'p1',
+          name: 'Tom',
+          role: 2,
+          roleLabel: 'trusted',
+          active: false,
+          character: null,
+          landingScene: { id: 'goneScene', name: null },
+          isBridgeUser: false,
+        },
+      ],
+    });
+    const out = await tools.handleListUsers({});
+    expect(out).toContain('⚠️ deleted scene goneScene');
+  });
 });
 
 describe('update-user', () => {
