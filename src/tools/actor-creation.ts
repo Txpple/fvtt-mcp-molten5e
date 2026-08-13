@@ -94,6 +94,76 @@ const CreateActorFromCompendiumSchema = z.object({
     ),
 });
 
+// Foundry ownership permission levels the duplicate-actor `ownershipLevel` enum maps onto
+// (mirrors OwnershipLevels in src/tools/ownership.ts; NONE/INHERIT deliberately absent — a
+// duplicate is either granted to a user or inherits the source's whole ownership map).
+const DUPLICATE_OWNERSHIP_LEVELS = {
+  LIMITED: 1,
+  OBSERVER: 2,
+  OWNER: 3,
+} as const;
+
+const DuplicateActorSchema = z
+  .object({
+    actorIdentifiers: z
+      .array(z.string().min(1))
+      .min(1, 'At least one actor identifier is required')
+      .describe(
+        'Source actors to duplicate — exact actor names or IDs (e.g., ["Gren"] or ' +
+          '["5GRD8GE7GJUWEbB2"]). Resolution is STRICT (exact id, then exact name — no fuzzy ' +
+          'matching), so look up the precise name/ID with list-actors first.'
+      ),
+    newNames: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        'Names for the copies, aligned by index with actorIdentifiers. Entries the array does ' +
+          'not cover fall back to the source name + suffix. Omit to name every copy that way.'
+      ),
+    suffix: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Appended to each SOURCE name to build a copy's name when newNames does not supply one " +
+          '(e.g. " (Sim)" → "Gren (Sim)"). Default: " (Copy)".'
+      ),
+    folder: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Actor folder to file ALL the copies under — a folder id or exact name (created if ' +
+          'absent), same contract as create-actor-from-compendium. Omit to file each copy ' +
+          "beside its source (the source actor's own folder)."
+      ),
+    owner: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'User who should own the copies — a user id or exact/partial user name. When set, each ' +
+          "copy's ownership becomes exactly {default: NONE, this user: ownershipLevel}. Omit to " +
+          "copy the source actor's ownership unchanged."
+      ),
+    ownershipLevel: z
+      .enum(['OWNER', 'OBSERVER', 'LIMITED'])
+      .default('OWNER')
+      .describe(
+        'Permission level the `owner` user gets on each copy (default OWNER — full control, the ' +
+          'sandbox use case). Only meaningful together with owner.'
+      ),
+  })
+  .superRefine((v, ctx) => {
+    if (v.newNames && v.newNames.length > v.actorIdentifiers.length) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'newNames has more entries than actorIdentifiers — align the two by index',
+        path: ['newNames'],
+      });
+    }
+  });
+
 const DeleteActorSchema = z.object({
   identifiers: z
     .array(z.string().min(1))
@@ -156,6 +226,22 @@ export class ActorCreationTools {
           'exact name, created if absent) to file the copies directly — no move-documents follow-up. ' +
           'For a fully hand-authored NPC with no compendium base, use author-npc (last resort).',
         inputSchema: toInputSchema(CreateActorFromCompendiumSchema),
+      },
+      {
+        name: 'duplicate-actor',
+        description:
+          'Clone one or more existing WORLD actors as full copies — the whole sheet travels ' +
+          '(system data, embedded items, spells, effects, prototype token), so every copy stays ' +
+          'fully rollable. THE sandbox path: clone PCs as "(Sim)" copies (suffix: " (Sim)") so a ' +
+          'player can re-run a battle without touching the real sheets. Resolution is STRICT ' +
+          '(exact id or exact name — look up with list-actors first); a missing source is ' +
+          'reported per-actor, never fatal to the batch. Name the copies with newNames[] ' +
+          '(index-aligned) or a suffix on every source name (default " (Copy)"). Pass folder ' +
+          '(id or exact name, created if absent) to file the copies together — omit to file ' +
+          'each beside its source. Pass owner (user id or exact/partial name; + ownershipLevel, ' +
+          "default OWNER) to set each copy's ownership to exactly {default: NONE, that user: " +
+          "level} — omit to copy the source's ownership unchanged. GM-only.",
+        inputSchema: toInputSchema(DuplicateActorSchema),
       },
       {
         name: 'delete-actor',
@@ -245,6 +331,84 @@ export class ActorCreationTools {
       itemId,
       customNames.slice(0, finalQuantity)
     );
+  }
+
+  /**
+   * Handle duplication of one or more world actors (toObject clone → rename →
+   * folder → ownership → Actor.create; per-actor error isolation page-side)
+   */
+  async handleDuplicateActor(args: any): Promise<any> {
+    const { actorIdentifiers, newNames, suffix, folder, owner, ownershipLevel } =
+      DuplicateActorSchema.parse(args);
+
+    this.logger.info('Duplicating actor(s)', {
+      actorIdentifiers,
+      folder,
+      owner,
+      ownershipLevel,
+    });
+
+    const result = await this.foundry.call('duplicateActor', {
+      actorIdentifiers,
+      ...(newNames ? { newNames } : {}),
+      ...(suffix ? { suffix } : {}),
+      ...(folder ? { folder } : {}),
+      // ownershipLevel only travels alongside owner — without a user to grant it
+      // to, the page copies the source's ownership map unchanged.
+      ...(owner ? { owner, ownershipLevel: DUPLICATE_OWNERSHIP_LEVELS[ownershipLevel] } : {}),
+    });
+
+    this.logger.info('Actor duplication completed', {
+      totalCreated: result.totalCreated,
+      totalRequested: result.totalRequested,
+      notFound: result.notFound?.length || 0,
+      hasErrors: !!result.errors,
+    });
+
+    return this.formatDuplicateActorResponse(result, ownershipLevel);
+  }
+
+  /**
+   * Format actor duplication response
+   */
+  private formatDuplicateActorResponse(result: any, ownershipLevel: string): any {
+    const created = result.totalCreated || 0;
+    const requested = result.totalRequested || 0;
+    const summary = `✅ Duplicated ${created} of ${requested} actor${requested === 1 ? '' : 's'}`;
+
+    const rows = (result.actors || [])
+      .map(
+        (a: any) =>
+          `• **${a.name}** (${a.id}) ← ${a.sourceName}${a.folderName ? ` — 📁 ${a.folderName}` : ''}`
+      )
+      .join('\n');
+
+    const ownerInfo = result.owner
+      ? `\n🔐 Copies owned by **${result.owner.name}** (${ownershipLevel}); everyone else inherits NONE`
+      : '';
+
+    const notFoundInfo =
+      result.notFound?.length > 0
+        ? `\n⚠️ Not found (nothing duplicated): ${result.notFound.join(', ')}`
+        : '';
+
+    const warningsInfo = result.warnings?.length > 0 ? `\n⚠️ ${result.warnings.join('; ')}` : '';
+
+    const errorInfo = result.errors?.length > 0 ? `\n⚠️ Issues: ${result.errors.join(', ')}` : '';
+
+    return {
+      summary,
+      success: result.success,
+      details: {
+        actors: result.actors || [],
+        ...(result.owner ? { owner: result.owner } : {}),
+        notFound: result.notFound,
+        warnings: result.warnings,
+        errors: result.errors,
+      },
+      message:
+        summary + (rows ? `\n\n${rows}` : '') + ownerInfo + notFoundInfo + warningsInfo + errorInfo,
+    };
   }
 
   /**

@@ -1,6 +1,6 @@
 /**
  * Unit tests for ActorCreationTools
- * (create-actor-from-compendium, delete-actor, delete-folder).
+ * (create-actor-from-compendium, duplicate-actor, delete-actor, delete-folder).
  *
  * Each handler owns three things around the bridge call:
  *   1. zod input validation — required ids/names, non-empty strings, enum
@@ -22,13 +22,18 @@ function build(response: any = {}) {
 }
 
 describe('ActorCreationTools.getToolDefinitions', () => {
-  it('exposes the compendium-pull tool and the delete tools', () => {
+  it('exposes the compendium-pull tool, the duplicate tool, and the delete tools', () => {
     const { tools } = build();
     const names = tools
       .getToolDefinitions()
       .map(t => t.name)
       .sort();
-    expect(names).toEqual(['create-actor-from-compendium', 'delete-actor', 'delete-folder']);
+    expect(names).toEqual([
+      'create-actor-from-compendium',
+      'delete-actor',
+      'delete-folder',
+      'duplicate-actor',
+    ]);
   });
 
   it('every definition has an object inputSchema', () => {
@@ -409,6 +414,161 @@ describe('handleCreateActorFromCompendium', () => {
         names: ['X'],
         placement: { type: 'spiral' },
       })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleDuplicateActor', () => {
+  const oneCopy = {
+    success: true,
+    totalCreated: 1,
+    totalRequested: 1,
+    actors: [{ id: 'c1', name: 'Gren (Sim)', sourceId: 'a1', sourceName: 'Gren' }],
+  };
+
+  it('forwards the duplicateActor bridge call with the identifiers and suffix', async () => {
+    const { tools, calls } = build(oneCopy);
+    await tools.handleDuplicateActor({ actorIdentifiers: ['Gren'], suffix: ' (Sim)' });
+    expect(calls[0][0]).toBe('duplicateActor');
+    expect(calls[0][1]).toMatchObject({ actorIdentifiers: ['Gren'], suffix: ' (Sim)' });
+  });
+
+  it('omits the optional keys the caller did not supply', async () => {
+    const { tools, calls } = build(oneCopy);
+    await tools.handleDuplicateActor({ actorIdentifiers: ['Gren'] });
+    expect(calls[0][1]).not.toHaveProperty('newNames');
+    expect(calls[0][1]).not.toHaveProperty('suffix');
+    expect(calls[0][1]).not.toHaveProperty('folder');
+  });
+
+  it('maps the ownershipLevel enum onto the numeric Foundry level alongside owner', async () => {
+    const { tools, calls } = build(oneCopy);
+    await tools.handleDuplicateActor({
+      actorIdentifiers: ['Gren'],
+      owner: 'Tom',
+      ownershipLevel: 'OBSERVER',
+    });
+    expect(calls[0][1]).toMatchObject({ owner: 'Tom', ownershipLevel: 2 });
+  });
+
+  it('defaults the granted level to OWNER (3) when owner is given without one', async () => {
+    const { tools, calls } = build(oneCopy);
+    await tools.handleDuplicateActor({ actorIdentifiers: ['Gren'], owner: 'Tom' });
+    expect(calls[0][1].ownershipLevel).toBe(3);
+  });
+
+  it('sends no ownershipLevel without an owner (the source ownership map travels instead)', async () => {
+    const { tools, calls } = build(oneCopy);
+    await tools.handleDuplicateActor({ actorIdentifiers: ['Gren'] });
+    expect(calls[0][1]).not.toHaveProperty('owner');
+    expect(calls[0][1]).not.toHaveProperty('ownershipLevel');
+  });
+
+  it('formats the copy list as "copy ← source" with the folder it landed in', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 2,
+      totalRequested: 2,
+      actors: [
+        {
+          id: 'c1',
+          name: 'Gren (Sim)',
+          sourceId: 'a1',
+          sourceName: 'Gren',
+          folderName: '99 - Battle Sim',
+        },
+        {
+          id: 'c2',
+          name: 'Jetten (Sim)',
+          sourceId: 'a2',
+          sourceName: 'Jetten',
+          folderName: '99 - Battle Sim',
+        },
+      ],
+    });
+    const out = await tools.handleDuplicateActor({
+      actorIdentifiers: ['Gren', 'Jetten'],
+      suffix: ' (Sim)',
+      folder: '99 - Battle Sim',
+    });
+    expect(out.summary).toBe('✅ Duplicated 2 of 2 actors');
+    expect(out.message).toContain('• **Gren (Sim)** (c1) ← Gren — 📁 99 - Battle Sim');
+    expect(out.message).toContain('• **Jetten (Sim)** (c2) ← Jetten — 📁 99 - Battle Sim');
+  });
+
+  it('uses singular wording for a single requested actor', async () => {
+    const { tools } = build(oneCopy);
+    const out = await tools.handleDuplicateActor({ actorIdentifiers: ['Gren'] });
+    expect(out.summary).toBe('✅ Duplicated 1 of 1 actor');
+  });
+
+  it('reports who the copies were granted to, at the level asked for', async () => {
+    const { tools } = build({
+      ...oneCopy,
+      owner: { id: 'u1', name: 'Tom', level: 3 },
+    });
+    const out = await tools.handleDuplicateActor({
+      actorIdentifiers: ['Gren'],
+      owner: 'Tom',
+    });
+    expect(out.message).toContain('🔐 Copies owned by **Tom** (OWNER)');
+    expect(out.details.owner).toEqual({ id: 'u1', name: 'Tom', level: 3 });
+  });
+
+  it('surfaces not-found sources, folder warnings, and per-actor errors', async () => {
+    const { tools } = build({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 3,
+      actors: [{ id: 'c1', name: 'Gren (Sim)', sourceId: 'a1', sourceName: 'Gren' }],
+      notFound: ['Ghost'],
+      warnings: ['could not resolve or create Actor folder "Nowhere"'],
+      errors: ['Failed to duplicate "Jetten" as "Jetten (Sim)": boom'],
+    });
+    const out = await tools.handleDuplicateActor({
+      actorIdentifiers: ['Gren', 'Jetten', 'Ghost'],
+      suffix: ' (Sim)',
+    });
+    expect(out.message).toContain('⚠️ Not found (nothing duplicated): Ghost');
+    expect(out.message).toContain('could not resolve or create Actor folder "Nowhere"');
+    expect(out.message).toContain('⚠️ Issues: Failed to duplicate "Jetten"');
+  });
+
+  it('rejects an empty actorIdentifiers array', async () => {
+    const { tools } = build();
+    await expect(tools.handleDuplicateActor({ actorIdentifiers: [] })).rejects.toThrow();
+  });
+
+  it('rejects missing actorIdentifiers entirely', async () => {
+    const { tools } = build();
+    await expect(tools.handleDuplicateActor({})).rejects.toThrow();
+  });
+
+  it('rejects more newNames than sources (the two are index-aligned)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleDuplicateActor({
+        actorIdentifiers: ['Gren'],
+        newNames: ['Gren (Sim)', 'Jetten (Sim)'],
+      })
+    ).rejects.toThrow();
+  });
+
+  it('rejects an ownershipLevel outside the granted-level enum', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleDuplicateActor({
+        actorIdentifiers: ['Gren'],
+        owner: 'Tom',
+        ownershipLevel: 'NONE',
+      })
+    ).rejects.toThrow();
+  });
+
+  it('rejects an empty suffix (a copy must differ from its source somehow)', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleDuplicateActor({ actorIdentifiers: ['Gren'], suffix: '' })
     ).rejects.toThrow();
   });
 });

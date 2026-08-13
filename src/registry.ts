@@ -210,6 +210,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'inspect-pc-advancement': args => dnd5ePcTools.handleInspectPcAdvancement(args),
     'level-up-pc': args => dnd5ePcTools.handleLevelUpPc(args),
     'create-pc-from-prefab': args => dnd5ePcTools.handleCreatePcFromPrefab(args),
+    // duplicate-actor: clone existing WORLD actors (toObject → rename → folder → ownership →
+    // Actor.create) — the "(Sim)" sandbox path; full sheets stay rollable.
+    'duplicate-actor': args => actorCreationTools.handleDuplicateActor(args),
     'delete-actor': args => actorCreationTools.handleDeleteActor(args),
     'delete-folder': args => actorCreationTools.handleDeleteFolder(args),
     'update-actor': args => dnd5eUpdateActorTool.handleUpdateActor(args),

@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 143 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 144 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -74,7 +74,9 @@ describe('tool registry', () => {
     // + disconnect-bridge (bridge-lifecycle courtesy logout: dispose the Playwright session so the
     //   DM Assistant user goes inactive; the next tool call reconnects lazily — "log out please"
     //   no longer requires exiting Claude Code)
-    expect(names.length).toBe(143);
+    // + duplicate-actor (clone existing WORLD actors: toObject → rename → folder → ownership →
+    //   Actor.create — the "(Sim)" sandbox path; full sheets stay rollable)
+    expect(names.length).toBe(144);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
@@ -202,6 +204,21 @@ describe('tool registry', () => {
     expect(createPc.inputSchema.type).toBe('object');
     expect(createPc.inputSchema.required).toEqual(['name', 'className']);
     expect(Object.keys(createPc.inputSchema.properties)).toContain('choices');
+  });
+
+  it('registers duplicate-actor and dispatches it to the duplicateActor page op', async () => {
+    const { foundry, calls } = makeFoundry({
+      success: true,
+      totalCreated: 1,
+      totalRequested: 1,
+      actors: [{ id: 'c1', name: 'Gren (Sim)', sourceId: 'a1', sourceName: 'Gren' }],
+    });
+    const { tools, handlers, dispatch } = buildToolRegistry({ foundry, logger: makeLogger() });
+    expect(tools.map(t => t.name)).toContain('duplicate-actor');
+    expect(typeof handlers['duplicate-actor']).toBe('function');
+
+    await dispatch('duplicate-actor', { actorIdentifiers: ['Gren'], suffix: ' (Sim)' });
+    expect(calls.some(([op]) => op === 'duplicateActor')).toBe(true);
   });
 
   it('advertises the actor-editing tools by name', () => {

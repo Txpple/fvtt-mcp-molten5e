@@ -1247,6 +1247,159 @@ export async function deleteActor(data: {
 }
 
 /**
+ * Resolve the user who should own duplicated copies: exact id, then exact name
+ * (case-insensitive), then partial case-insensitive name match. Throws on no
+ * match AND on an ambiguous partial match — assigning copies to the wrong
+ * player is worse than assigning none, so ambiguity never silently picks.
+ */
+function resolveOwnerUser(identifier: string): any {
+  const byId = game.users?.get(identifier);
+  if (byId) return byId;
+
+  const users: any[] = game.users?.contents ?? [];
+  const term = identifier.toLowerCase();
+  const exact = users.find((u: any) => u.name?.toLowerCase() === term);
+  if (exact) return exact;
+
+  const partial = users.filter((u: any) => u.name?.toLowerCase().includes(term));
+  if (partial.length === 1) return partial[0];
+  if (partial.length > 1) {
+    throw new Error(
+      `Ambiguous owner "${identifier}" — matches ${partial.map((u: any) => u.name).join(', ')}`
+    );
+  }
+  throw new Error(`User not found: ${identifier}`);
+}
+
+/**
+ * Duplicate one or more existing WORLD actors as full toObject() clones — the
+ * whole sheet travels (system data, embedded items, spells, effects, prototype
+ * token), so every copy stays fully rollable. The sandbox "(Sim)" path: clone
+ * the party so a player can re-run a battle without touching the real sheets.
+ *
+ * Resolution is STRICT (exact id, then exact name — the deleteActor contract).
+ * Each copy is named newNames[i] when supplied, else source name + suffix
+ * (default " (Copy)"), and the prototype nameplate is re-pointed to the new
+ * name (same fix as createActorFromCompendium — an inherited source name would
+ * leak onto every dragged token + combat-tracker entry). `folder` (id or exact
+ * name, created if absent — mirroring createActorFromCompendium) files all
+ * copies together; omitted, each copy keeps its source's folder. `owner` (+
+ * numeric ownershipLevel, default OWNER) rewrites the copy's ownership to
+ * exactly { default: NONE, [user]: level }; omitted, the source's ownership map
+ * travels with the clone. The owner is resolved BEFORE any copy is created —
+ * an unresolvable owner fails the whole batch fast (copies with the wrong
+ * visibility are worse than no copies). Per-actor error isolation: a missing
+ * source lands in notFound and a failed create in errors; neither aborts the
+ * batch. Returns { success, totalCreated, totalRequested, actors, owner?,
+ * notFound?, warnings?, errors? }.
+ */
+export async function duplicateActor(request: {
+  actorIdentifiers: string[];
+  newNames?: string[];
+  suffix?: string;
+  folder?: string;
+  owner?: string;
+  ownershipLevel?: number;
+}): Promise<unknown> {
+  const { actorIdentifiers, newNames, suffix, owner } = request;
+  if (!Array.isArray(actorIdentifiers) || actorIdentifiers.length === 0) {
+    throw new Error('actorIdentifiers is required and must contain at least one entry');
+  }
+
+  // Read the Actor document class lazily (not the module-scope ActorClass) so
+  // unit tests can stub globalThis.Actor after import.
+  const ActorCls: any = (globalThis as any).Actor;
+
+  // Resolve the owner ONCE, before any copy exists — fail fast on a bad owner.
+  const ownershipLevel = typeof request.ownershipLevel === 'number' ? request.ownershipLevel : 3;
+  const ownerUser = owner ? resolveOwnerUser(owner) : null;
+
+  const warnings: string[] = [];
+
+  // Resolve the destination folder ONCE (caller's id or exact name; created if
+  // absent — createActorFromCompendium's contract). An unresolvable requested
+  // folder degrades to "beside the source" with a warning, never silently.
+  const requestedFolder = typeof request.folder === 'string' ? request.folder.trim() : '';
+  let folderId: string | null = null;
+  if (requestedFolder !== '') {
+    const existing =
+      game.folders?.get(requestedFolder) ||
+      game.folders?.find((x: any) => x.name === requestedFolder && x.type === 'Actor');
+    folderId = existing ? existing.id : await getOrCreateFolder(requestedFolder, 'Actor');
+    if (!folderId) {
+      warnings.push(
+        `could not resolve or create Actor folder "${requestedFolder}" — each copy filed beside its source instead`
+      );
+    }
+  }
+
+  const created: Array<{
+    id: string;
+    name: string;
+    sourceId: string;
+    sourceName: string;
+    folderName: string | null;
+  }> = [];
+  const notFound: string[] = [];
+  const errors: string[] = [];
+
+  for (let i = 0; i < actorIdentifiers.length; i++) {
+    const identifier = actorIdentifiers[i];
+    // STRICT resolution only — exact id, then exact name (the deleteActor contract).
+    const source = game.actors?.get(identifier) || game.actors?.getName?.(identifier);
+    if (!source) {
+      notFound.push(identifier);
+      continue;
+    }
+
+    const newName = newNames?.[i] ?? `${source.name}${suffix ?? ' (Copy)'}`;
+    try {
+      const data = source.toObject();
+      delete data._id;
+      data.name = newName;
+      // Re-point the prototype nameplate to the copy's name.
+      data.prototypeToken = data.prototypeToken ?? {};
+      data.prototypeToken.name = newName;
+      // Requested folder wins; otherwise data.folder already carries the source's folder id.
+      if (folderId) data.folder = folderId;
+      // Requested owner wins ({ default: NONE, [user]: level }); otherwise the
+      // source's ownership map travels with the clone.
+      if (ownerUser) data.ownership = { default: 0, [ownerUser.id]: ownershipLevel };
+
+      const copy = await ActorCls.create(data);
+      if (!copy) {
+        throw new Error(`Actor.create returned nothing for "${newName}"`);
+      }
+
+      created.push({
+        id: copy.id,
+        name: copy.name,
+        sourceId: source.id,
+        sourceName: source.name,
+        folderName: copy.folder?.name ?? null,
+      });
+    } catch (error) {
+      errors.push(
+        `Failed to duplicate "${source.name}" as "${newName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  return {
+    success: created.length > 0,
+    totalCreated: created.length,
+    totalRequested: actorIdentifiers.length,
+    actors: created,
+    ...(ownerUser
+      ? { owner: { id: ownerUser.id, name: ownerUser.name, level: ownershipLevel } }
+      : {}),
+    notFound: notFound.length > 0 ? notFound : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    errors: errors.length > 0 ? errors : undefined,
+  };
+}
+
+/**
  * Add one or more freshly-authored embedded Items to an existing actor (no
  * compendium lookup). name + type are required; type is checked against the
  * active system's declared Item document types when available, then the rest is
