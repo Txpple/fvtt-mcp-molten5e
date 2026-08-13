@@ -54,6 +54,11 @@ export function foundryConfig() {
     serverUrl: ENV.MOLTEN_SERVER_URL,
     magicUrl: ENV.MOLTEN_MAGIC_URL,
     user: ENV.FOUNDRY_USER || 'MCP-Claude',
+    // Forward the join user's password. Omitted here originally because the bridge user was
+    // passwordless; once one was set, src/config.ts kept working (it passes FOUNDRY_PASSWORD)
+    // while this harness silently submitted a blank field and every live suite failed on
+    // "Invalid password provided for <user>". Stays undefined for a passwordless user.
+    password: ENV.FOUNDRY_PASSWORD,
     // Enable remote world-launch so the live suite can bring up a fully-cold box on its own.
     adminKey: ENV.MOLTEN_ADMIN_KEY,
     worldId: ENV.MOLTEN_WORLD_ID,
