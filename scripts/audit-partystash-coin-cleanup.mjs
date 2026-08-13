@@ -70,13 +70,24 @@ try {
     const got = live.purses[name];
     const same = JSON.stringify(got) === JSON.stringify(want);
     const fmt = c =>
-      c ? Object.entries(c).filter(([, v]) => v).map(([k, v]) => `${v}${k}`).join(' ') || 'empty' : 'MISSING';
+      c
+        ? Object.entries(c)
+            .filter(([, v]) => v)
+            .map(([k, v]) => `${v}${k}`)
+            .join(' ') || 'empty'
+        : 'MISSING';
     assert(same, `${name}: ${fmt(got)}${same ? '' : `  (expected ${fmt(want)})`}`);
   }
 
   console.log('# test residue');
-  assert(live.testUsers.length === 0, `no ZZ-PSTASH users left (${live.testUsers.join(', ') || 'none'})`);
-  assert(live.strayItems.length === 0, `no ZZ-PSTASH items left (${live.strayItems.join(' | ') || 'none'})`);
+  assert(
+    live.testUsers.length === 0,
+    `no ZZ-PSTASH users left (${live.testUsers.join(', ') || 'none'})`
+  );
+  assert(
+    live.strayItems.length === 0,
+    `no ZZ-PSTASH items left (${live.strayItems.join(' | ') || 'none'})`
+  );
   assert(
     live.strayOwnership.length === 0,
     `no ownership entries for deleted users (${live.strayOwnership.join(' | ') || 'none'})`

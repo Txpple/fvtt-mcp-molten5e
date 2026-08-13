@@ -36,7 +36,11 @@ const emit = process.argv.includes('--emit');
 const AUDIO_TYPES = { '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.mp3': 'audio/mpeg' };
 const isAudio = f => /\.(ogg|wav|mp3)$/i.test(f);
 const titleCase = s =>
-  s.replace(/\.[a-z0-9]+$/i, '').split(/[-_]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  s
+    .replace(/\.[a-z0-9]+$/i, '')
+    .split(/[-_]+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 
 /** Display names for category folders. A new category folder needs an entry here. */
 const CATEGORY_NAMES = {
@@ -47,12 +51,12 @@ const CATEGORY_NAMES = {
   'horror-and-undead': 'Horror & Undead',
   'industry-and-workshop': 'Industry & Workshop',
   'magic-and-planar': 'Magic & Planar',
-  'monsters': 'Monsters',
+  monsters: 'Monsters',
   'music-and-drums': 'Music & Drums',
   'tavern-and-inn': 'Tavern & Inn',
   'town-trade-and-ships': 'Town, Trade & Ships',
   'voices-individuals': 'Voices — Individuals',
-  'water': 'Water',
+  water: 'Water',
   'weather-and-wind': 'Weather & Wind',
   'wilderness-and-earth': 'Wilderness & Earth',
   // Ambient Loops
@@ -61,7 +65,7 @@ const CATEGORY_NAMES = {
   'city-and-town': 'City & Town',
   'dungeons-crypts-and-ruins': 'Dungeons, Crypts & Ruins',
   'forests-and-wilds': 'Forests & Wilds',
-  'haunted': 'Haunted',
+  haunted: 'Haunted',
   'homes-and-interiors': 'Homes & Interiors',
   'magical-and-planar': 'Magical & Planar',
   'taverns-and-gatherings': 'Taverns & Gatherings',
@@ -98,9 +102,14 @@ for (const catSlug of readdirSync(IS_ROOT).sort()) {
   for (const setDir of readdirSync(join(IS_ROOT, catSlug)).sort()) {
     const dir = join(IS_ROOT, catSlug, setDir);
     if (!statSync(dir).isDirectory()) continue;
-    const cfg = existsSync(join(dir, 'config.json')) ? readJson(join(dir, 'config.json')) ?? {} : {};
+    const cfg = existsSync(join(dir, 'config.json'))
+      ? (readJson(join(dir, 'config.json')) ?? {})
+      : {};
     const audio = readdirSync(dir).filter(isAudio).sort();
-    if (!audio.length) { problems.push(`no audio files: interval-sounds/${catSlug}/${setDir}`); continue; }
+    if (!audio.length) {
+      problems.push(`no audio files: interval-sounds/${catSlug}/${setDir}`);
+      continue;
+    }
     const files = audio.map(f => {
       const dest = posix.join(DEST, 'interval-sounds', catSlug, setDir, f);
       uploads.push({ local: join(dir, f), dest });
@@ -132,7 +141,7 @@ for (const catSlug of readdirSync(AL_ROOT).sort()) {
   for (const file of readdirSync(join(AL_ROOT, catSlug)).sort()) {
     if (!isAudio(file)) continue;
     const sidecarPath = join(AL_ROOT, catSlug, file.replace(/\.[a-z0-9]+$/i, '.json'));
-    const cfg = existsSync(sidecarPath) ? readJson(sidecarPath) ?? {} : {};
+    const cfg = existsSync(sidecarPath) ? (readJson(sidecarPath) ?? {}) : {};
     const dest = posix.join(DEST, 'ambient-loops', catSlug, file);
     uploads.push({ local: join(AL_ROOT, catSlug, file), dest });
     sets.push({
@@ -163,7 +172,8 @@ if (emit) {
 }
 
 const catCounts = {};
-for (const s of sets) catCounts[`${s.section} / ${s.category}`] = (catCounts[`${s.section} / ${s.category}`] ?? 0) + 1;
+for (const s of sets)
+  catCounts[`${s.section} / ${s.category}`] = (catCounts[`${s.section} / ${s.category}`] ?? 0) + 1;
 console.log(
   `library: ${sets.length} templates (${intervalCount} interval sounds, ${sets.length - intervalCount} ` +
     `ambient loops); ${uploads.length} audio files`
@@ -196,7 +206,9 @@ const dav = new WebDavClient({
 const dirs = new Set(uploads.map(u => u.dest.slice(0, u.dest.lastIndexOf('/'))));
 for (const dir of [...dirs].sort()) await dav.ensureParents(`${dir}/x`);
 
-let done = 0, skipped = 0, failed = 0;
+let done = 0,
+  skipped = 0,
+  failed = 0;
 const queue = [...uploads];
 async function worker() {
   for (;;) {
@@ -205,8 +217,9 @@ async function worker() {
     try {
       const local = readFileSync(job.local);
       const remote = await dav.stat(job.dest);
-      if (remote && Number(remote.size) === local.length) { skipped++; }
-      else {
+      if (remote && Number(remote.size) === local.length) {
+        skipped++;
+      } else {
         const ext = job.dest.slice(job.dest.lastIndexOf('.')).toLowerCase();
         await dav.putFile(job.dest, local, AUDIO_TYPES[ext] ?? 'application/octet-stream');
         done++;
@@ -216,7 +229,8 @@ async function worker() {
       console.error(`  FAIL ${job.dest}: ${err?.message || err}`);
     }
     const n = done + skipped + failed;
-    if (n % 100 === 0) console.log(`  … ${n}/${uploads.length} (${done} up, ${skipped} skipped, ${failed} failed)`);
+    if (n % 100 === 0)
+      console.log(`  … ${n}/${uploads.length} (${done} up, ${skipped} skipped, ${failed} failed)`);
   }
 }
 await Promise.all(Array.from({ length: 6 }, worker));
@@ -227,7 +241,9 @@ const libDest = posix.join(DEST, 'library.json');
 await dav.putFile(libDest, libraryBytes, 'application/json');
 const sha = b => createHash('sha256').update(b).digest('hex').slice(0, 16);
 const back = Buffer.from(await dav.getFile(libDest));
-console.log(`library.json: ${sha(libraryBytes) === sha(back) ? 'byte-identical on the box' : 'MISMATCH after upload!'}`);
+console.log(
+  `library.json: ${sha(libraryBytes) === sha(back) ? 'byte-identical on the box' : 'MISMATCH after upload!'}`
+);
 
 // PRUNE: anything under soundscape-sfx/ that the repo no longer contains goes away.
 if (!failed) {
@@ -245,7 +261,11 @@ if (!failed) {
       }
     }
     if (kept === 0 && dirPath !== DEST) {
-      try { await dav.delete(dirPath, true); } catch (err) { /* leave an empty dir over failing */ }
+      try {
+        await dav.delete(dirPath, true);
+      } catch (err) {
+        /* leave an empty dir over failing */
+      }
     }
     return kept;
   }

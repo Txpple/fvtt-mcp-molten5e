@@ -74,7 +74,9 @@ try {
     res.tabsPresent = [...root.querySelectorAll('nav [data-tab], .tabs [data-tab]')].map(
       e => e.dataset.tab
     );
-    const invTabBtn = root.querySelector('nav [data-tab="inventory"], .tabs [data-tab="inventory"]');
+    const invTabBtn = root.querySelector(
+      'nav [data-tab="inventory"], .tabs [data-tab="inventory"]'
+    );
     if (invTabBtn) {
       invTabBtn.click();
       await sleep(900);
@@ -107,8 +109,7 @@ try {
       })(),
     }));
 
-    const purse =
-      inputs[0]?.closest('section.currency, .currency, fieldset, div') ?? null;
+    const purse = inputs[0]?.closest('section.currency, .currency, fieldset, div') ?? null;
     res.purseContainer = describe(purse);
     res.purseHTML = purse ? purse.outerHTML.slice(0, 3500) : null;
     res.pursePart = purse?.closest('[data-application-part]')?.dataset?.applicationPart ?? null;
@@ -134,9 +135,7 @@ try {
 
     // --- what does the group's inventory tab look like at the top? -----------------------
     const invPart = root.querySelector('[data-application-part="inventory"]');
-    res.inventoryPartChildren = invPart
-      ? [...invPart.children].slice(0, 10).map(describe)
-      : null;
+    res.inventoryPartChildren = invPart ? [...invPart.children].slice(0, 10).map(describe) : null;
     const invEl = root.querySelector('dnd5e-inventory');
     res.inventoryElementChildren = invEl ? [...invEl.children].slice(0, 10).map(describe) : null;
 
@@ -148,13 +147,10 @@ try {
       transferCurrency: CM.transferCurrency?.toString().slice(0, 2500),
       deductActorCurrency: CM.deductActorCurrency?.toString().slice(0, 1500),
       getActorCurrencyUpdates: CM.getActorCurrencyUpdates?.toString().slice(0, 2500),
-      transferDestinations: Object.getOwnPropertyDescriptor(
-        CM.prototype,
-        'transferDestinations'
-      )?.get?.toString().slice(0, 2000),
-      PARTS: Object.fromEntries(
-        Object.entries(CM.PARTS ?? {}).map(([k, v]) => [k, v.template])
-      ),
+      transferDestinations: Object.getOwnPropertyDescriptor(CM.prototype, 'transferDestinations')
+        ?.get?.toString()
+        .slice(0, 2000),
+      PARTS: Object.fromEntries(Object.entries(CM.PARTS ?? {}).map(([k, v]) => [k, v.template])),
     };
     // Where is the CurrencyManager opened from? (the sheet action handler)
     const proto = group.sheet.constructor;

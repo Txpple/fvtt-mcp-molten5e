@@ -72,11 +72,13 @@ const INSPECT = async ({ groupId }) => {
       text: b.textContent.trim(),
     })),
     nativeCurrencyButton: !!section?.querySelector('[data-action="currency"]'),
-    purseInputs: [...(section?.querySelectorAll('input[name^="system.currency"]') ?? [])].map(i => ({
-      name: i.name,
-      readOnly: i.readOnly,
-      locked: i.classList.contains('partystash-locked'),
-    })),
+    purseInputs: [...(section?.querySelectorAll('input[name^="system.currency"]') ?? [])].map(
+      i => ({
+        name: i.name,
+        readOnly: i.readOnly,
+        locked: i.classList.contains('partystash-locked'),
+      })
+    ),
     // Did the manifest-declared stylesheet actually load? (process-boot lag check)
     styleSheetLoaded: [...document.styleSheets].some(s => (s.href ?? '').includes('partystash')),
     styleLinkPresent: !!document.querySelector('link[href*="partystash"]'),
@@ -179,8 +181,9 @@ const MOVE = async ({ groupId, partnerId, dir, amounts }) => {
 
     out.groupAfter = { ...game.actors.get(groupId).system.currency };
     out.partnerAfter = { ...game.actors.get(partnerId).system.currency };
-    out.notifications = [...document.querySelectorAll('#notifications .notification, .notification')]
-      .map(n => n.textContent.trim().slice(0, 160));
+    out.notifications = [
+      ...document.querySelectorAll('#notifications .notification, .notification'),
+    ].map(n => n.textContent.trim().slice(0, 160));
     // Every Party Stash receipt posted since the click — content, and who can see it.
     const mine = [...game.messages].filter(
       m => m.timestamp >= mark && m.speaker?.alias === 'Party Stash'
@@ -233,8 +236,9 @@ try {
 
   // --- fixture: known purses -------------------------------------------------------------------
   const setup = await f.evaluate(async () => {
-    const group = game.actors.find(a => a.type === 'group' && a.name === 'The Party')
-      ?? game.actors.find(a => a.type === 'group');
+    const group =
+      game.actors.find(a => a.type === 'group' && a.name === 'The Party') ??
+      game.actors.find(a => a.type === 'group');
     if (!group) return { error: 'no group actor' };
     const members = group.system.members.map(m => m.actor).filter(a => a?.type === 'character');
     if (!members.length) return { error: 'no character members' };
@@ -289,9 +293,15 @@ try {
     amounts: { pp: 2, gp: 99, sp: 0, cp: 0 }, // gp is deliberately over the cap of 5
   });
   if (dep.error) console.log('  probe error:', dep.error);
-  assert(eq(dep.maxes, { pp: 2, gp: 5, ep: 0, sp: 3, cp: 7 }), `boxes capped at the member's purse (got ${JSON.stringify(dep.maxes)})`);
+  assert(
+    eq(dep.maxes, { pp: 2, gp: 5, ep: 0, sp: 3, cp: 7 }),
+    `boxes capped at the member's purse (got ${JSON.stringify(dep.maxes)})`
+  );
   assert(dep.disabled?.ep === true, 'a denomination the member has none of is disabled');
-  assert(dep.valuesAfterClamp?.gp === 5, `over-cap entry clamped to 5 (got ${dep.valuesAfterClamp?.gp})`);
+  assert(
+    dep.valuesAfterClamp?.gp === 5,
+    `over-cap entry clamped to 5 (got ${dep.valuesAfterClamp?.gp})`
+  );
   assert(
     eq(dep.groupAfter, { pp: 2, gp: 45, ep: 0, sp: 0, cp: 0 }),
     `stash gained 2 pp + 5 gp AS PLATINUM AND GOLD (got ${JSON.stringify(dep.groupAfter)})`
@@ -357,7 +367,10 @@ try {
     `member credited in the same coins (got ${JSON.stringify(wd.partnerAfter)})`
   );
   const wdReceipt = (wd.publicReceipts ?? []).find(r => /withdrew/i.test(r));
-  assert(!!wdReceipt, `a withdraw receipt was posted (${wdReceipt?.replace(/<[^>]+>/g, '') ?? 'none'})`);
+  assert(
+    !!wdReceipt,
+    `a withdraw receipt was posted (${wdReceipt?.replace(/<[^>]+>/g, '') ?? 'none'})`
+  );
   assert(
     wd.publicReceiptCount === 1,
     `exactly one public withdraw receipt (got ${wd.publicReceiptCount})`
@@ -484,13 +497,10 @@ try {
 } finally {
   if (snapshot) {
     try {
-      await f.evaluate(
-        async ({ groupId, partnerId, group, partner }) => {
-          await game.actors.get(groupId)?.update({ 'system.currency': group });
-          await game.actors.get(partnerId)?.update({ 'system.currency': partner });
-        },
-        snapshot
-      );
+      await f.evaluate(async ({ groupId, partnerId, group, partner }) => {
+        await game.actors.get(groupId)?.update({ 'system.currency': group });
+        await game.actors.get(partnerId)?.update({ 'system.currency': partner });
+      }, snapshot);
       console.log('# purses restored to their pre-test values');
     } catch (err) {
       console.error('[coin] WARNING: purse restore failed —', err?.message || err);

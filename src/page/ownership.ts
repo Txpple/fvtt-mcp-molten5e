@@ -101,7 +101,9 @@ export function getActorOwnership(args?: {
         numericPermission: permission,
         source: hasExplicit ? 'explicit' : 'inherited',
         explicitPermission:
-          explicitLevel === null ? null : (PERMISSION_NAMES[explicitLevel] ?? String(explicitLevel)),
+          explicitLevel === null
+            ? null
+            : (PERMISSION_NAMES[explicitLevel] ?? String(explicitLevel)),
         numericExplicitPermission: explicitLevel,
       });
     }

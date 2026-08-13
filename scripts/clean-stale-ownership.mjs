@@ -58,8 +58,9 @@ try {
           if (id === 'default' || game.users.get(id)) next[id] = level;
         }
         await actor.update({ ownership: next }, { diff: false, recursive: false });
-        const after = Object.keys(game.actors.get(actor.id).ownership ?? {})
-          .filter(id => id !== 'default' && !game.users.get(id));
+        const after = Object.keys(game.actors.get(actor.id).ownership ?? {}).filter(
+          id => id !== 'default' && !game.users.get(id)
+        );
         out.applied.push({ actor: actor.name, removed: dead.length, stillStale: after.length });
       } catch (err) {
         out.errors.push(`${actor.name}: ${err.message}`);
@@ -71,9 +72,13 @@ try {
   if (!result.plan.length) {
     console.log('No stale ownership entries found — nothing to do.');
   } else {
-    console.log(`${APPLY ? 'APPLYING' : 'DRY RUN'} — ${result.plan.length} actor(s) with dead ownership entries:`);
+    console.log(
+      `${APPLY ? 'APPLYING' : 'DRY RUN'} — ${result.plan.length} actor(s) with dead ownership entries:`
+    );
     for (const p of result.plan) {
-      console.log(`  ${p.actor}: removing ${p.removing.length} (${p.removing.join(', ')}); keeping ${p.keeping}`);
+      console.log(
+        `  ${p.actor}: removing ${p.removing.length} (${p.removing.join(', ')}); keeping ${p.keeping}`
+      );
     }
   }
   for (const a of result.applied) {

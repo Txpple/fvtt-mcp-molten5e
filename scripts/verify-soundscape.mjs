@@ -75,7 +75,11 @@ try {
     ['getSets', 'open', 'removeSet', 'status', 'upsertSet'].every(k => info.apiKeys.includes(k)),
     `api surface complete (${info.apiKeys.join(', ')})`
   );
-  assert(info.audioState === 'running', 'environment audio context unlocked by the gesture', info.audioState);
+  assert(
+    info.audioState === 'running',
+    'environment audio context unlocked by the gesture',
+    info.audioState
+  );
   assert(!!info.testFile, 'found a playlist audio file to schedule with');
   if (!info.testFile || !info.active) throw new Error('cannot continue the dynamic checks');
 
@@ -87,16 +91,28 @@ try {
       const api = game.modules.get('fvtt-mod-soundscape').api;
       const scene = canvas.scene;
       await api.upsertSet(scene, {
-        id: 'zz-verify-interval', name: 'ZZ Verify Interval', files: [file],
-        interval: 2, intervalVariation: 0, volume: 0.01,
+        id: 'zz-verify-interval',
+        name: 'ZZ Verify Interval',
+        files: [file],
+        interval: 2,
+        intervalVariation: 0,
+        volume: 0.01,
       });
       await api.upsertSet(scene, {
-        id: 'zz-verify-loop', name: 'ZZ Verify Loop', files: [file],
-        playStyle: 'loop', crossfade: 1, volume: 0.01,
+        id: 'zz-verify-loop',
+        name: 'ZZ Verify Loop',
+        files: [file],
+        playStyle: 'loop',
+        crossfade: 1,
+        volume: 0.01,
       });
       await api.upsertSet(scene, {
-        id: 'zz-verify-gated', name: 'ZZ Verify Gated', files: [file],
-        interval: 2, volume: 0.01, whenToPlay: wrongSide,
+        id: 'zz-verify-gated',
+        name: 'ZZ Verify Gated',
+        files: [file],
+        interval: 2,
+        volume: 0.01,
+        whenToPlay: wrongSide,
       });
       await new Promise(r => setTimeout(r, 1000)); // let the updateScene resync land
       return { stored: api.getSets(scene).map(s => s.id), status: api.status() };
@@ -104,10 +120,16 @@ try {
     { file: info.testFile, wrongSide }
   );
 
-  assert(IDS.every(id => r1.stored.includes(id)), `all three sets stored in scene flags (${r1.stored.length} total)`);
+  assert(
+    IDS.every(id => r1.stored.includes(id)),
+    `all three sets stored in scene flags (${r1.stored.length} total)`
+  );
   assert(r1.status.running.includes('zz-verify-interval'), 'interval scheduler RUNNING');
   assert(r1.status.running.includes('zz-verify-loop'), 'loop scheduler RUNNING');
-  assert(!r1.status.running.includes('zz-verify-gated'), `${wrongSide}-gated set correctly stopped at darkness ${info.darkness}`);
+  assert(
+    !r1.status.running.includes('zz-verify-gated'),
+    `${wrongSide}-gated set correctly stopped at darkness ${info.darkness}`
+  );
 
   // Let the interval set tick a few times and the bed hold, then look again.
   await new Promise(r => setTimeout(r, 6000));
@@ -124,7 +146,10 @@ try {
     await new Promise(r => setTimeout(r, 800));
     return game.modules.get('fvtt-mod-soundscape').api.status();
   }, flipped);
-  assert(r3.running.includes('zz-verify-gated'), `darkness flip to ${flipped} starts the gated set`);
+  assert(
+    r3.running.includes('zz-verify-gated'),
+    `darkness flip to ${flipped} starts the gated set`
+  );
   await f.evaluate(async darkness => {
     await canvas.scene.update({ environment: { darknessLevel: darkness } });
   }, info.darkness);

@@ -54,7 +54,12 @@ const STAGE = async ({ groupId, openDialog }) => {
   const rect = el => {
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+    return {
+      x: Math.round(r.x),
+      y: Math.round(r.y),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
   };
   const section = root.querySelector('section.currency');
   const button = section?.querySelector('.partystash-coin-button');
@@ -135,8 +140,9 @@ const report = {};
 try {
   await f.connect();
   const groupId = await f.evaluate(() => {
-    const g = game.actors.find(a => a.type === 'group' && a.name === 'The Party')
-      ?? game.actors.find(a => a.type === 'group');
+    const g =
+      game.actors.find(a => a.type === 'group' && a.name === 'The Party') ??
+      game.actors.find(a => a.type === 'group');
     return g?.id ?? null;
   }, null);
   if (!groupId) throw new Error('no group actor');
@@ -184,7 +190,8 @@ try {
     },
     { groupId, memberId: setup.memberId, userId: setup.userId }
   );
-  if (leftover.length) console.error(`  [warn] ownership residue left on ${leftover.length} actor(s)`);
+  if (leftover.length)
+    console.error(`  [warn] ownership residue left on ${leftover.length} actor(s)`);
 
   writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`\nImages + report written to ${OUT}`);

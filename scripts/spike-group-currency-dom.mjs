@@ -187,9 +187,7 @@ try {
           const controls = inv.querySelector(
             '.inventory-header, .header, .filter-row, .controls, item-list-controls, .top'
           );
-          info.inventoryControls = controls
-            ? `${controls.tagName}.${controls.className}`
-            : null;
+          info.inventoryControls = controls ? `${controls.tagName}.${controls.className}` : null;
           info.inventoryControlsHTML = controls ? controls.outerHTML.slice(0, 2000) : null;
         }
 
