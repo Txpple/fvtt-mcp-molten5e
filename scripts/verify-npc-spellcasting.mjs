@@ -128,7 +128,10 @@ try {
   assert(r3.applied?.includes('spellcasting.ability'), 'reports spellcasting.ability applied');
   const withAbility = await liveCasting(npcId);
   console.log(`  after ability=int: ${JSON.stringify(withAbility)}`);
-  assert(withAbility.ability === 'int', `attributes.spellcasting is "int" (got ${withAbility.ability})`);
+  assert(
+    withAbility.ability === 'int',
+    `attributes.spellcasting is "int" (got ${withAbility.ability})`
+  );
   assert(
     withAbility.dc === 13,
     `derived spell DC is 13 for an INT 16 / prof +2 NPC (was ${dcBefore}, got ${withAbility.dc})`
@@ -144,14 +147,8 @@ try {
   // NOTE: raising the caster level does NOT refill a pool — `value` is stored and only a rest
   // restores it. So fill it explicitly to set up the clamp case (a caster with a full pool).
   await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 3 } });
-  await f.evaluate(
-    aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 4 }),
-    npcId
-  );
-  const filled = await f.evaluate(
-    aid => game.actors.get(aid).system.spells.spell1.value,
-    npcId
-  );
+  await f.evaluate(aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 4 }), npcId);
+  const filled = await f.evaluate(aid => game.actors.get(aid).system.spells.spell1.value, npcId);
   assert(filled === 4, `a full L1 pool at caster level 3 reads 4 remaining (got ${filled})`);
   const dropped = await f.call('updateActor', {
     actorIdentifier: npcId,
@@ -161,13 +158,10 @@ try {
     dropped.applied?.includes('spellcasting.slotClamp'),
     'the clamp pass is reported in applied[]'
   );
-  const afterDrop = await f.evaluate(
-    aid => {
-      const s = game.actors.get(aid).system.spells.spell1;
-      return { value: s.value, max: s.max };
-    },
-    npcId
-  );
+  const afterDrop = await f.evaluate(aid => {
+    const s = game.actors.get(aid).system.spells.spell1;
+    return { value: s.value, max: s.max };
+  }, npcId);
   assert(
     afterDrop.value === 0 && afterDrop.max === 0,
     `pool reads 0/0, not a stale 4/0 (got ${afterDrop.value}/${afterDrop.max})`
@@ -175,18 +169,12 @@ try {
 
   console.log('\n# 4c) a partially-spent pool keeps its remaining slots (clamp only goes DOWN)');
   await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 3 } });
-  await f.evaluate(
-    aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 1 }),
-    npcId
-  );
+  await f.evaluate(aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 1 }), npcId);
   await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 5 } });
-  const spent = await f.evaluate(
-    aid => {
-      const s = game.actors.get(aid).system.spells.spell1;
-      return { value: s.value, max: s.max };
-    },
-    npcId
-  );
+  const spent = await f.evaluate(aid => {
+    const s = game.actors.get(aid).system.spells.spell1;
+    return { value: s.value, max: s.max };
+  }, npcId);
   assert(
     spent.value === 1 && spent.max === 4,
     `1 remaining of 4 survives a level RAISE (got ${spent.value}/${spent.max})`
@@ -208,7 +196,10 @@ try {
   } catch (e) {
     pcWarn = String(e?.message ?? e);
   }
-  assert(pcWarn.includes('NPC-only'), `PC write skips with an NPC-only warning (${pcWarn || 'none'})`);
+  assert(
+    pcWarn.includes('NPC-only'),
+    `PC write skips with an NPC-only warning (${pcWarn || 'none'})`
+  );
   const pcState = await liveCasting(pcId);
   assert(pcState.ability !== 'wis', `PC casting ability untouched (got ${pcState.ability})`);
 

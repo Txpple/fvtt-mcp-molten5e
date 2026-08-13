@@ -72,9 +72,9 @@ try {
   // the version, or this reads as a failed deploy when it is only a stale manifest.
   const hasNewCode = await f.evaluate(
     async () =>
-      (await fetch('modules/fvtt-mod-openserver/scripts/openserver.js').then(r => r.text())).includes(
-        'landingScene'
-      ),
+      (
+        await fetch('modules/fvtt-mod-openserver/scripts/openserver.js').then(r => r.text())
+      ).includes('landingScene'),
     null
   );
   assert(hasNewCode, 'the DEPLOYED module script contains the landing-scene code');
@@ -121,10 +121,7 @@ try {
   const landed = await viewedScene();
   console.log(`  after login the bridge is viewing: ${landed}`);
   assert(landed === LANDING, `the client LANDED ON "${LANDING}", not the active "${ACTIVE}"`);
-  const logged = await f.evaluate(
-    () => game.scenes.active?.name ?? null,
-    null
-  );
+  const logged = await f.evaluate(() => game.scenes.active?.name ?? null, null);
   assert(logged === ACTIVE, 'and the ACTIVE scene was not changed for anyone else');
 
   console.log('\n— clearing puts the user back on the active scene —');
