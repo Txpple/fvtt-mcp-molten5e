@@ -300,6 +300,10 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'create-scene': args => sceneTools.handleCreateScene(args),
     'list-scenes': args => sceneTools.handleListScenes(args),
     'update-scene': args => sceneTools.handleUpdateScene(args),
+    // activate-scene: the ONE world-wide active flag (update-scene deliberately never activates).
+    // pull-users-to-scene: move only SOME users' view, active scene untouched — the party-split path.
+    'activate-scene': args => sceneTools.handleActivateScene(args),
+    'pull-users-to-scene': args => sceneTools.handlePullUsersToScene(args),
     'delete-scene': args => sceneTools.handleDeleteScene(args),
     'get-scene-dimensions': args => sceneTools.handleGetSceneDimensions(args),
     'screenshot-scene': args => sceneTools.handleScreenshotScene(args),

@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 144 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 146 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -76,7 +76,10 @@ describe('tool registry', () => {
     //   no longer requires exiting Claude Code)
     // + duplicate-actor (clone existing WORLD actors: toObject → rename → folder → ownership →
     //   Actor.create — the "(Sim)" sandbox path; full sheets stay rollable)
-    expect(names.length).toBe(144);
+    // + activate-scene + pull-users-to-scene (the two halves of "who is looking at what":
+    //   the ONE world-wide active flag, which update-scene deliberately never touches, and
+    //   Scene#pullUsers for moving only SOME users — the party-split path)
+    expect(names.length).toBe(146);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

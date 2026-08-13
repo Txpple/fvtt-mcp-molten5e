@@ -30,12 +30,14 @@ describe('SceneTools.getToolDefinitions', () => {
       .sort();
     expect(names).toEqual(
       [
+        'activate-scene',
         'create-scene',
         'delete-scene',
         'get-current-scene',
         'get-scene-dimensions',
         'get-world-info',
         'list-scenes',
+        'pull-users-to-scene',
         'screenshot-scene',
         'update-scene',
       ].sort()
@@ -47,6 +49,160 @@ describe('SceneTools.getToolDefinitions', () => {
     for (const def of tools.getToolDefinitions()) {
       expect(def.inputSchema.type).toBe('object');
     }
+  });
+});
+
+describe('handleActivateScene', () => {
+  it('forwards the activateScene bridge call with the identifier', async () => {
+    const { tools, calls } = build({
+      success: true,
+      scene: { id: 's2', name: 'Party Camp' },
+      previous: null,
+      alreadyActive: false,
+    });
+    await tools.handleActivateScene({ sceneIdentifier: 'Party Camp' });
+    expect(calls[0][0]).toBe('activateScene');
+    expect(calls[0][1]).toMatchObject({ sceneIdentifier: 'Party Camp' });
+  });
+
+  it('names the scene it deactivated so the caller can put it back', async () => {
+    const { tools } = build({
+      success: true,
+      scene: { id: 's2', name: 'Party Camp' },
+      previous: { id: 's1', name: "Former Adventurers' Camp" },
+      alreadyActive: false,
+    });
+    const out = await tools.handleActivateScene({ sceneIdentifier: 'Party Camp' });
+    expect(out).toContain('⚡ Activated scene "Party Camp" (s2)');
+    expect(out).toContain('previously active: "Former Adventurers\' Camp" (s1)');
+  });
+
+  it('reports an already-active scene as a no-op instead of a fake success', async () => {
+    const { tools } = build({
+      success: true,
+      scene: { id: 's1', name: 'Party Camp' },
+      previous: null,
+      alreadyActive: true,
+    });
+    const out = await tools.handleActivateScene({ sceneIdentifier: 'Party Camp' });
+    expect(out).toContain('ALREADY the active scene');
+    expect(out).not.toContain('⚡ Activated');
+  });
+
+  it('reports a missing scene without claiming a change', async () => {
+    const { tools } = build({ success: false, notFound: 'Ghost Camp' });
+    const out = await tools.handleActivateScene({ sceneIdentifier: 'Ghost Camp' });
+    expect(out).toBe('Scene not found: "Ghost Camp". Nothing changed.');
+  });
+
+  it('rejects an empty sceneIdentifier', async () => {
+    const { tools } = build();
+    await expect(tools.handleActivateScene({ sceneIdentifier: '' })).rejects.toThrow();
+  });
+});
+
+describe('handlePullUsersToScene', () => {
+  it('forwards the pullUsersToScene bridge call with scene + users', async () => {
+    const { tools, calls } = build({
+      success: true,
+      scene: { id: 's1', name: "Former Adventurers' Camp" },
+      pulled: [{ id: 'u1', name: 'Tom' }],
+      offline: [],
+      notFound: [],
+    });
+    await tools.handlePullUsersToScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(calls[0][0]).toBe('pullUsersToScene');
+    expect(calls[0][1]).toMatchObject({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+  });
+
+  it('says the active scene is untouched (that is the point of pulling)', async () => {
+    const { tools } = build({
+      success: true,
+      scene: { id: 's1', name: "Former Adventurers' Camp" },
+      pulled: [{ id: 'u1', name: 'Tom' }],
+      offline: [],
+      notFound: [],
+    });
+    const out = await tools.handlePullUsersToScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('👁️ Pulled 1 user(s)');
+    expect(out).toContain('Tom');
+    expect(out).toContain('active scene is unchanged');
+  });
+
+  it('surfaces offline users core would have silently skipped', async () => {
+    const { tools } = build({
+      success: false,
+      scene: { id: 's1', name: "Former Adventurers' Camp" },
+      pulled: [],
+      offline: [{ id: 'u1', name: 'Tom' }],
+      notFound: [],
+    });
+    const out = await tools.handlePullUsersToScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('⚠️ Nobody was pulled');
+    expect(out).toContain('Offline, so NOT pulled');
+    expect(out).toContain('Tom');
+  });
+
+  it('separates offline users from unknown ones', async () => {
+    const { tools } = build({
+      success: true,
+      scene: { id: 's1', name: 'X' },
+      pulled: [{ id: 'u2', name: 'Andrew' }],
+      offline: [{ id: 'u1', name: 'Tom' }],
+      notFound: ['Nobody'],
+    });
+    const out = await tools.handlePullUsersToScene({
+      sceneIdentifier: 'X',
+      userIdentifiers: ['Andrew', 'Tom', 'Nobody'],
+    });
+    expect(out).toContain('Pulled 1 user(s)');
+    expect(out).toContain('Offline, so NOT pulled (core skips disconnected users');
+    expect(out).toContain('⚠️ No such user: Nobody');
+  });
+
+  it('explains why the bridge user itself cannot be pulled', async () => {
+    const { tools } = build({
+      success: false,
+      scene: { id: 's1', name: 'X' },
+      pulled: [],
+      offline: [],
+      selfSkipped: [{ id: 'bridge', name: 'DM Assistant' }],
+      notFound: [],
+    });
+    const out = await tools.handlePullUsersToScene({
+      sceneIdentifier: 'X',
+      userIdentifiers: ['DM Assistant'],
+    });
+    expect(out).toContain('Cannot pull the bridge user itself');
+    expect(out).toContain('never echoed back to the sending client');
+  });
+
+  it('reports a missing scene without claiming a change', async () => {
+    const { tools } = build({ sceneNotFound: 'Ghost Camp', pulled: [], offline: [], notFound: [] });
+    const out = await tools.handlePullUsersToScene({
+      sceneIdentifier: 'Ghost Camp',
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toBe('Scene not found: "Ghost Camp". Nothing changed.');
+  });
+
+  it('rejects an empty userIdentifiers array', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handlePullUsersToScene({ sceneIdentifier: 'X', userIdentifiers: [] })
+    ).rejects.toThrow();
   });
 });
 

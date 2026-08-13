@@ -758,6 +758,127 @@ export async function deleteScenes(args: { identifiers: string[] }): Promise<{
 }
 
 /**
+ * ACTIVATE a scene — the single world-wide "everyone is here now" flag. Foundry
+ * allows exactly one active scene; activating this one deactivates whatever was
+ * active, and connected clients follow it. Deliberately NOT part of updateScene,
+ * which is scene-DOCUMENT-only and says so: activation is a world-state action
+ * with a side effect on every player's screen, so it gets its own tool.
+ *
+ * Returns the scene that WAS active (or null) so the caller can put it back.
+ * A no-op when the scene is already active — reported, not silently swallowed.
+ */
+export async function activateScene(args: { sceneIdentifier: string }): Promise<{
+  success: boolean;
+  scene?: { id: string; name: string };
+  previous?: { id: string; name: string } | null;
+  alreadyActive?: boolean;
+  notFound?: string;
+}> {
+  const scene = resolveSceneStrict(args?.sceneIdentifier ?? '');
+  if (!scene) return { success: false, notFound: args?.sceneIdentifier ?? '' };
+
+  const prior = game.scenes?.find((s: any) => s.active && s.id !== scene.id);
+  const previous = prior ? { id: prior.id, name: prior.name } : null;
+
+  if (scene.active) {
+    return {
+      success: true,
+      scene: { id: scene.id, name: scene.name },
+      previous,
+      alreadyActive: true,
+    };
+  }
+
+  await scene.activate();
+
+  return {
+    success: true,
+    scene: { id: scene.id, name: scene.name },
+    previous,
+    alreadyActive: false,
+  };
+}
+
+/**
+ * Pull specific users' VIEW to a scene without changing which scene is active —
+ * the party-split path (one player off in a side scene while the rest stay put).
+ * This is what the cross-scene teleporters do as a side effect of moving a token;
+ * here it is the whole operation, so nothing has to move.
+ *
+ * ⚠️ Core's `Scene#pullUsers` SILENTLY SKIPS users who are not connected
+ * (`if (!user?.active) continue;`) — a pull aimed at an offline player looks like
+ * a success and does nothing. So this classifies every requested user up front and
+ * reports `pulled` vs `offline` vs `notFound` rather than reporting a blanket win.
+ *
+ * ⚠️ It also cannot move the BRIDGE'S OWN view: pullUsers works by
+ * `game.socket.emit('pullToScene', ...)`, and a socket emit is relayed to the OTHER
+ * clients — never echoed back to the sender. Verified live 2026-08-13: the bridge
+ * reported itself pulled and its canvas never moved. Self-targets are therefore
+ * reported in `selfSkipped`, not `pulled`.
+ *
+ * Viewing needs no scene ownership: `Scene#view()` carries NO permission gate
+ * (probed live on 14.364), which is why the party already splits across scenes
+ * they don't own.
+ */
+export async function pullUsersToScene(args: {
+  sceneIdentifier: string;
+  userIdentifiers: string[];
+}): Promise<{
+  success: boolean;
+  scene?: { id: string; name: string };
+  pulled: Array<{ id: string; name: string }>;
+  offline: Array<{ id: string; name: string }>;
+  selfSkipped: Array<{ id: string; name: string }>;
+  notFound: string[];
+  sceneNotFound?: string;
+}> {
+  const scene = resolveSceneStrict(args?.sceneIdentifier ?? '');
+  if (!scene) {
+    return {
+      success: false,
+      sceneNotFound: args?.sceneIdentifier ?? '',
+      pulled: [],
+      offline: [],
+      selfSkipped: [],
+      notFound: [],
+    };
+  }
+
+  const pulled: Array<{ id: string; name: string }> = [];
+  const offline: Array<{ id: string; name: string }> = [];
+  const selfSkipped: Array<{ id: string; name: string }> = [];
+  const notFound: string[] = [];
+  const selfId = game.user?.id;
+
+  for (const identifier of args.userIdentifiers ?? []) {
+    const user =
+      game.users?.get(identifier) ||
+      game.users?.contents.find((u: any) => u.name?.toLowerCase() === identifier.toLowerCase());
+    if (!user) {
+      notFound.push(identifier);
+      continue;
+    }
+    // Classify BEFORE handing to core, which drops the inactive ones without a word —
+    // and before the socket, which never delivers back to this very client.
+    const bucket = user.id === selfId ? selfSkipped : user.active ? pulled : offline;
+    bucket.push({ id: user.id, name: user.name });
+  }
+
+  if (pulled.length > 0) {
+    scene.pullUsers(pulled.map(u => u.id));
+  }
+
+  return {
+    success: pulled.length > 0,
+    scene: { id: scene.id, name: scene.name },
+    pulled,
+    offline,
+    selfSkipped,
+    notFound,
+  };
+}
+
+/**
  * Build a v14 rectangle region-shape from a CENTER point (canvas px) sized in whole grid cells,
  * optionally snapped so the rectangle aligns to the scene's grid. Snapping anchors on the grid cell
  * the center sits in and expands symmetrically (odd cell counts center exactly; even counts bias

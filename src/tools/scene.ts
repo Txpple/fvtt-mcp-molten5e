@@ -27,6 +27,27 @@ const GetCurrentSceneSchema = z.object({
 
 const GetWorldInfoSchema = z.object({});
 
+const ActivateSceneSchema = z.object({
+  sceneIdentifier: z
+    .string()
+    .min(1)
+    .describe('Scene id or exact name to make the active scene. STRICT — no fuzzy matching.'),
+});
+
+const PullUsersToSceneSchema = z.object({
+  sceneIdentifier: z
+    .string()
+    .min(1)
+    .describe('Scene id or exact name to pull the users to. STRICT — no fuzzy matching.'),
+  userIdentifiers: z
+    .array(z.string().min(1))
+    .min(1, 'At least one user identifier is required')
+    .describe(
+      'Users to pull — user ids or exact user names (e.g. ["Tom"]). Look them up with list-users. ' +
+        'Only CONNECTED users can be pulled; offline ones are reported back, not silently dropped.'
+    ),
+});
+
 // --- Scene authoring (create/list/update/delete) ----------------------------------------------
 // Moved here from the old AssetBridgeTools so all scene tools live in one domain class (mirrors the
 // page-side scenes.ts). Paths are Data-relative (what upload-asset returns); the page side validates
@@ -426,6 +447,34 @@ export class SceneTools {
         inputSchema: toInputSchema(UpdateSceneSchema),
       },
       {
+        name: 'activate-scene',
+        description:
+          'ACTIVATE a scene — make it the one active scene, which is where connected clients land ' +
+          'and where users log in. Foundry allows exactly ONE active scene world-wide, so this ' +
+          'deactivates whatever was active; the previous scene is reported back so you can put it ' +
+          'back. Activating an already-active scene is a no-op and says so (alreadyActive) rather ' +
+          'than pretending it did something. Kept separate from ' +
+          'update-scene (which is scene-DOCUMENT-only and never activates) because this changes ' +
+          "every connected player's screen. To move only SOME players, leave the active scene " +
+          'alone and use pull-users-to-scene instead. GM-only.',
+        inputSchema: toInputSchema(ActivateSceneSchema),
+      },
+      {
+        name: 'pull-users-to-scene',
+        description:
+          "Pull specific users' VIEW to a scene WITHOUT changing which scene is active — the " +
+          'party-split path (one player off in a side scene while everyone else stays put). This ' +
+          'is what a cross-scene teleporter does as a side effect of moving a token; here it is ' +
+          'the whole operation, so no token has to move. Viewing needs NO scene ownership — ' +
+          'Scene#view() has no permission gate, which is why players already move between scenes ' +
+          'they do not own. ⚠️ Only CONNECTED users can be pulled: core silently skips offline ' +
+          'ones, so this reports pulled vs offline vs notFound per user instead of a blanket ' +
+          'success. ⚠️ It also cannot pull the BRIDGE user itself — pullUsers rides a socket ' +
+          'emit, which is never echoed back to the sending client (reported as selfSkipped). ' +
+          'Look up names with list-users. GM-only.',
+        inputSchema: toInputSchema(PullUsersToSceneSchema),
+      },
+      {
         name: 'delete-scene',
         description:
           'Permanently delete one or more Scene documents by exact id or exact name. STRICT ' +
@@ -580,6 +629,63 @@ export class SceneTools {
       (warns.length
         ? `\n\n⚠️ ${warns.length} warning(s):\n${warns.map((w: string) => `- ${w}`).join('\n')}`
         : '')
+    );
+  }
+
+  async handleActivateScene(args: any): Promise<string> {
+    const parsed = ActivateSceneSchema.parse(args ?? {});
+    const result = await this.foundry.call('activateScene', parsed);
+
+    if (result?.success === false) {
+      return `Scene not found: "${result?.notFound ?? parsed.sceneIdentifier}". Nothing changed.`;
+    }
+
+    const name = `"${result?.scene?.name}" (${result?.scene?.id})`;
+    if (result?.alreadyActive) {
+      return `Scene ${name} was ALREADY the active scene — nothing changed.`;
+    }
+
+    return (
+      `⚡ Activated scene ${name} — connected clients follow it and users land there on login.` +
+      (result?.previous
+        ? `\n  previously active: "${result.previous.name}" (${result.previous.id})`
+        : '')
+    );
+  }
+
+  async handlePullUsersToScene(args: any): Promise<string> {
+    const parsed = PullUsersToSceneSchema.parse(args ?? {});
+    const result = await this.foundry.call('pullUsersToScene', parsed);
+
+    if (result?.sceneNotFound) {
+      return `Scene not found: "${result.sceneNotFound}". Nothing changed.`;
+    }
+
+    const scene = `"${result?.scene?.name}" (${result?.scene?.id})`;
+    const pulled: Array<{ name: string }> = result?.pulled ?? [];
+    const offline: Array<{ name: string }> = result?.offline ?? [];
+    const selfSkipped: Array<{ name: string }> = result?.selfSkipped ?? [];
+    const notFound: string[] = result?.notFound ?? [];
+
+    const head = pulled.length
+      ? `👁️ Pulled ${pulled.length} user(s) to ${scene}: ${pulled.map(u => u.name).join(', ')}` +
+        `\n  (the active scene is unchanged — everyone else stays where they are)`
+      : `⚠️ Nobody was pulled to ${scene}.`;
+
+    return (
+      head +
+      (offline.length
+        ? `\n⚠️ Offline, so NOT pulled (core skips disconnected users — pull them once they log in): ${offline
+            .map(u => u.name)
+            .join(', ')}`
+        : '') +
+      (selfSkipped.length
+        ? `\n⚠️ Cannot pull the bridge user itself (${selfSkipped
+            .map(u => u.name)
+            .join(', ')}) — pullUsers works over a socket, which is never echoed back to the ` +
+          `sending client. Nothing to do: the bridge has no visible canvas anyone is watching.`
+        : '') +
+      (notFound.length ? `\n⚠️ No such user: ${notFound.join(', ')}` : '')
     );
   }
 
