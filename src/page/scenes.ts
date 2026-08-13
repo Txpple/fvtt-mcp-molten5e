@@ -879,6 +879,140 @@ export async function pullUsersToScene(args: {
 }
 
 /**
+ * Assign a user's LANDING SCENE — where they come up at LOGIN, as opposed to
+ * pullUsersToScene above, which moves a user who is already connected.
+ *
+ * ⚠️ GROUND TRUTH (probed live on 14.364): core Foundry has NO per-user landing
+ * scene, and no place to put one. `Game#initializeCanvas` asks for
+ * `game.scenes.current`, whose getter is
+ * `canvas.ready || noCanvas ? this.viewed : this.active` — and the canvas is cold
+ * at that point, so it always resolves to the ACTIVE scene. The persisted User
+ * schema is _id/name/role/password/passwordSalt/avatar/character/color/pronouns/
+ * hotbar/permissions/flags/_stats; `User#viewedScene` is an ephemeral OWN-property
+ * fed by activity broadcast and is never written to the database. So a party split
+ * cannot survive a login on core alone.
+ *
+ * The persistence therefore rides the one User field that IS durable — `flags` —
+ * and the routing rides our house module fvtt-mod-openserver, which reads the flag
+ * on `ready` and calls `scene.view()`. That is the same no-permission-gate
+ * `Scene#view()` the teleporters use, so the target scene needs no ownership.
+ *
+ * This tool owns the WRITE only. If the module is missing or disabled the flag is
+ * still written faithfully (it is just inert data on the User) — but that is
+ * reported as a warning rather than passed off as a working assignment.
+ */
+export async function setLandingScene(args: {
+  sceneIdentifier: string;
+  userIdentifiers: string[];
+}): Promise<{
+  success: boolean;
+  scene?: { id: string; name: string } | null;
+  cleared: boolean;
+  assigned: Array<{ id: string; name: string; previous: string | null }>;
+  unchanged: Array<{ id: string; name: string }>;
+  notFound: string[];
+  sceneNotFound?: string;
+  activeScene?: { id: string; name: string } | null;
+  followActive?: Array<{ id: string; name: string }>;
+  warnings?: string[];
+}> {
+  const MODULE_ID = 'fvtt-mod-openserver';
+  const FLAG = 'landingScene';
+
+  const identifier = args?.sceneIdentifier ?? '';
+  const clearing = identifier.toLowerCase() === 'none';
+
+  const scene = clearing ? null : resolveSceneStrict(identifier);
+  if (!clearing && !scene) {
+    return {
+      success: false,
+      sceneNotFound: identifier,
+      cleared: false,
+      assigned: [],
+      unchanged: [],
+      notFound: [],
+    };
+  }
+
+  const warnings: string[] = [];
+
+  // The flag is only routing INSTRUCTIONS — the house module is what acts on them.
+  // Say so plainly when nothing is listening, instead of reporting a working assignment.
+  const mod = game.modules?.get(MODULE_ID);
+  if (!mod) {
+    warnings.push(
+      `the "${MODULE_ID}" module is NOT INSTALLED in this world — the flag is written but ` +
+        'NOTHING reads it, so these users will still land on the active scene. Install it ' +
+        '(https://github.com/Txpple/fvtt-mod-openserver) to make landing scenes take effect.'
+    );
+  } else if (!mod.active) {
+    warnings.push(
+      `the "${MODULE_ID}" module is installed but DISABLED — the flag is written but nothing ` +
+        'reads it. Enable it in Manage Modules to make landing scenes take effect.'
+    );
+  }
+
+  const assigned: Array<{ id: string; name: string; previous: string | null }> = [];
+  const unchanged: Array<{ id: string; name: string }> = [];
+  const notFound: string[] = [];
+
+  for (const id of args.userIdentifiers ?? []) {
+    const user =
+      game.users?.get(id) ||
+      game.users?.contents.find((u: any) => u.name?.toLowerCase() === id.toLowerCase());
+    if (!user) {
+      notFound.push(id);
+      continue;
+    }
+
+    const priorId = user.getFlag(MODULE_ID, FLAG) ?? null;
+    const priorScene = priorId ? game.scenes?.get(priorId) : null;
+    const previous = priorId ? (priorScene?.name ?? `${priorId} (deleted scene)`) : null;
+
+    // Unlike a set, an unset on an absent flag is a real no-op worth reporting as one.
+    if (clearing && !priorId) {
+      unchanged.push({ id: user.id, name: user.name });
+      continue;
+    }
+    if (!clearing && priorId === scene!.id) {
+      unchanged.push({ id: user.id, name: user.name });
+      continue;
+    }
+
+    if (clearing) await user.unsetFlag(MODULE_ID, FLAG);
+    else await user.setFlag(MODULE_ID, FLAG, scene!.id);
+
+    assigned.push({ id: user.id, name: user.name, previous });
+
+    if (user.id === game.user?.id) {
+      warnings.push(
+        `"${user.name}" is the BRIDGE user this MCP session runs on — it will view that scene on ` +
+          'its next reconnect. Harmless (no human is watching the bridge canvas), but rarely intended.'
+      );
+    }
+  }
+
+  // Round out the picture: an assignment only means something relative to where
+  // everyone ELSE lands, so report the active scene and who is still following it.
+  const active = game.scenes?.active;
+  const followActive = (game.users?.contents ?? [])
+    .filter((u: any) => u.role > 0 && !u.getFlag(MODULE_ID, FLAG))
+    .map((u: any) => ({ id: u.id, name: u.name }));
+
+  return {
+    success: assigned.length > 0,
+    scene: scene ? { id: scene.id, name: scene.name } : null,
+    cleared: clearing,
+    assigned,
+    unchanged,
+    notFound,
+    activeScene: active ? { id: active.id, name: active.name } : null,
+    followActive,
+    ...(warnings.length ? { warnings } : {}),
+  };
+}
+
+/**
  * Build a v14 rectangle region-shape from a CENTER point (canvas px) sized in whole grid cells,
  * optionally snapped so the rectangle aligns to the scene's grid. Snapping anchors on the grid cell
  * the center sits in and expands symmetrically (odd cell counts center exactly; even counts bias

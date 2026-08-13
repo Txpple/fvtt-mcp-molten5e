@@ -173,11 +173,16 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**138 tools total: 128 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
+**147 tools total: 137 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes **and their placeables** (walls, lights, tokens, regions/teleporters,
-ambient sounds, tiles, drawings, notes), roll tables, cards, playlists, ownership,
+ambient sounds, tiles, drawings, notes), **who-sees-what routing** (the one active scene, pulling
+connected users to a side scene, and per-user landing scenes for where players come up at login —
+core Foundry has no such thing, so `set-landing-scene` writes a flag the companion
+[`fvtt-mod-openserver`](https://github.com/Txpple/fvtt-mod-openserver) module acts on, and warns
+when that module is absent rather than claiming success),
+roll tables, cards, playlists, ownership,
 folders/organization, macros, combat-tracker config, and 5e-specific helpers (NPC creation,
 **PC building & leveling**, **D&D Beyond import**, feature/spell granting, structured inventory/loot
 authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the

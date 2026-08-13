@@ -35,7 +35,15 @@ export function resolveUser(identifier?: string): any {
 /** One user's listing shape — shared by listUsers and updateUser's echo. */
 function describeUser(user: any): Record<string, unknown> {
   const character = user.character ? { id: user.character.id, name: user.character.name } : null;
+  // Landing scene (set-landing-scene / fvtt-mod-openserver): where this user comes up at LOGIN.
+  // null = no assignment, so they follow the ACTIVE scene like core does. Resolved to a name here
+  // because a bare id in a listing tells a reader nothing, and a dangling id must be visible.
+  const landingId = user.getFlag?.('fvtt-mod-openserver', 'landingScene') ?? null;
+  const landingScene = landingId
+    ? { id: landingId, name: game.scenes?.get(landingId)?.name ?? null }
+    : null;
   return {
+    landingScene,
     id: user.id,
     name: user.name,
     role: user.role,

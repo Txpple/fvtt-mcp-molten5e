@@ -48,6 +48,24 @@ const PullUsersToSceneSchema = z.object({
     ),
 });
 
+const SetLandingSceneSchema = z.object({
+  sceneIdentifier: z
+    .string()
+    .min(1)
+    .describe(
+      'Scene id or exact name the users should LOG IN to. STRICT — no fuzzy matching. Pass ' +
+        '"none" to CLEAR the assignment and put them back on the active scene with everyone else.'
+    ),
+  userIdentifiers: z
+    .array(z.string().min(1))
+    .min(1, 'At least one user identifier is required')
+    .describe(
+      'Users to assign — user ids or exact user names (e.g. ["Tom"]). Look them up with ' +
+        "list-users, which also reports each user's current landingScene. Works on OFFLINE " +
+        'users (that is the point) — nobody has to be connected.'
+    ),
+});
+
 // --- Scene authoring (create/list/update/delete) ----------------------------------------------
 // Moved here from the old AssetBridgeTools so all scene tools live in one domain class (mirrors the
 // page-side scenes.ts). Paths are Data-relative (what upload-asset returns); the page side validates
@@ -475,6 +493,21 @@ export class SceneTools {
         inputSchema: toInputSchema(PullUsersToSceneSchema),
       },
       {
+        name: 'set-landing-scene',
+        description:
+          'Assign where a user LOGS IN — a per-user landing scene that persists, so a party ' +
+          'split survives a refresh. Core Foundry has no such thing: every user lands on the ' +
+          'one ACTIVE scene, and the User document has no scene field to change that (verified ' +
+          'on v14.364). This writes a durable User FLAG that the house module ' +
+          'fvtt-mod-openserver reads on ready and acts on with Scene#view() — so the module ' +
+          'must be installed and enabled for it to do anything, and this tool WARNS when it ' +
+          'is not, instead of reporting a working assignment. Unlike pull-users-to-scene, ' +
+          'this works on OFFLINE users — that is the whole point. Sticky until cleared: pass ' +
+          'sceneIdentifier "none" to put users back on the active scene. Reports who is ' +
+          'assigned and who still follows the active scene. Needs NO scene ownership. GM-only.',
+        inputSchema: toInputSchema(SetLandingSceneSchema),
+      },
+      {
         name: 'delete-scene',
         description:
           'Permanently delete one or more Scene documents by exact id or exact name. STRICT ' +
@@ -686,6 +719,57 @@ export class SceneTools {
           `sending client. Nothing to do: the bridge has no visible canvas anyone is watching.`
         : '') +
       (notFound.length ? `\n⚠️ No such user: ${notFound.join(', ')}` : '')
+    );
+  }
+
+  async handleSetLandingScene(args: any): Promise<string> {
+    const parsed = SetLandingSceneSchema.parse(args ?? {});
+    const result = await this.foundry.call('setLandingScene', parsed);
+
+    if (result?.sceneNotFound) {
+      return (
+        `Scene not found: "${result.sceneNotFound}". Nothing changed. ` +
+        '(Pass "none" if you meant to CLEAR the assignment.)'
+      );
+    }
+
+    const assigned: Array<{ name: string; previous: string | null }> = result?.assigned ?? [];
+    const unchanged: Array<{ name: string }> = result?.unchanged ?? [];
+    const notFound: string[] = result?.notFound ?? [];
+    const followActive: Array<{ name: string }> = result?.followActive ?? [];
+    const warnings: string[] = result?.warnings ?? [];
+    const active = result?.activeScene
+      ? `"${result.activeScene.name}" (${result.activeScene.id})`
+      : 'none';
+
+    let head: string;
+    if (!assigned.length) {
+      head = '⚠️ No landing-scene assignments changed.';
+    } else if (result?.cleared) {
+      head =
+        `🧭 Cleared the landing scene for ${assigned.length} user(s): ` +
+        `${assigned.map(u => `${u.name}${u.previous ? ` (was "${u.previous}")` : ''}`).join(', ')}` +
+        `\n  They now log in to the ACTIVE scene like everyone else.`;
+    } else {
+      head =
+        `🧭 ${assigned.length} user(s) will now LOG IN to "${result?.scene?.name}" ` +
+        `(${result.scene.id}): ` +
+        `${assigned.map(u => `${u.name}${u.previous ? ` (was "${u.previous}")` : ''}`).join(', ')}` +
+        `\n  Sticky until cleared, and it takes effect on their next login/refresh — ` +
+        `use pull-users-to-scene to move someone who is already connected.`;
+    }
+
+    return (
+      head +
+      `\n  active scene (where unassigned users land): ${active}` +
+      (followActive.length
+        ? `\n  still following the active scene: ${followActive.map(u => u.name).join(', ')}`
+        : '\n  every user now has an explicit landing scene.') +
+      (unchanged.length
+        ? `\n  already set that way, untouched: ${unchanged.map(u => u.name).join(', ')}`
+        : '') +
+      (notFound.length ? `\n⚠️ No such user: ${notFound.join(', ')}` : '') +
+      (warnings.length ? `\n\n⚠️ ${warnings.map(w => `- ${w}`).join('\n')}` : '')
     );
   }
 

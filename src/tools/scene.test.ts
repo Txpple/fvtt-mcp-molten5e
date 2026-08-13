@@ -39,6 +39,7 @@ describe('SceneTools.getToolDefinitions', () => {
         'list-scenes',
         'pull-users-to-scene',
         'screenshot-scene',
+        'set-landing-scene',
         'update-scene',
       ].sort()
     );
@@ -202,6 +203,146 @@ describe('handlePullUsersToScene', () => {
     const { tools } = build();
     await expect(
       tools.handlePullUsersToScene({ sceneIdentifier: 'X', userIdentifiers: [] })
+    ).rejects.toThrow();
+  });
+});
+
+describe('handleSetLandingScene', () => {
+  const ok = (over: any = {}) => ({
+    success: true,
+    scene: { id: 's1', name: "Former Adventurers' Camp" },
+    cleared: false,
+    assigned: [{ id: 'u1', name: 'Tom', previous: null }],
+    unchanged: [],
+    notFound: [],
+    activeScene: { id: 's2', name: 'Party Camp' },
+    followActive: [{ id: 'u2', name: 'Andrew' }],
+    ...over,
+  });
+
+  it('forwards the setLandingScene bridge call with scene + users', async () => {
+    const { tools, calls } = build(ok());
+    await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(calls[0][0]).toBe('setLandingScene');
+    expect(calls[0][1]).toMatchObject({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+  });
+
+  it('says it takes effect at LOGIN, and points at the tool for connected users', async () => {
+    const { tools } = build(ok());
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('will now LOG IN to');
+    expect(out).toContain('Tom');
+    expect(out).toContain('next login/refresh');
+    expect(out).toContain('pull-users-to-scene');
+  });
+
+  it('always reports the active scene and who still follows it', async () => {
+    const { tools } = build(ok());
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('active scene (where unassigned users land): "Party Camp"');
+    expect(out).toContain('still following the active scene: Andrew');
+  });
+
+  it('names the previous assignment when reassigning', async () => {
+    const { tools } = build(ok({ assigned: [{ id: 'u1', name: 'Tom', previous: 'The Hollow' }] }));
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('Tom (was "The Hollow")');
+  });
+
+  it('reports a clear as a return to the active scene, not as an assignment', async () => {
+    const { tools } = build(
+      ok({
+        cleared: true,
+        scene: null,
+        assigned: [{ id: 'u1', name: 'Tom', previous: "Former Adventurers' Camp" }],
+        followActive: [
+          { id: 'u1', name: 'Tom' },
+          { id: 'u2', name: 'Andrew' },
+        ],
+      })
+    );
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: 'none',
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('Cleared the landing scene');
+    expect(out).toContain('log in to the ACTIVE scene like everyone else');
+    expect(out).not.toContain('will now LOG IN to');
+  });
+
+  // The flag is inert data without the module that reads it — never report a working
+  // assignment when nothing is listening.
+  it('surfaces the module-missing warning rather than claiming it works', async () => {
+    const { tools } = build(
+      ok({
+        warnings: [
+          'the "fvtt-mod-openserver" module is NOT INSTALLED in this world — the flag is ' +
+            'written but NOTHING reads it, so these users will still land on the active scene.',
+        ],
+      })
+    );
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('NOT INSTALLED');
+    expect(out).toContain('NOTHING reads it');
+  });
+
+  it('separates no-op users from unknown ones', async () => {
+    const { tools } = build(
+      ok({
+        success: false,
+        assigned: [],
+        unchanged: [{ id: 'u1', name: 'Tom' }],
+        notFound: ['Nobody'],
+      })
+    );
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: "Former Adventurers' Camp",
+      userIdentifiers: ['Tom', 'Nobody'],
+    });
+    expect(out).toContain('⚠️ No landing-scene assignments changed.');
+    expect(out).toContain('already set that way, untouched: Tom');
+    expect(out).toContain('⚠️ No such user: Nobody');
+  });
+
+  it('hints at "none" when the scene name does not resolve', async () => {
+    const { tools } = build({
+      success: false,
+      sceneNotFound: 'Ghost Camp',
+      cleared: false,
+      assigned: [],
+      unchanged: [],
+      notFound: [],
+    });
+    const out = await tools.handleSetLandingScene({
+      sceneIdentifier: 'Ghost Camp',
+      userIdentifiers: ['Tom'],
+    });
+    expect(out).toContain('Scene not found: "Ghost Camp"');
+    expect(out).toContain('"none"');
+  });
+
+  it('rejects an empty userIdentifiers array', async () => {
+    const { tools } = build();
+    await expect(
+      tools.handleSetLandingScene({ sceneIdentifier: 'X', userIdentifiers: [] })
     ).rejects.toThrow();
   });
 });

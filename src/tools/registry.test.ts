@@ -79,7 +79,10 @@ describe('tool registry', () => {
     // + activate-scene + pull-users-to-scene (the two halves of "who is looking at what":
     //   the ONE world-wide active flag, which update-scene deliberately never touches, and
     //   Scene#pullUsers for moving only SOME users — the party-split path)
-    expect(names.length).toBe(146);
+    // + set-landing-scene (where a user comes up at LOGIN — core has no per-user landing scene
+    //   at all, so this writes a durable User flag the house module fvtt-mod-openserver acts
+    //   on at ready; the OFFLINE counterpart to pull-users-to-scene)
+    expect(names.length).toBe(147);
   });
 
   it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {

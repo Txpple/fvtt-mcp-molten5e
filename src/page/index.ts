@@ -19,6 +19,7 @@ import {
   deleteScenes,
   activateScene,
   pullUsersToScene,
+  setLandingScene,
   getSceneDimensions,
   prepareSceneShot,
 } from './scenes.js';
@@ -186,6 +187,7 @@ const api = {
   deleteScenes,
   activateScene,
   pullUsersToScene,
+  setLandingScene,
   getSceneDimensions,
   prepareSceneShot,
   // scene placeables (per-type CRUD over the shared kernel, src/page/placeables/**)

@@ -303,7 +303,10 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     // activate-scene: the ONE world-wide active flag (update-scene deliberately never activates).
     // pull-users-to-scene: move only SOME users' view, active scene untouched — the party-split path.
     'activate-scene': args => sceneTools.handleActivateScene(args),
+    // set-landing-scene: where a user comes up at LOGIN (a durable User flag the house module
+    // fvtt-mod-openserver acts on) — the offline counterpart to pull-users-to-scene.
     'pull-users-to-scene': args => sceneTools.handlePullUsersToScene(args),
+    'set-landing-scene': args => sceneTools.handleSetLandingScene(args),
     'delete-scene': args => sceneTools.handleDeleteScene(args),
     'get-scene-dimensions': args => sceneTools.handleGetSceneDimensions(args),
     'screenshot-scene': args => sceneTools.handleScreenshotScene(args),
