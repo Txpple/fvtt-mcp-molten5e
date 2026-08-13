@@ -2037,6 +2037,29 @@ export async function updateActor(params: any): Promise<unknown> {
 
   await actor.update(update);
 
+  // Changing the caster level re-derives every slot pool's max, but `value` (the REMAINING slots)
+  // is stored and does not follow it — drop a level-3 caster to 0 and the sheet is left reading
+  // "4/0", the same broken shape a raw `.max` write produces. Clamp each pool to its freshly
+  // derived max in a second pass (the first update had to land before the max was recomputed).
+  // Only ever clamps DOWN, so a partially-spent pool keeps its remaining slots.
+  if (applied.includes('spellcasting.level')) {
+    const clamp: Record<string, number> = {};
+    const live = actor.system?.spells ?? {};
+    for (const key of [...Array.from({ length: 9 }, (_, i) => `spell${i + 1}`), 'pact']) {
+      const pool = live[key];
+      if (!pool) continue;
+      const max = Number(pool.max ?? 0);
+      const value = Number(pool.value ?? 0);
+      if (Number.isFinite(max) && Number.isFinite(value) && value > max) {
+        clamp[`system.spells.${key}.value`] = max;
+      }
+    }
+    if (Object.keys(clamp).length > 0) {
+      await actor.update(clamp);
+      applied.push('spellcasting.slotClamp');
+    }
+  }
+
   return {
     success: true,
     actor: { id: actor.id, name: actor.name, type: actor.type },

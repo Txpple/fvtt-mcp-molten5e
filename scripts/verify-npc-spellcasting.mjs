@@ -140,6 +140,59 @@ try {
   assert(cleared.level === 0, `caster level back to 0 (got ${cleared.level})`);
   assert(!cleared.slot1max, `slot pools collapse to 0 (got ${cleared.slot1max})`);
 
+  console.log('\n# 4b) dropping the caster level CLAMPS remaining slots — no stale "4/0"');
+  // NOTE: raising the caster level does NOT refill a pool — `value` is stored and only a rest
+  // restores it. So fill it explicitly to set up the clamp case (a caster with a full pool).
+  await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 3 } });
+  await f.evaluate(
+    aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 4 }),
+    npcId
+  );
+  const filled = await f.evaluate(
+    aid => game.actors.get(aid).system.spells.spell1.value,
+    npcId
+  );
+  assert(filled === 4, `a full L1 pool at caster level 3 reads 4 remaining (got ${filled})`);
+  const dropped = await f.call('updateActor', {
+    actorIdentifier: npcId,
+    spellcasting: { level: 0 },
+  });
+  assert(
+    dropped.applied?.includes('spellcasting.slotClamp'),
+    'the clamp pass is reported in applied[]'
+  );
+  const afterDrop = await f.evaluate(
+    aid => {
+      const s = game.actors.get(aid).system.spells.spell1;
+      return { value: s.value, max: s.max };
+    },
+    npcId
+  );
+  assert(
+    afterDrop.value === 0 && afterDrop.max === 0,
+    `pool reads 0/0, not a stale 4/0 (got ${afterDrop.value}/${afterDrop.max})`
+  );
+
+  console.log('\n# 4c) a partially-spent pool keeps its remaining slots (clamp only goes DOWN)');
+  await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 3 } });
+  await f.evaluate(
+    aid => game.actors.get(aid).update({ 'system.spells.spell1.value': 1 }),
+    npcId
+  );
+  await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 5 } });
+  const spent = await f.evaluate(
+    aid => {
+      const s = game.actors.get(aid).system.spells.spell1;
+      return { value: s.value, max: s.max };
+    },
+    npcId
+  );
+  assert(
+    spent.value === 1 && spent.max === 4,
+    `1 remaining of 4 survives a level RAISE (got ${spent.value}/${spent.max})`
+  );
+  await f.call('updateActor', { actorIdentifier: npcId, spellcasting: { level: 0 } });
+
   console.log('\n# 5) PC gate — NPC-only, skipped with a warning, writes nothing');
   let pcWarn = '';
   try {
