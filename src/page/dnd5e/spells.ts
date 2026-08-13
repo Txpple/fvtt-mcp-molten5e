@@ -144,6 +144,15 @@ export interface SpellcastingPlan {
   warnings: string[];
 }
 
+// LIVE-VERIFIED (dnd5e 5.3.3): a spell-slot pool's PERSISTED schema is exactly `{value, override}`
+// — for `spellN` and for `pact` alike. `max` is NOT a stored field: it is recomputed from
+// `override` (when set) or the caster's progression on every prepareDerivedData cycle, so writing
+// `system.spells.spellN.max` is INERT on NPCs and PCs both — it reads straight back as 0. Slot
+// counts must therefore be pinned through `.override`, which is also the only way to express a
+// shape the progression cannot (a half-caster NPC: NPC derivation is full-caster-only).
+// `spells.pact.level` is derived the same way — from `attributes.spell.level` (caster 5 → pact
+// slot level 3) — and likewise cannot be written; setActorSpellcasting sets the caster level on
+// NPCs so the pact slot level follows.
 export function planSpellcasting(cls: string, lvl: number, ability: string): SpellcastingPlan {
   // The slot tables have exactly 20 rows; an out-of-range/non-integer level would index past
   // the end and throw an opaque "cannot read max of undefined". Fail with a clear message instead.
@@ -160,15 +169,17 @@ export function planSpellcasting(cls: string, lvl: number, ability: string): Spe
 
   if (cls === 'warlock') {
     // ── Pact Magic ────────────────────────────────────────────────────────
-    // All regular slots set to 0; pact slots from table
+    // All regular slots pinned to 0 (Pact Magic only); pact slots from table.
     for (let i = 1; i <= 9; i++) {
-      updates[`system.spells.spell${i}.max`] = 0;
+      updates[`system.spells.spell${i}.override`] = 0;
       updates[`system.spells.spell${i}.value`] = 0;
     }
     const pact = WARLOCK_PACT_TABLE[idx];
-    updates['system.spells.pact.max'] = pact.max;
+    updates['system.spells.pact.override'] = pact.max;
     updates['system.spells.pact.value'] = pact.max;
-    updates['system.spells.pact.level'] = pact.level;
+    // NOTE: `system.spells.pact.level` is DERIVED from attributes.spell.level and is not writable
+    // — setActorSpellcasting sets the caster level on NPCs, which is what moves it. On a PC the
+    // warlock class level drives it. Reported in `slots` either way so the caller sees the intent.
     slots.pact = { max: pact.max, level: pact.level };
   } else {
     // ── Regular spell slots ───────────────────────────────────────────────
@@ -188,7 +199,7 @@ export function planSpellcasting(cls: string, lvl: number, ability: string): Spe
 
     for (let i = 1; i <= 9; i++) {
       const n = slotRow[i - 1];
-      updates[`system.spells.spell${i}.max`] = n;
+      updates[`system.spells.spell${i}.override`] = n;
       updates[`system.spells.spell${i}.value`] = n;
       (slots as Record<string, number>)[`spell${i}`] = n;
     }
@@ -220,7 +231,15 @@ export async function setActorSpellcasting(data: any): Promise<unknown> {
     ability
   );
 
-  // 3. Single update call
+  // 3. On an NPC, also set the sheet's "Spellcasting Level". The slot COUNTS are already pinned by
+  // the `.override` values above, so this is not what makes them real — but it is what the derived
+  // `spells.pact.level` (warlock slot level) reads from, and it makes the NPC sheet show the caster
+  // level a GM expects instead of 0. A PC derives it from class advancement, so leave that alone.
+  if (actor.type === 'npc') {
+    updates['system.attributes.spell.level'] = data.spellcastingLevel as number;
+  }
+
+  // 4. Single update call
   await actor.update(updates);
 
   return {

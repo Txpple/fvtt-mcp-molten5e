@@ -12,10 +12,13 @@ describe('planSpellcasting — full casters', () => {
   it('level 1 wizard: one 1st-level slot, the casting ability, nothing else', () => {
     const { updates, slots, warnings } = planSpellcasting('wizard', 1, 'int');
     expect(updates['system.attributes.spellcasting']).toBe('int');
-    expect(updates['system.spells.spell1.max']).toBe(2);
+    // Slot counts are pinned through `.override`, never `.max`: max is derived and a direct write
+    // to it is silently discarded (live-verified — see the comment in spells.ts).
+    expect(updates['system.spells.spell1.override']).toBe(2);
     expect(updates['system.spells.spell1.value']).toBe(2);
-    expect(updates['system.spells.spell2.max']).toBe(0);
-    expect(updates['system.spells.spell9.max']).toBe(0);
+    expect(updates['system.spells.spell2.override']).toBe(0);
+    expect(updates['system.spells.spell9.override']).toBe(0);
+    expect(updates['system.spells.spell1.max']).toBeUndefined();
     expect(slots).toEqual({
       spell1: 2,
       spell2: 0,
@@ -91,11 +94,14 @@ describe('planSpellcasting — warlock pact magic', () => {
   it('level 1: a single 1st-level pact slot, all regular slots zeroed', () => {
     const { updates, slots } = planSpellcasting('warlock', 1, 'cha');
     expect(slots).toEqual({ pact: { max: 1, level: 1 } });
-    expect(updates['system.spells.pact.max']).toBe(1);
+    expect(updates['system.spells.pact.override']).toBe(1);
     expect(updates['system.spells.pact.value']).toBe(1);
-    expect(updates['system.spells.pact.level']).toBe(1);
+    expect(updates['system.spells.pact.max']).toBeUndefined();
+    // `pact.level` is DERIVED from attributes.spell.level and is not writable — it must not appear
+    // in the payload, though it is still REPORTED in `slots` so the caller sees the intended level.
+    expect(updates['system.spells.pact.level']).toBeUndefined();
     for (let i = 1; i <= 9; i++) {
-      expect(updates[`system.spells.spell${i}.max`]).toBe(0);
+      expect(updates[`system.spells.spell${i}.override`]).toBe(0);
     }
   });
 

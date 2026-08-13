@@ -159,6 +159,77 @@ try {
   const pcState = await liveCasting(pcId);
   assert(pcState.ability !== 'wis', `PC casting ability untouched (got ${pcState.ability})`);
 
+  console.log('\n# 7) setActorSpellcasting (add-feature) now produces REAL pools, not "N/0"');
+  await f.call('setActorSpellcasting', {
+    actorIdentifier: npcId,
+    spellcastingClass: 'wizard',
+    spellcastingLevel: 3,
+    effectiveAbility: 'int',
+  });
+  const wiz3 = await liveCasting(npcId);
+  console.log(`  wizard 3: ${JSON.stringify(wiz3)}`);
+  assert(wiz3.slot1max === 4, `spell1.max is 4, not 0 (got ${wiz3.slot1max})`);
+  assert(wiz3.slot2max === 2, `spell2.max is 2, not 0 (got ${wiz3.slot2max})`);
+  assert(wiz3.level === 3, `the NPC sheet's caster level reads 3 (got ${wiz3.level})`);
+  assert(wiz3.dc === 13, `save DC 13 (got ${wiz3.dc})`);
+
+  console.log('\n# 8) HALF-CASTER shape survives — override beats the full-caster-only derivation');
+  await f.call('setActorSpellcasting', {
+    actorIdentifier: npcId,
+    spellcastingClass: 'ranger',
+    spellcastingLevel: 5,
+    effectiveAbility: 'wis',
+  });
+  const ranger5 = await liveCasting(npcId);
+  console.log(`  ranger 5: ${JSON.stringify(ranger5)}`);
+  // Ranger 5 = 4/2/0. A full-caster level 5 would be 4/3/2 — so slot2/slot3 discriminate.
+  assert(ranger5.slot1max === 4, `spell1.max 4 (got ${ranger5.slot1max})`);
+  assert(
+    ranger5.slot2max === 2,
+    `spell2.max is the HALF-caster 2, not the full-caster 3 (got ${ranger5.slot2max})`
+  );
+  assert(
+    !ranger5.slot3max,
+    `spell3.max is the HALF-caster 0, not the full-caster 2 (got ${ranger5.slot3max})`
+  );
+
+  console.log('\n# 9) warlock — pact pool is real and its slot LEVEL derives from caster level');
+  await f.call('setActorSpellcasting', {
+    actorIdentifier: npcId,
+    spellcastingClass: 'warlock',
+    spellcastingLevel: 5,
+    effectiveAbility: 'cha',
+  });
+  const pact = await f.evaluate(aid => {
+    const s = game.actors.get(aid)?.system;
+    return {
+      max: s?.spells?.pact?.max ?? null,
+      level: s?.spells?.pact?.level ?? null,
+      value: s?.spells?.pact?.value ?? null,
+      spell1max: s?.spells?.spell1?.max ?? null,
+    };
+  }, npcId);
+  console.log(`  warlock 5 pact: ${JSON.stringify(pact)}`);
+  assert(pact.max === 2, `pact.max is 2 (got ${pact.max})`);
+  assert(pact.level === 3, `pact slot LEVEL derives to 3 at caster level 5 (got ${pact.level})`);
+  assert(!pact.spell1max, `regular slots pinned to 0 for a warlock (got ${pact.spell1max})`);
+
+  console.log('\n# 10) the PC path still works (override pins slots on a character too)');
+  await f.call('setActorSpellcasting', {
+    actorIdentifier: pcId,
+    spellcastingClass: 'cleric',
+    spellcastingLevel: 4,
+    effectiveAbility: 'wis',
+  });
+  const pcCaster = await liveCasting(pcId);
+  console.log(`  PC cleric 4: ${JSON.stringify(pcCaster)}`);
+  assert(pcCaster.slot1max === 4, `PC spell1.max 4 (got ${pcCaster.slot1max})`);
+  assert(pcCaster.slot2max === 3, `PC spell2.max 3 (got ${pcCaster.slot2max})`);
+  assert(
+    !pcCaster.level,
+    `the NPC-only caster level is NOT written on a PC (got ${pcCaster.level})`
+  );
+
   console.log(`\n[verify-npc-spellcasting] ${passes} passed, ${fails} failed`);
 } finally {
   try {
