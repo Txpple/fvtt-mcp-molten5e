@@ -376,13 +376,24 @@ const PROBLEMATIC_FIELDS = new Set([
   // dnd5e item leveling metadata; full of cycles back to the actor + other items.
   'advancement',
 ]);
-/** Deprecated dnd5e accessors that log a warning when read (filtered before reading). */
+/**
+ * Deprecated dnd5e accessors that log a warning when read (filtered before reading).
+ *
+ * `save` is the legacy `Item5e#system.save` / `abilities.<ab>.save` getter. It is emphatically
+ * NOT the activity-level `save` block, which is live dnd5e 5.x schema and the ONLY place a save
+ * DC or save ability can be read from. Matching on the bare key name dropped both, so every
+ * save activity in the system read back with its DC silently missing — the exclusion is
+ * therefore lifted inside an `activities` tree (see `sanitizeDocData`).
+ */
 const DEPRECATED_FIELDS = new Set(['save']);
+/** Ancestor key under which a DEPRECATED_FIELDS name is live schema and must be kept. */
+const DEPRECATED_FIELD_EXEMPT_ANCESTOR = 'activities';
 /** dnd5e 5.3 moved these senses.* keys under senses.ranges.*; the legacy getters warn. */
 const DEPRECATED_DND5E_SENSE_KEYS = ['darkvision', 'blindsight', 'tremorsense', 'truesight'];
 
-function isExcludedField(key: string): boolean {
-  return SENSITIVE_FIELDS.has(key) || PROBLEMATIC_FIELDS.has(key) || DEPRECATED_FIELDS.has(key);
+function isExcludedField(key: string, inActivities = false): boolean {
+  if (SENSITIVE_FIELDS.has(key) || PROBLEMATIC_FIELDS.has(key)) return true;
+  return DEPRECATED_FIELDS.has(key) && !inActivities;
 }
 
 /**
@@ -397,12 +408,17 @@ function isExcludedField(key: string): boolean {
  * That field collides with the sensitive `key` name but is structural data, not a credential —
  * blanket-stripping it left every effect read-back with keyless (useless) changes. The flag is
  * scoped to the immediate change entry; it does NOT propagate to nested children.
+ *
+ * `inActivities` turns true once we descend through an `activities` key and DOES propagate to
+ * every descendant, because an activity's `save` block is live schema while the same key name
+ * on an item or an ability is a deprecated getter (see `DEPRECATED_FIELDS`).
  */
 export function sanitizeDocData(
   data: any,
   visited: WeakSet<object> = new WeakSet(),
   depth = 0,
-  keepKeyField = false
+  keepKeyField = false,
+  inActivities = false
 ): any {
   if (data === null || typeof data !== 'object') {
     return data;
@@ -417,7 +433,9 @@ export function sanitizeDocData(
 
   try {
     if (Array.isArray(data)) {
-      return data.map(item => sanitizeDocData(item, visited, depth + 1, keepKeyField));
+      return data.map(item =>
+        sanitizeDocData(item, visited, depth + 1, keepKeyField, inActivities)
+      );
     }
 
     const out: Record<string, any> = {};
@@ -429,14 +447,22 @@ export function sanitizeDocData(
       // ActiveEffect changes[]: recurse the entries preserving their `key` field (the change
       // target path), which the blanket sensitive-field filter would otherwise drop.
       if (key === 'changes' && Array.isArray(data[key])) {
-        out[key] = data[key].map((item: any) => sanitizeDocData(item, visited, depth + 1, true));
+        out[key] = data[key].map((item: any) =>
+          sanitizeDocData(item, visited, depth + 1, true, inActivities)
+        );
         continue;
       }
-      if (!(keepKeyField && key === 'key') && isExcludedField(key)) continue;
+      if (!(keepKeyField && key === 'key') && isExcludedField(key, inActivities)) continue;
       if (key.startsWith('_') && key !== '_id') continue; // keep only _id among private props
       if (isDnd5eSensesShape && DEPRECATED_DND5E_SENSE_KEYS.includes(key)) continue;
 
-      out[key] = sanitizeDocData(data[key], visited, depth + 1);
+      out[key] = sanitizeDocData(
+        data[key],
+        visited,
+        depth + 1,
+        false,
+        inActivities || key === DEPRECATED_FIELD_EXEMPT_ANCESTOR
+      );
     }
 
     return out;

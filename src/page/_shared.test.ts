@@ -238,6 +238,45 @@ describe('sanitizeDocData', () => {
     // ...but a top-level `key` outside changes[] is still stripped as sensitive.
     expect(sanitizeDocData({ key: 'secret', name: 'ok' })).toEqual({ name: 'ok' });
   });
+
+  it('keeps an activity `save` block but still strips the deprecated item/ability getter', () => {
+    // `save` was excluded by bare key name, which also destroyed the activity-level save config —
+    // the only place a save DC lives in dnd5e 5.x. Every save activity read back DC-less.
+    const out = sanitizeDocData({
+      system: {
+        save: { dc: 13, ability: 'dex' }, // legacy Item5e#system.save getter — must go
+        activities: {
+          FA4Mt9cXsYfHDDcs: {
+            type: 'save',
+            save: { ability: ['con'], dc: { calculation: '', formula: '17' } },
+          },
+        },
+      },
+    });
+    expect(out.system.save).toBeUndefined();
+    expect(out.system.activities.FA4Mt9cXsYfHDDcs.save).toEqual({
+      ability: ['con'],
+      dc: { calculation: '', formula: '17' },
+    });
+  });
+
+  it('keeps `save` for activities nested in arrays and at depth', () => {
+    const out = sanitizeDocData({
+      activities: [{ save: { dc: { formula: '15' } }, nested: { save: { dc: { formula: '9' } } } }],
+    });
+    expect(out.activities[0].save).toEqual({ dc: { formula: '15' } });
+    // the exemption propagates to descendants of an activity, not just its immediate keys
+    expect(out.activities[0].nested.save).toEqual({ dc: { formula: '9' } });
+  });
+
+  it('does not leak the activities exemption to sibling branches', () => {
+    const out = sanitizeDocData({
+      activities: { a1: { save: { dc: { formula: '12' } } } },
+      abilities: { str: { save: 5 } },
+    });
+    expect(out.activities.a1.save).toEqual({ dc: { formula: '12' } });
+    expect(out.abilities.str.save).toBeUndefined();
+  });
 });
 
 describe('importFromCompendium', () => {

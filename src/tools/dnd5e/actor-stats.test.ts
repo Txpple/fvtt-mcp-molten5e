@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractActorStats, extractActorBasicInfo } from './actor-stats.js';
+import { extractActorStats, extractActorBasicInfo, extractDefenses } from './actor-stats.js';
 
 describe('extractActorBasicInfo', () => {
   it('pulls HP, AC, level, class and a string race', () => {
@@ -151,5 +151,89 @@ describe('extractActorStats', () => {
   it('is safe on an actor with no system data', () => {
     const stats = extractActorStats({ name: 'Blank', type: 'npc' });
     expect(stats).toEqual({ name: 'Blank', type: 'npc' });
+  });
+
+  it('surfaces damage and condition traits as `defenses`', () => {
+    // Previously unreadable: di/dr/dv/ci were write-only through update-actor, so get-actor
+    // could not answer "is this skeleton Vulnerable to bludgeoning?" — the 2024 MM shape.
+    const stats = extractActorStats({
+      name: 'Skeleton',
+      type: 'npc',
+      system: {
+        traits: {
+          di: { value: ['poison'], bypasses: [], custom: '' },
+          dr: { value: [], bypasses: [], custom: '' },
+          dv: { value: ['bludgeoning'], bypasses: [], custom: '' },
+          ci: { value: ['exhaustion', 'poisoned'], custom: '' },
+        },
+      },
+    });
+    expect(stats.defenses).toEqual({
+      damageImmunities: ['poison'],
+      damageVulnerabilities: ['bludgeoning'],
+      conditionImmunities: ['exhaustion', 'poisoned'],
+    });
+    // empty buckets are omitted rather than reported as []
+    expect(stats.defenses.damageResistances).toBeUndefined();
+  });
+
+  it('reports the bypasses qualifier, which inverts the meaning of a resistance', () => {
+    const stats = extractActorStats({
+      name: 'Ghost',
+      type: 'npc',
+      system: {
+        traits: {
+          dr: { value: ['bludgeoning', 'slashing'], bypasses: ['mgc'], custom: 'cold iron' },
+        },
+      },
+    });
+    expect(stats.defenses).toEqual({
+      damageResistances: ['bludgeoning', 'slashing', 'cold iron'],
+      bypasses: ['mgc'],
+    });
+  });
+
+  it('omits defenses entirely when the creature has none', () => {
+    const stats = extractActorStats({
+      name: 'Commoner',
+      type: 'npc',
+      system: { traits: { di: { value: [] }, size: { value: 'med' } } },
+    });
+    expect(stats.defenses).toBeUndefined();
+  });
+});
+
+describe('extractDefenses', () => {
+  it('returns undefined for absent or malformed traits rather than throwing', () => {
+    expect(extractDefenses(undefined)).toBeUndefined();
+    expect(extractDefenses(null)).toBeUndefined();
+    expect(extractDefenses('nonsense')).toBeUndefined();
+    expect(extractDefenses({})).toBeUndefined();
+    expect(extractDefenses({ di: { value: 'not-an-array' } })).toBeUndefined();
+  });
+
+  it('appends a free-text custom entry to its bucket', () => {
+    expect(
+      extractDefenses({ dr: { value: ['fire'], custom: 'damage from silvered weapons' } })
+    ).toEqual({ damageResistances: ['fire', 'damage from silvered weapons'] });
+  });
+
+  it('keeps a bucket that is custom-text only', () => {
+    expect(extractDefenses({ ci: { value: [], custom: 'cannot be surprised' } })).toEqual({
+      conditionImmunities: ['cannot be surprised'],
+    });
+  });
+
+  it('de-duplicates bypasses unioned across the damage buckets', () => {
+    expect(
+      extractDefenses({
+        dr: { value: ['slashing'], bypasses: ['mgc', 'ada'] },
+        di: { value: ['piercing'], bypasses: ['mgc'] },
+      })
+    ).toEqual({
+      damageImmunities: ['piercing'],
+      damageResistances: ['slashing'],
+      bypasses: ['mgc', 'ada'],
+    });
   });
 });

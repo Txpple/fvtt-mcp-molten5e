@@ -63,10 +63,55 @@ export function extractActorBasicInfo(actorData: any): any {
   return basicInfo;
 }
 
+/** One trait bucket (`traits.di` etc.) flattened to a plain list, or undefined when empty. */
+function traitValues(trait: any): string[] | undefined {
+  if (!trait || typeof trait !== 'object') return undefined;
+  const values = Array.isArray(trait.value)
+    ? trait.value.filter((v: any) => typeof v === 'string')
+    : [];
+  const custom = typeof trait.custom === 'string' ? trait.custom.trim() : '';
+  const all = custom ? [...values, custom] : values;
+  return all.length > 0 ? all : undefined;
+}
+
+/**
+ * Damage immunities / resistances / vulnerabilities and condition immunities, from
+ * `system.traits.{di,dr,dv,ci}`. Returns undefined when the creature has none, so the stats
+ * block gains a key only where there is something to say.
+ *
+ * `bypasses` matters as much as the list itself: a resistance qualified by `["mgc"]` means
+ * "resistant EXCEPT to magical attacks", and reporting the bare resistance without it states
+ * the opposite of the truth at the table. It is unioned across the three damage buckets.
+ */
+export function extractDefenses(traits: any): Record<string, any> | undefined {
+  if (!traits || typeof traits !== 'object') return undefined;
+
+  const out: Record<string, any> = {};
+  const di = traitValues(traits.di);
+  const dr = traitValues(traits.dr);
+  const dv = traitValues(traits.dv);
+  const ci = traitValues(traits.ci);
+  if (di) out.damageImmunities = di;
+  if (dr) out.damageResistances = dr;
+  if (dv) out.damageVulnerabilities = dv;
+  if (ci) out.conditionImmunities = ci;
+
+  const bypasses = [
+    ...new Set(
+      [traits.di, traits.dr, traits.dv]
+        .flatMap((t: any) => (Array.isArray(t?.bypasses) ? t.bypasses : []))
+        .filter((b: any) => typeof b === 'string')
+    ),
+  ];
+  if (bypasses.length > 0) out.bypasses = bypasses;
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /**
  * The detailed dnd5e `stats` block: name/type, CR or level, HP, AC, abilities,
- * skills, plus NPC-only creature type/size/alignment/legendary actions, and a
- * spellcasting summary.
+ * skills, defenses (damage/condition traits), plus NPC-only creature type/size/alignment/
+ * legendary actions, and a spellcasting summary.
  */
 export function extractActorStats(actorData: any): any {
   const system = actorData.system || {};
@@ -153,6 +198,16 @@ export function extractActorStats(actorData: any): any {
   const masteryKinds = system.traits?.weaponProf?.mastery?.value;
   if (Array.isArray(masteryKinds) && masteryKinds.length > 0) {
     stats.weaponMasteries = masteryKinds;
+  }
+
+  // Damage + condition traits (traits.di/dr/dv/ci). These were previously absent from the stats
+  // block entirely — readable only by writing them — which left the reader blind to the single
+  // most tactically decisive fact about a creature (that a 2024 MM skeleton is Vulnerable to
+  // bludgeoning, say, or that a wight resists necrotic). Emitted only when non-empty, so an
+  // ordinary sheet stays quiet.
+  const defenses = extractDefenses(system.traits);
+  if (defenses) {
+    stats.defenses = defenses;
   }
 
   // Creature-specific info (NPCs)
