@@ -101,16 +101,22 @@ const XP_BUDGET = {
   19: [5500, 10700, 17200],  20: [6400, 13200, 22000],
 };
 
-// A turn costs wall-clock. These bracket a real VTT table: the fast figure is a practised group
+// A turn costs wall-clock. These bracket a MANUAL VTT table: the fast figure is a practised group
 // with pre-rolled initiative and no rules lookups, the slow figure is the night you actually have.
-const FAST = { enemy: 25, player: 45 };
-const SLOW = { enemy: 45, player: 75 };
+//
+// Override per-run with `turnRates` when the table does not match that. Combat automation is the
+// big one — a module that rolls attacks, applies damage, tracks conditions and fires weapon
+// masteries roughly HALVES both figures, and it changes the verdict rather than nudging it: a
+// dungeon that does not fit manually often fits comfortably automated. It also removes the
+// silent tax of forgotten riders, so the party's real output moves UP toward the modelled dpr
+// instead of drifting below it.
+const DEFAULT_RATES = { fast: { enemy: 25, player: 45 }, slow: { enemy: 45, player: 75 } };
 
 // ---- helpers ----------------------------------------------------------------------------------
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const r1 = (n) => Math.round(n * 10) / 10;
-const pct = (n) => `${Math.round(n * 100)}%`;
-const esc = (s) => String(s ?? '').replace(/\|/g, '\\|');
+const r1 = n => Math.round(n * 10) / 10;
+const pct = n => `${Math.round(n * 100)}%`;
+const esc = s => String(s ?? '').replace(/\|/g, '\\|');
 
 // The input JSON is hand-assembled, so a quoted number is a live risk — and `+` would silently
 // string-concatenate it into a plausible-looking total. Coerce and validate once, up front.
@@ -129,11 +135,21 @@ const saveFailChance = (dc, mod) => 1 - clamp((21 - (dc - mod)) / 20, 0.05, 0.95
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 
+// Resolved after `num` exists so a bad override fails loudly rather than silently reverting.
+const rate = tier => ({
+  enemy: num(d.turnRates?.[tier]?.enemy, `turnRates.${tier}.enemy`) ?? DEFAULT_RATES[tier].enemy,
+  player:
+    num(d.turnRates?.[tier]?.player, `turnRates.${tier}.player`) ?? DEFAULT_RATES[tier].player,
+});
+const FAST = rate('fast');
+const SLOW = rate('slow');
+
 // ---- roster + rounds --------------------------------------------------------------------------
 const partySize = d.party.length;
-const dprKnown = d.party.filter((p) => p.dpr != null);
+const dprKnown = d.party.filter(p => p.dpr != null);
 const partyDpr = dprKnown.reduce((s, p) => s + num(p.dpr, `${p.name}.dpr`), 0);
-if (partyDpr <= 0) fail('at least one party member needs a dpr — the whole round model hangs off it');
+if (partyDpr <= 0)
+  fail('at least one party member needs a dpr — the whole round model hangs off it');
 
 for (const s of d.saveEffects ?? []) {
   if (!s.ability) fail(`saveEffect "${s.name ?? '(unnamed)'}" has no ability`);
@@ -141,16 +157,22 @@ for (const s of d.saveEffects ?? []) {
     fail(`saveEffect "${s.name}": unknown ability "${s.ability}"`);
 }
 
-const rooms = d.rooms.map((room) => {
+const rooms = d.rooms.map(room => {
   const enemies = room.enemies ?? [];
   const bodies = enemies.reduce((s, e) => s + (num(e.count, `${room.name} count`) ?? 1), 0);
-  const hp = enemies.reduce((s, e) => s + (num(e.hp, `${room.name} hp`) ?? 0) * (num(e.count) ?? 1), 0);
-  const xp = enemies.reduce((s, e) => s + (num(e.xp, `${room.name} xp`) ?? 0) * (num(e.count) ?? 1), 0);
+  const hp = enemies.reduce(
+    (s, e) => s + (num(e.hp, `${room.name} hp`) ?? 0) * (num(e.count) ?? 1),
+    0
+  );
+  const xp = enemies.reduce(
+    (s, e) => s + (num(e.xp, `${room.name} xp`) ?? 0) * (num(e.count) ?? 1),
+    0
+  );
   // Anything unread is tracked, never coerced to a silent 0 — a 0 deflates the totals and the XP
   // band with nothing on screen to say so, which is the exact failure this script exists to avoid.
   const unread = {
-    hp: enemies.filter((e) => e.hp == null).length,
-    xp: enemies.filter((e) => e.xp == null).length,
+    hp: enemies.filter(e => e.hp == null).length,
+    xp: enemies.filter(e => e.xp == null).length,
   };
 
   if (room.avgOnScreen != null) {
@@ -169,7 +191,17 @@ const rooms = d.rooms.map((room) => {
   const onScreen = room.avgOnScreen ?? (bodies + 1) / 2;
   const enemyTurns = Math.round(onScreen * rounds);
   const enemyTurnsCeiling = Math.round(bodies * rounds);
-  return { name: room.name, bodies, onScreen, hp, xp, unread, rounds, enemyTurns, enemyTurnsCeiling };
+  return {
+    name: room.name,
+    bodies,
+    onScreen,
+    hp,
+    xp,
+    unread,
+    rounds,
+    enemyTurns,
+    enemyTurnsCeiling,
+  };
 });
 
 const total = rooms.reduce(
@@ -183,12 +215,21 @@ const total = rooms.reduce(
     unreadHp: t.unreadHp + r.unread.hp,
     unreadXp: t.unreadXp + r.unread.xp,
   }),
-  { bodies: 0, hp: 0, xp: 0, rounds: 0, enemyTurns: 0, enemyTurnsCeiling: 0, unreadHp: 0, unreadXp: 0 },
+  {
+    bodies: 0,
+    hp: 0,
+    xp: 0,
+    rounds: 0,
+    enemyTurns: 0,
+    enemyTurnsCeiling: 0,
+    unreadHp: 0,
+    unreadXp: 0,
+  }
 );
 
 const playerTurns = partySize * total.rounds;
 
-const band = (xp) => {
+const band = xp => {
   const row = XP_BUDGET[d.level];
   if (!row) return 'unread';
   const per = xp / partySize;
@@ -198,46 +239,57 @@ const band = (xp) => {
   return 'High+';
 };
 
-const minutes = (rate) => (total.enemyTurns * rate.enemy + playerTurns * rate.player) / 60;
+const minutes = rate => (total.enemyTurns * rate.enemy + playerTurns * rate.player) / 60;
 const combatFast = minutes(FAST);
 const combatSlow = minutes(SLOW);
 const nonCombat = d.nonCombatMinutes ?? 0;
 
 // ---- matrices ---------------------------------------------------------------------------------
-const attacks = (d.attacks ?? []).map((a) => ({
+const attacks = (d.attacks ?? []).map(a => ({
   name: a.name,
   toHit: a.toHit == null ? null : num(a.toHit, `${a.name}.toHit`),
   // How many creatures throw this attack, and how many swings each — used for the lethality line.
   volume: (num(a.count) ?? 1) * (num(a.attacksPerRound) ?? 1),
-  perPc: d.party.map((p) => {
+  perPc: d.party.map(p => {
     const chance = p.ac == null || a.toHit == null ? null : hitChance(a.toHit, p.ac);
-    return { pc: p.name, chance, expected: chance == null || a.damage == null ? null : chance * a.damage };
+    return {
+      pc: p.name,
+      chance,
+      expected: chance == null || a.damage == null ? null : chance * a.damage,
+    };
   }),
 }));
 
 // The number that actually answers "can anyone die": if the whole roster turned on one character,
 // how many rounds until they drop. Expected damage already accounts for their AC.
-const lethality = d.party.map((p) => {
+const lethality = d.party.map(p => {
   const incoming = attacks.reduce((s, a) => {
-    const cell = a.perPc.find((c) => c.pc === p.name);
+    const cell = a.perPc.find(c => c.pc === p.name);
     return s + (cell?.expected == null ? 0 : cell.expected * a.volume);
   }, 0);
   const hp = num(p.hp, `${p.name}.hp`);
-  return { pc: p.name, hp, incoming: r1(incoming), rounds: hp == null || incoming <= 0 ? null : hp / incoming };
+  return {
+    pc: p.name,
+    hp,
+    incoming: r1(incoming),
+    rounds: hp == null || incoming <= 0 ? null : hp / incoming,
+  };
 });
 
-const saves = (d.saveEffects ?? []).map((s) => ({
+const saves = (d.saveEffects ?? []).map(s => ({
   name: s.name,
   ability: String(s.ability).toLowerCase(),
   dc: s.dc == null ? null : num(s.dc, `${s.name}.dc`),
-  perPc: d.party.map((p) => {
+  perPc: d.party.map(p => {
     const mod = p.saves?.[String(s.ability).toLowerCase()];
     if (mod == null || s.dc == null) return { pc: p.name, fail: null, expected: null };
     const f = saveFailChance(s.dc, mod);
     // A rider that also bites on a success (half damage, a lesser effect) roughly doubles the
     // clock's real teeth — which is usually invisible until you put the two numbers side by side.
     const expected =
-      s.avgDamage == null ? null : f * s.avgDamage + (s.halfOnSave ? (1 - f) * (s.avgDamage / 2) : 0);
+      s.avgDamage == null
+        ? null
+        : f * s.avgDamage + (s.halfOnSave ? (1 - f) * (s.avgDamage / 2) : 0);
     return { pc: p.name, fail: f, expected };
   }),
 }));
@@ -272,39 +324,60 @@ const say = (s = '') => out.push(s);
 
 say(`**Party sustained output:** ${r1(partyDpr)} damage/round across ${partySize} characters.`);
 if (dprKnown.length < partySize)
-  say(`> **${partySize - dprKnown.length} of ${partySize} characters had no dpr** — the round model below is understated.`);
+  say(
+    `> **${partySize - dprKnown.length} of ${partySize} characters had no dpr** — the round model below is understated.`
+  );
 if (total.unreadHp || total.unreadXp)
-  say(`> **Unread:** ${total.unreadHp} enemies with no HP, ${total.unreadXp} with no XP. Cells marked \`?\` are floors, not totals.`);
+  say(
+    `> **Unread:** ${total.unreadHp} enemies with no HP, ${total.unreadXp} with no XP. Cells marked \`?\` are floors, not totals.`
+  );
 say('');
 
 say('| Room | Bodies | HP | XP | Band | Est. rounds | Enemy turns |');
 say('|---|---:|---:|---:|---|---:|---:|');
 for (const r of rooms) {
-  const bodyCell = r.onScreen !== r.bodies ? `${r.bodies} (${r1(r.onScreen)} avg live)` : `${r.bodies}`;
+  const bodyCell =
+    r.onScreen !== r.bodies ? `${r.bodies} (${r1(r.onScreen)} avg live)` : `${r.bodies}`;
   const hpCell = r.unread.hp ? `${r.hp}+?` : `${r.hp}`;
   const xpCell = r.unread.xp ? `${r.xp.toLocaleString('en-US')}+?` : r.xp.toLocaleString('en-US');
   const bandCell = r.unread.xp ? `${band(r.xp)}?` : band(r.xp);
-  const turnCell = r.enemyTurns === r.enemyTurnsCeiling ? `${r.enemyTurns}` : `${r.enemyTurns} (${r.enemyTurnsCeiling})`;
-  say(`| ${esc(r.name)} | ${bodyCell} | ${hpCell} | ${xpCell} | ${bandCell} | ${r.rounds} | ${turnCell} |`);
+  const turnCell =
+    r.enemyTurns === r.enemyTurnsCeiling
+      ? `${r.enemyTurns}`
+      : `${r.enemyTurns} (${r.enemyTurnsCeiling})`;
+  say(
+    `| ${esc(r.name)} | ${bodyCell} | ${hpCell} | ${xpCell} | ${bandCell} | ${r.rounds} | ${turnCell} |`
+  );
 }
-say(`| **Total** | **${total.bodies}** | **${total.hp}** | **${total.xp.toLocaleString('en-US')}** | — | **${total.rounds}** | **${total.enemyTurns}** (${total.enemyTurnsCeiling}) |`);
+say(
+  `| **Total** | **${total.bodies}** | **${total.hp}** | **${total.xp.toLocaleString('en-US')}** | — | **${total.rounds}** | **${total.enemyTurns}** (${total.enemyTurnsCeiling}) |`
+);
 say('');
 if (!opts.quiet)
-  say(`_Enemy turns assume the roster thins as the party kills it, matching the round model. The figure in parentheses is the ceiling if nothing ever drops._`);
+  say(
+    `_Enemy turns assume the roster thins as the party kills it, matching the round model. The figure in parentheses is the ceiling if nothing ever drops._`
+  );
 say('');
 
 say('### Table time');
 say('');
 say(`${total.enemyTurns} enemy turns + ${playerTurns} player turns.`);
-say(`- Fast table (${FAST.enemy}s / ${FAST.player}s per turn): **${Math.round(combatFast)} min** of initiative`);
-say(`- Slow table (${SLOW.enemy}s / ${SLOW.player}s per turn): **${Math.round(combatSlow)} min** of initiative`);
-if (nonCombat) say(`- Plus ${nonCombat} min of non-combat → **${Math.round(combatFast + nonCombat)}–${Math.round(combatSlow + nonCombat)} min** total`);
+say(
+  `- Fast table (${FAST.enemy}s / ${FAST.player}s per turn): **${Math.round(combatFast)} min** of initiative`
+);
+say(
+  `- Slow table (${SLOW.enemy}s / ${SLOW.player}s per turn): **${Math.round(combatSlow)} min** of initiative`
+);
+if (nonCombat)
+  say(
+    `- Plus ${nonCombat} min of non-combat → **${Math.round(combatFast + nonCombat)}–${Math.round(combatSlow + nonCombat)} min** total`
+  );
 if (d.sessionMinutes) {
   const over = combatSlow + nonCombat - d.sessionMinutes;
   say(
     over > 0
       ? `- Against a ${d.sessionMinutes} min session: **over by ${Math.round(over)} min** at the slow end.`
-      : `- Against a ${d.sessionMinutes} min session: fits, with ${Math.round(-over)} min of slack.`,
+      : `- Against a ${d.sessionMinutes} min session: fits, with ${Math.round(-over)} min of slack.`
   );
 }
 say('');
@@ -312,23 +385,31 @@ say('');
 if (attacks.length) {
   say('### To-hit against real ACs');
   say('');
-  say(`| Attack | To hit | ${d.party.map((p) => `${esc(p.name)} (AC ${p.ac ?? '?'})`).join(' | ')} |`);
+  say(
+    `| Attack | To hit | ${d.party.map(p => `${esc(p.name)} (AC ${p.ac ?? '?'})`).join(' | ')} |`
+  );
   say(`|---|---:|${d.party.map(() => '---:').join('|')}|`);
   for (const a of attacks) {
-    const cells = a.perPc.map((c) =>
-      c.chance == null ? 'unread' : c.expected == null ? pct(c.chance) : `${pct(c.chance)} · ${r1(c.expected)}`,
+    const cells = a.perPc.map(c =>
+      c.chance == null
+        ? 'unread'
+        : c.expected == null
+          ? pct(c.chance)
+          : `${pct(c.chance)} · ${r1(c.expected)}`
     );
     const hitCell = a.toHit == null ? '?' : a.toHit < 0 ? `${a.toHit}` : `+${a.toHit}`;
     say(`| ${esc(a.name)} | ${hitCell} | ${cells.join(' | ')} |`);
   }
   say('');
-  if (lethality.some((l) => l.rounds != null)) {
+  if (lethality.some(l => l.rounds != null)) {
     say('**If the whole roster focused one character:**');
     say(
       lethality
-        .filter((l) => l.rounds != null)
-        .map((l) => `${esc(l.pc)} drops in ${r1(l.rounds)} rounds (${l.incoming}/round vs ${l.hp} HP)`)
-        .join(' · '),
+        .filter(l => l.rounds != null)
+        .map(
+          l => `${esc(l.pc)} drops in ${r1(l.rounds)} rounds (${l.incoming}/round vs ${l.hp} HP)`
+        )
+        .join(' · ')
     );
   }
   if (!opts.quiet) say('');
@@ -339,11 +420,15 @@ if (attacks.length) {
 if (saves.length) {
   say('### Save effects');
   say('');
-  say(`| Effect | Save | ${d.party.map((p) => esc(p.name)).join(' | ')} |`);
+  say(`| Effect | Save | ${d.party.map(p => esc(p.name)).join(' | ')} |`);
   say(`|---|---|${d.party.map(() => '---:').join('|')}|`);
   for (const s of saves) {
-    const cells = s.perPc.map((c) =>
-      c.fail == null ? 'unread' : c.expected == null ? pct(c.fail) : `${pct(c.fail)} · ${r1(c.expected)}`,
+    const cells = s.perPc.map(c =>
+      c.fail == null
+        ? 'unread'
+        : c.expected == null
+          ? pct(c.fail)
+          : `${pct(c.fail)} · ${r1(c.expected)}`
     );
     say(`| ${esc(s.name)} | ${s.ability.toUpperCase()} DC ${s.dc ?? '?'} | ${cells.join(' | ')} |`);
   }
@@ -362,7 +447,7 @@ if (!opts.quiet) {
       'assumption, thinning the roster as it dies; the parenthesised ceiling is what you pay if nothing ' +
       'drops. Enemy turns is the number that actually predicts table time — XP bands do not, because ' +
       'they cannot see how many bodies the XP is spread across. Expected damage excludes critical hits ' +
-      'and so runs 3–5% low.',
+      'and so runs 3–5% low.'
   );
 }
 
