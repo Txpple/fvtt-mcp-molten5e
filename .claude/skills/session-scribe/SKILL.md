@@ -82,6 +82,22 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
    items, notable consumables. This is the point-in-time record that answers "what did
    <PC> have before?" after level-ups, deaths, or loot disputes — one file per session
    date, diffable against the last.
+
+   > **TODO (owner directive 2026-08-16) — the snapshot must also be a NATIVE JSON EXPORT.**
+   > The hand-written `.md` above is a *summary* and silently drops state nobody thought to
+   > transcribe. **Lesson learned:** after session 3, "how many charges are left on Gren's
+   > Wand of Magic Missiles?" could not be answered from `party-snapshots/2026-08-11.md` —
+   > it recorded the wand as owned but not its remaining charges; the answer had to be
+   > reconstructed from the transcript (Tom said "four left" at 03:18:34). **A native
+   > Foundry actor JSON export would have carried it** (every item's `system.uses.value`),
+   > along with everything else nobody listed. So: **export each party PC to JSON via
+   > Foundry's own actor export** and commit it beside the summary — e.g.
+   > `party-snapshots/YYYY-MM-DD/<PC>.json` — keeping the `.md` as the human-readable
+   > digest. The JSON is the durable backup and the restore path; the `.md` is the story.
+   > Build note: this is a native Foundry capability (Actor → Export Data); check whether a
+   > tool wraps it before hand-rolling one, and remember an unlinked/live sheet's truth is
+   > the token instance. Also add charges/uses to the `.md` digest for the things that
+   > matter at the table (wand charges, ointment doses, potion counts).
 7. **Commit** — in the campaign repo: `git add sessions/<date> party-snapshots` → commit
    (`session: <date> — <short title>`) → push. `audio/` is gitignored (bulky, and the
    transcript is the durable artifact); tell the user audio stays local and can be deleted
