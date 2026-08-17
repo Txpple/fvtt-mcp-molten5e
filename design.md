@@ -121,7 +121,7 @@ This is the architectural backbone that makes principle #1 real.
 | **Content creation** | Scenes | 1 | ✅ working |
 | | Actors → **NPCs** | 1 | ✅ done (§6 ladder; `stat-block-builder`) |
 | | Actors → **PCs** | 1 | ✅ done (`pc-builder`; `create-pc` / `level-up-pc` / `create-pc-from-prefab`, advancement-native `@scale`) |
-| | Actors → PCs → **D&D Beyond import** | 1 | ✅ done (`ddb-import` + `parse-ddb-character`) |
+| | Actors → PCs → ~~D&D Beyond import~~ | 1 | ❌ **removed 2026-08-17** (§7 — DDB exports strip embedded effects; refuse + build natively) |
 | | **Adventures** (end-to-end assembly) | 1 | ✅ emergent — the blocks compose (§1, §5) |
 | | Journals (handouts, lore, quests, notes) | 1 | ✅ done (`journal-builder`; prose de-leaked) |
 | | Tables (roll tables) | 1 | ✅ done (`table-builder`; v14 results + `@UUID` loot + import) |
@@ -255,32 +255,22 @@ over `create-pc` / `inspect-pc-advancement` / `level-up-pc` / `create-pc-from-pr
   pick options at each level), not a flat stat-block transcription. Keep this in mind so the NPC tools
   and the actor-authoring surface don't bake in npc-only assumptions.
 
-### Importing a D&D Beyond character *(built — content creation)*
+### D&D Beyond import *(removed 2026-08-17 — refuse, and build natively instead)*
 
-Players often build their PC on **D&D Beyond**; importing it is a PC content-creation capability (a
-faster front-end for the same leveling pipeline above, *not* a new product). It follows §2 + §3
-exactly — **hybrid, split on "skills decide / tools do":**
+There is deliberately **no** DDB import path. One existed (a `parse-ddb-character` tool + `ddb-import`
+skill) and was removed: DDB's character export does not carry the **embedded ActiveEffects** the
+premium compendium items ship, so an imported PC *looks* complete while its automation is hollow — a
+spell casts, consumes its slot, posts its card, and silently does nothing. That class of hole is
+invisible until a table moment needs the automation, which is exactly when it bites (the **Divine
+Favor incident**, 2026-08-16: the imported spell kept its PHB activity, still referencing an effect id
+whose effect document had been stripped). The export format is lossy where it matters most; importing
+can't be made safe by parsing harder.
 
-- **A tool does the deterministic part** — `parse-ddb-character`: a pure parser of the D&D Beyond
-  character JSON (the public v5 endpoint `character-service.dndbeyond.com/character/v5/character/{id}`,
-  or a pasted/saved JSON blob) → a typed, **name-bearing, judgment-free** plan: final ability scores
-  (base + deduped `<ability>-score` modifiers, resolving `choose-an-ability-score`, honoring
-  overrides), classes/multiclass + subclasses, species, background, the derived
-  proficiencies/expertise/saves/languages/tools, the resolved option picks (fighting style, favored
-  enemy…), spells (known vs prepared), inventory, feats, currency, HP, and an `unresolved[]` list of
-  everything **flagged** homebrew / 2014-legacy / custom. It does **zero** compendium lookup, makes
-  **zero** mapping decisions, emits **raw DDB names**, and (per §2.3) never generates content — it is a
-  transcriber, so it can be unit-tested against a golden fixture.
-- **A skill decides the rest** — `ddb-import`: the access conversation (we **never** handle the
-  account-password-equivalent cobalt cookie — a private character is made Public or pasted), DDB-name →
-  exact premium-2024-name **canonicalization** via `search-compendium`, the **STOP-and-ASK gate** on
-  every homebrew / legacy / no-match entry (§2.4 — never substitute, drop, or reach for the SRD),
-  advancement-id discovery via `inspect-pc-advancement` to key `create-pc`'s `choices` map, then it
-  **delegates to the existing PC back half** (`create-pc` → `import-item` / `add-feature` /
-  `update-actor` → `set-actor-art` / `set-actor-ownership`). No new advancement primitive.
-- **Edition policy:** DDB is 2014-leaning, the library is 2024-premium. For a legacy entity with a
-  clear 2024 equivalent the skill **canonicalizes and tells the DM**; on an ambiguous or absent match
-  it **STOPS and ASKS**. Partial coverage + an ask-loop is the *normal* outcome, not an error path.
+**Standing policy — any "import my character from D&D Beyond" request gets a refusal:** it's not
+possible (DDB exports lose embedded effects/automation), and the better path is offered instead —
+build the PC **natively from the premium compendia** via the `pc-builder` skill (`create-pc` /
+`level-up-pc` / `create-pc-from-prefab`), reading the DDB sheet only as a *reference* for the
+player's choices, never as a data source.
 
 ---
 
@@ -362,9 +352,9 @@ This is *how* the contract in §3 is realized today. (Mechanism, not mission —
   via `src/utils/schema.ts` — never hand-written JSON schema.
 - **Skills ship in-repo.** `.claude/skills/**` is a tracked deliverable, committed alongside the
   tools. Current skills: `start-session`, `scene-builder`, `stat-block-builder`,
-  `physical-item-builder`, `pc-builder`, `ddb-import`, `journal-builder`, `table-builder`,
-  `cards-builder`, `playlist-builder`, `chat-and-narration`, `session-scribe`, `tom-cartos-import`,
-  `token-cutout`, `plot-drift-check`.
+  `physical-item-builder`, `pc-builder`, `journal-builder`, `table-builder`, `cards-builder`,
+  `playlist-builder`, `chat-and-narration`, `session-scribe`, `session-audit`, `bestiary-builder`,
+  `tom-cartos-import`, `token-cutout`, `plot-drift-check`.
 - **Target stack.** Foundry v14, dnd5e 5.3.3, Molten Hosting. D&D-5e-only by design.
 - **Quality gate.** biome · `tsc --noEmit` · vitest · build · knip, all green before any commit. No
   pre-commit hook — run `biome check --write .` manually.

@@ -12,11 +12,8 @@ roll tables — scaled to however much the DM provides. Hand it **only a map ima
 map and builds the whole module; hand it **your own finished module** and it faithfully recreates every
 stat block, item, and handout in the VTT.
 
-**Two importers worth calling out:**
+**An importer worth calling out:**
 
-- **D&D Beyond → a real PC.** Point it at a player's **publicly shared D&D Beyond** sheet and it builds
-  a fully leveled Foundry character — class/subclass/species/background, ability scores, the level-1
-  choices, spells, and starting equipment — canonicalized to the premium **2024** books.
 - **Adventure map packs → your world.** Import a battlemap *module* (a distributed Foundry scene-pack
   with its own compendiums) faithfully: every scene with its walls, lights, day/night mood, and
   navigation thumbnails, plus the journal of map keys — with all assets re-pointed into your world, and
@@ -73,8 +70,7 @@ automated.
 
 ## Scope
 
-**In scope:** actors — both **NPCs** and full leveled **PCs** (including import from a publicly shared
-**D&D Beyond** character) — items, journals, scenes (the scene **document** _and_ its **placeables** —
+**In scope:** actors — both **NPCs** and full leveled **PCs** — items, journals, scenes (the scene **document** _and_ its **placeables** —
 walls, lights, tokens, regions/teleporters, ambient sounds, tiles, drawings, map notes), playlists,
 roll tables, cards, macros, combat-tracker config, compendium manipulation — especially **pulling**
 content out ("make an actor from the MM owlbear") — and asset upload. With the bundled skills these
@@ -90,6 +86,11 @@ game and interjecting during play (live chat, running the monsters' combat turns
 *provided* map, it does not draw one); scripting the Molten management panel. (Scene placeables —
 walls, lights, tokens, regions — _are_ authored and edited as scene contents; what's out of scope is
 driving them live on the canvas during a running session.)
+
+**Removed deliberately: D&D Beyond import.** DDB character exports strip the embedded effect
+automation the premium compendium items carry, so an imported PC looks right and silently fails at
+the table. Ask for the character instead and it's built **natively from the premium books**, using
+the DDB sheet only as a reading reference.
 
 ---
 
@@ -173,7 +174,7 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**147 tools total: 137 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
+**146 tools total: 136 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes **and their placeables** (walls, lights, tokens, regions/teleporters,
@@ -184,7 +185,7 @@ core Foundry has no such thing, so `set-landing-scene` writes a flag the compani
 when that module is absent rather than claiming success),
 roll tables, cards, playlists, ownership,
 folders/organization, macros, combat-tracker config, and 5e-specific helpers (NPC creation,
-**PC building & leveling**, **D&D Beyond import**, feature/spell granting, structured inventory/loot
+**PC building & leveling**, feature/spell granting, structured inventory/loot
 authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the
 asset file library.
 

@@ -6,7 +6,11 @@ description: >-
   fighting style, draconic ancestry…), spells for casters, starting equipment, and a finishing pass
   (art, the player as owner, folder). Use when the user wants to "make a PC", "build a character",
   "create a level 1 fighter", "roll up a wizard", "make my player's dragonborn paladin", "build a
-  character for <player>", or pastes a character concept/sheet. Composes create-pc /
+  character for <player>", or pastes a character concept/sheet. ALSO use when the user asks to
+  "import my D&D Beyond character" / "import from DDB" or pastes a dndbeyond.com link — that import
+  path was REMOVED (DDB exports strip embedded effect automation): refuse the import, explain why,
+  and offer to rebuild the PC natively from the premium books, reading the DDB sheet as reference
+  only. Composes create-pc /
   inspect-pc-advancement (the leveling engine: advancement runs so @scale resolves NATIVELY, unlike
   an NPC) with search-compendium-* / import-item / set-actor-art / set-actor-ownership /
   move-documents and dnd5e judgment. The tools own correctness (name→uuid, advancement.apply
@@ -54,6 +58,21 @@ species that isn't in the library, stop and ask — don't substitute or fabricat
 > adds one class level to an existing PC — the same class (a level-up) or a new class (a **multiclass**).
 > **`create-pc-from-prefab`** copies a premium PHB pregen as a base instead of building from scratch.
 > See "Levelling up & multiclassing" and "Prefab-as-base" below. Everything PC-side is now wired.
+
+## D&D Beyond import? REFUSE — rebuild natively
+
+**There is no DDB import.** A `parse-ddb-character` tool + `ddb-import` skill existed and were
+**removed 2026-08-17** (design.md §7): DDB's export is lossy exactly where the premium items are
+rich — embedded **ActiveEffects are stripped** — so an imported spell casts, consumes its slot,
+posts its card, and silently does nothing at the table (the Divine Favor incident). When the user
+asks to import from D&D Beyond, pastes a dndbeyond.com link, or offers DDB character JSON:
+
+1. **Refuse, with the why:** not possible — DDB exports lose the embedded effects/automation the
+   premium compendium items carry; an imported PC looks right and fails live.
+2. **Offer the native rebuild** with this skill (`create-pc` / `level-up-pc` /
+   `create-pc-from-prefab`): have the user read the class/subclass, species, background, ability
+   scores, choice picks, spells, and gear off the DDB sheet — *reference only, never a data
+   source* — then build it all from the premium 2024 books as usual.
 
 ## The shape of a build
 

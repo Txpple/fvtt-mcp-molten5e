@@ -82,13 +82,11 @@ describe('tool registry', () => {
     // + set-landing-scene (where a user comes up at LOGIN — core has no per-user landing scene
     //   at all, so this writes a durable User flag the house module fvtt-mod-openserver acts
     //   on at ready; the OFFLINE counterpart to pull-users-to-scene)
-    expect(names.length).toBe(147);
-  });
-
-  it('registers parse-ddb-character (the DDB import parse tool, design.md §7)', () => {
-    const { tools, handlers } = build();
-    expect(tools.map(t => t.name)).toContain('parse-ddb-character');
-    expect(typeof handlers['parse-ddb-character']).toBe('function');
+    // (parse-ddb-character was built and REMOVED 2026-08-17: DDB exports strip the embedded
+    //  ActiveEffects the premium items carry, so imported PCs pass review and silently lose their
+    //  automation at the table — the Divine Favor incident. Standing policy: refuse DDB imports
+    //  and build the PC natively from the premium compendia instead — see design.md §7.)
+    expect(names.length).toBe(146);
   });
 
   it('registers read-pack (the Node-only scene-pack module reader, tom-cartos-import M1)', () => {

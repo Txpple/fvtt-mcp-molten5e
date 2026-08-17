@@ -76,7 +76,11 @@ let d;
 try {
   d = JSON.parse(readFileSync(opts.data, 'utf8'));
 } catch (e) {
-  fail(e.code === 'ENOENT' ? `no such file: ${opts.data}` : `${opts.data} is not valid JSON — ${e.message}`);
+  fail(
+    e.code === 'ENOENT'
+      ? `no such file: ${opts.data}`
+      : `${opts.data} is not valid JSON — ${e.message}`
+  );
 }
 if (!Array.isArray(d.party) || !d.party.length) fail('party[] is required and must be non-empty');
 if (!Array.isArray(d.rooms) || !d.rooms.length) fail('rooms[] is required and must be non-empty');
@@ -86,6 +90,7 @@ if (!Array.isArray(d.rooms) || !d.rooms.length) fail('rooms[] is required and mu
 // it has no notion of how many bodies the XP is spread across, so a swarm of quarter-CR chaff and
 // one big solo read identically. Treat a mismatch here as a prompt to look, never as the finding.
 // Verify against your own DMG printing if a band drives a decision; override per-run if you like.
+// biome-ignore format: hand-aligned XP-budget table
 const XP_BUDGET = {
   1: [50, 75, 100],          2: [100, 150, 200],       3: [150, 225, 400],
   4: [250, 375, 500],        5: [500, 750, 1100],      6: [600, 1000, 1400],
