@@ -462,6 +462,49 @@ if (worldTarget) {
   } catch {
     /* world.json unreadable — the failure list below will already say so */
   }
+
+  // LevelDB integrity tripwire. Each collection is its own store, and its CURRENT file names the
+  // ONE manifest that store is valid against. A mirror that half-worked — a failed delete, a
+  // --no-delete run over an older snapshot — leaves a second MANIFEST behind or a CURRENT
+  // pointing at a manifest that is no longer there, and Foundry then refuses to open the world
+  // with an error that says nothing about the copy. Cheap to check here, miserable to diagnose
+  // from the Foundry side, so we check every time rather than trusting the delete pass.
+  const dataDir = join(localRoot, ...worldTarget.split('/'), 'data');
+  const problems = [];
+  let collections = 0;
+  try {
+    for (const entry of readdirSync(dataDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      collections++;
+      const dir = join(dataDir, entry.name);
+      const names = readdirSync(dir);
+      const manifests = names.filter(n => n.startsWith('MANIFEST-'));
+      if (manifests.length > 1) {
+        problems.push(`${entry.name}: ${manifests.length} manifests (${manifests.join(', ')})`);
+      }
+      if (!names.includes('CURRENT')) {
+        problems.push(`${entry.name}: no CURRENT file`);
+        continue;
+      }
+      const current = readFileSync(join(dir, 'CURRENT'), 'utf8').trim();
+      if (current && !names.includes(current)) {
+        problems.push(`${entry.name}: CURRENT points at missing "${current}"`);
+      }
+    }
+  } catch (err) {
+    problems.push(`could not read ${dataDir}: ${String(err?.message ?? err)}`);
+  }
+  if (problems.length) {
+    console.error(`⚠ WORLD DB INTEGRITY (${collections} collections) — PROBLEMS:`);
+    for (const p of problems) console.error(`    ${p}`);
+    console.error(
+      '  This world may not open. Delete the local world folder and re-run for a clean pull.'
+    );
+    failed.push({ path: worldTarget, err: `${problems.length} LevelDB integrity problem(s)` });
+  } else {
+    console.error(`world DB integrity OK: ${collections} collections, one manifest each.`);
+  }
+
   console.error(
     'next: start local Foundry (a RESTART if it was running — module registry is boot-scoped) and launch the world.'
   );

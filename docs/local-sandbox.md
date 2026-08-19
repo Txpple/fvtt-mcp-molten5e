@@ -34,6 +34,10 @@ That's the whole process. The script:
    `.ldb`/`MANIFEST` mixed into a fresh LevelDB set corrupts it.
 4. Remote side is strictly **read-only** (GET/PROPFIND) — a refresh cannot harm prod.
 
+5. **Verifies the world DB is openable** — every LevelDB collection must have exactly one
+   `MANIFEST-*` and a `CURRENT` naming a manifest that exists. A half-finished mirror otherwise
+   surfaces later as a Foundry error that says nothing about the copy.
+
 Flags: `--dry-run` (show the plan, change nothing), `--force` (override both activity guards),
 `--no-delete` (copy without mirroring), `--to <dataRoot>` (override `LOCAL_FOUNDRY_DATA`),
 explicit targets (`node scripts/pull-prod-to-local.mjs modules/lootshelf`).
@@ -41,6 +45,37 @@ explicit targets (`node scripts/pull-prod-to-local.mjs modules/lootshelf`).
 After a refresh: **restart** local Foundry if it was running (Foundry scans the package registry
 at process boot — freshly pulled modules/systems won't register into a running process), then
 launch the world.
+
+### Refreshing while Foundry is running
+
+The local Foundry must be **fully stopped**, not just returned to Setup. A running process keeps
+LevelDB handles open on the very files being replaced, and can write its stale in-memory state
+back over the fresh copy after the pull finishes — corrupting the thing you just refreshed. The
+script's local guard catches an *active world*, but stopping the process is the actual
+requirement. The sequence that works:
+
+1. `curl -s http://localhost:30000/api/status` — is a world active, and how many users?
+2. If the MCP bridge is one of them, `disconnect-bridge` first so no Playwright session is
+   dangling. (`list-users` shows who is really connected — check no human is mid-session.)
+3. Close the app **gracefully** — `CloseMainWindow()` on the process, never `Stop-Process`. It
+   shuts the world down and releases the LevelDB cleanly; a hard kill risks the local DB and the
+   file locks may outlive the process.
+4. Confirm the port is free, then run the refresh.
+5. Relaunch Foundry and launch the world.
+
+The desktop app holds an exclusive **lock on the whole data directory** — any second Foundry
+process against the same `dataPath` dies with "cannot start in this directory which is already
+locked by another process". That is also why CLI flags like `--adminPassword` can't be applied
+while the app is up.
+
+With `LOCAL_ADMIN_KEY` set, steps 4–5 are scriptable end to end:
+
+```
+POST /auth   {action: "adminAuth", adminPassword: <LOCAL_ADMIN_KEY>}
+POST /setup  {action: "launchWorld", world: <world id>}   # carry the cookie from the auth response
+```
+
+Both return 200; poll `/api/status` until `active` is true (~25s for a heavy dnd5e world).
 
 ## What is deliberately NOT pulled
 
