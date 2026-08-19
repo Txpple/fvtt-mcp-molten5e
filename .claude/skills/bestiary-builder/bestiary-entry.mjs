@@ -142,10 +142,22 @@ const work = async o => {
       el.remove();
       continue;
     }
-    // DM tooling that hangs off an embedded table
-    if (/^Roll on or choose a result/i.test(text) || /^\*\s*See the /i.test(text)) {
+    // DM tooling that hangs off an embedded table. The pointer is sometimes its own
+    // paragraph and sometimes the closing sentence of a narrative one (Wight, Skeleton),
+    // so strip the sentence and drop the paragraph only if nothing else was in it.
+    if (/^\*\s*See the /i.test(text)) {
       el.remove();
       continue;
+    }
+    if (/Roll on or choose a result/i.test(text)) {
+      el.innerHTML = el.innerHTML.replace(
+        /\s*Roll on or choose a result from the [^.<]*?table[^.<]*\.\s*/gi,
+        ' '
+      );
+      if (!(el.textContent ?? '').trim()) {
+        el.remove();
+        continue;
+      }
     }
     // the italic epithet under the art -> the house lead line
     if (el.classList.contains('creature-flavor') && el.querySelector('em')) {
