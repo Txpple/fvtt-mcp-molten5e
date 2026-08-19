@@ -4,6 +4,14 @@
 //
 //   node scripts/deploy-house-module.mjs fvtt-mod-lootshelf
 //   node scripts/deploy-house-module.mjs fvtt-mod-partystash --check   (compare only)
+//   node scripts/deploy-house-module.mjs fvtt-mod-battleflow --local   (LOCAL sandbox, not prod)
+//
+// TARGETS: by default this deploys to PROD over WebDAV. `--local` instead writes straight into
+// the local sandbox's Data/modules (LOCAL_FOUNDRY_DATA — see docs/local-sandbox.md); it is a
+// plain filesystem copy with the same byte read-back proof, and it never touches prod. That is
+// the loop a sister module repo wants: build → --local → test against foundry-local5e → only
+// then deploy for real. ⚠️ A sandbox REFRESH (pull-prod-to-local.mjs) mirrors prod's modules/
+// and will overwrite or delete a locally-deployed module — re-run --local after every refresh.
 //
 // WHAT IT UPLOADS: module.json plus everything the module SERVES — scripts/, styles/,
 // templates/, lang/. Not the README, the design docs, or tools/: those never leave the repo.
@@ -19,7 +27,7 @@
 // built from that boot-time scan, so a module.json edit (a new version string, a new `styles`
 // entry) does NOT take effect until the process next restarts. It is uploaded anyway, so the
 // box is right whenever that happens, and the lag is REPORTED rather than pretended away.
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, posix } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -29,9 +37,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
+const toLocal = args.includes('--local');
 const moduleId = args.find(a => !a.startsWith('--'));
 if (!moduleId) {
-  console.error('usage: node scripts/deploy-house-module.mjs <module-id> [--check]');
+  console.error('usage: node scripts/deploy-house-module.mjs <module-id> [--check] [--local]');
   process.exit(2);
 }
 
@@ -72,13 +81,50 @@ for (const line of readFileSync(join(__dirname, '..', '.env'), 'utf8').split(/\r
   const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
   if (m) env[m[1]] = m[2];
 }
-if (!env.MOLTEN_WEBDAV_PASSWORD) throw new Error('MOLTEN_WEBDAV_PASSWORD is not set in .env');
-
-const dav = new WebDavClient({
-  webdavUrl: env.MOLTEN_WEBDAV_URL,
-  user: env.MOLTEN_WEBDAV_USER || 'foundry-ftp',
-  password: env.MOLTEN_WEBDAV_PASSWORD,
-});
+/**
+ * One write/read-back target so the deploy loop below is identical for both planes: prod goes
+ * over WebDAV, the sandbox goes straight to disk. Both re-READ what they wrote — a successful
+ * write is not proof the bytes landed.
+ */
+let target;
+if (toLocal) {
+  const dataRoot = env.LOCAL_FOUNDRY_DATA;
+  if (!dataRoot) {
+    console.error('LOCAL_FOUNDRY_DATA is not set in .env (see docs/local-sandbox.md).');
+    process.exit(2);
+  }
+  if (!existsSync(dataRoot)) {
+    console.error(`LOCAL_FOUNDRY_DATA does not exist: ${dataRoot}`);
+    process.exit(2);
+  }
+  const abs = rel => join(dataRoot, ...rel.split('/'));
+  target = {
+    label: `local sandbox (${dataRoot})`,
+    ensureParents: async rel => mkdirSync(dirname(abs(rel)), { recursive: true }),
+    put: async (rel, body) => writeFileSync(abs(rel), body),
+    get: async rel => readFileSync(abs(rel)),
+    liveHint:
+      'Restart the local Foundry process to pick up module.json changes; a world reload is ' +
+      'enough for scripts, styles and templates.',
+  };
+} else {
+  if (!env.MOLTEN_WEBDAV_PASSWORD) throw new Error('MOLTEN_WEBDAV_PASSWORD is not set in .env');
+  const dav = new WebDavClient({
+    webdavUrl: env.MOLTEN_WEBDAV_URL,
+    user: env.MOLTEN_WEBDAV_USER || 'foundry-ftp',
+    password: env.MOLTEN_WEBDAV_PASSWORD,
+  });
+  target = {
+    label: 'prod (Molten, over WebDAV)',
+    ensureParents: rel => dav.ensureParents(rel),
+    put: (rel, body, contentType) => dav.putFile(rel, body, contentType),
+    get: rel => dav.getFile(rel),
+    liveHint:
+      'Scripts, styles and templates are live on the next world reload. module.json (version ' +
+      'string, esmodules/styles lists) keeps vending the OLD values until the Foundry PROCESS ' +
+      'restarts — expected, not a failure.',
+  };
+}
 
 const sha = buf => createHash('sha256').update(buf).digest('hex').slice(0, 16);
 const asBuffer = raw => (Buffer.isBuffer(raw) ? raw : Buffer.from(raw));
@@ -87,7 +133,7 @@ const files = servedFiles();
 const manifest = JSON.parse(readFileSync(join(REPO, 'module.json'), 'utf8'));
 console.log(
   `${checkOnly ? 'Checking' : 'Deploying'} ${moduleId} v${manifest.version} ` +
-    `(${files.length} files)\n`
+    `(${files.length} files) -> ${target.label}\n`
 );
 
 let fails = 0;
@@ -97,16 +143,16 @@ for (const rel of files) {
   try {
     if (!checkOnly) {
       const ext = rel.slice(rel.lastIndexOf('.'));
-      await dav.ensureParents(dest);
-      await dav.putFile(dest, local, CONTENT_TYPES[ext] ?? 'application/octet-stream');
+      await target.ensureParents(dest);
+      await target.put(dest, local, CONTENT_TYPES[ext] ?? 'application/octet-stream');
     }
     // Read it straight back — a 2xx on PUT is not proof the bytes landed intact.
-    const prod = asBuffer(await dav.getFile(dest));
-    const ok = sha(local) === sha(prod);
+    const remote = asBuffer(await target.get(dest));
+    const ok = sha(local) === sha(remote);
     if (!ok) fails++;
     console.log(
       `  ${ok ? 'MATCH ' : 'DIFFER'} ${rel} (${local.length} bytes)` +
-        (ok ? '' : ` — local=${sha(local)} prod=${sha(prod)}`)
+        (ok ? '' : ` — local=${sha(local)} deployed=${sha(remote)}`)
     );
   } catch (err) {
     console.error(`  FAIL   ${rel}: ${err?.message || err}`);
@@ -114,16 +160,19 @@ for (const rel of files) {
   }
 }
 
+const where = toLocal ? 'the sandbox' : 'prod';
 if (fails) {
   console.log(`\n${fails} file(s) did not match.`);
 } else if (checkOnly) {
-  console.log(`\nprod is byte-identical to the local v${manifest.version}.`);
+  console.log(`\n${where} is byte-identical to the local v${manifest.version}.`);
 } else {
-  console.log(`\nUploaded ${moduleId} v${manifest.version}; prod is byte-identical.`);
-  console.log('Scripts, styles and templates are live on the next world reload.');
-  console.log(
-    'module.json (version string, esmodules/styles lists) keeps vending the OLD ' +
-      'values until the Foundry PROCESS restarts — expected, not a failure.'
-  );
+  console.log(`\nDeployed ${moduleId} v${manifest.version}; ${where} is byte-identical.`);
+  console.log(target.liveHint);
+  if (toLocal) {
+    console.log(
+      '⚠ A sandbox refresh (pull-prod-to-local.mjs) mirrors prod and will overwrite this — ' +
+        're-run --local after every refresh.'
+    );
+  }
 }
 process.exit(fails ? 1 : 0);

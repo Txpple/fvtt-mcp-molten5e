@@ -35,7 +35,7 @@ try {
   console.log('[prove] getWorldInfo:', JSON.stringify(info, null, 2));
   const actors = await f.call('listActors', {});
   console.log(`[prove] listActors: ${actors.length} -> ${actors.map(a => a.name).join(', ')}`);
-  ok = info?.worldId && Array.isArray(actors);
+  ok = Boolean(info?.id) && Array.isArray(actors);
 } catch (e) {
   console.error('[prove] ERROR:', e?.message || e);
 } finally {

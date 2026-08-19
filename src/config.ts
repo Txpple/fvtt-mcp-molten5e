@@ -73,6 +73,23 @@ const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 export type MoltenConfig = Config['molten'];
 
+/**
+ * Instance profile — which Foundry this server process targets.
+ *
+ * `FOUNDRY_PROFILE=local` retargets the bridge at the LOCAL sandbox instance (a mirror of prod
+ * maintained by scripts/pull-prod-to-local.mjs — see docs/local-sandbox.md). The profile is set
+ * per MCP-server REGISTRATION (its `env` block), never in .env: one .env then serves both
+ * processes — MOLTEN_* stays the primary/prod set, LOCAL_* overrides what a local instance
+ * genuinely changes, and the rest (world id, join user/password) is inherited from the prod
+ * values because the sandbox is a byte copy of prod: its world id and users ARE prod's.
+ *
+ * The local profile deliberately has NO wake plumbing (a local box doesn't sleep) and NO WebDAV
+ * plane (leaving it at placeholder/no-password makes every asset file tool report "not
+ * configured" — the one wrong default here would be a local-profile server silently pointing
+ * file writes at the live box).
+ */
+const profile: 'molten' | 'local' = process.env.FOUNDRY_PROFILE === 'local' ? 'local' : 'molten';
+
 const rawConfig = {
   logLevel: process.env.LOG_LEVEL || 'warn',
   logFormat: process.env.LOG_FORMAT || 'simple',
@@ -83,19 +100,34 @@ const rawConfig = {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',
     version: process.env.SERVER_VERSION || readPackageVersion(),
   },
-  molten: {
-    serverUrl: process.env.MOLTEN_SERVER_URL || 'https://your-server.moltenhosting.com',
-    worldId: process.env.MOLTEN_WORLD_ID, // unset -> manual-launch path (no placeholder)
-    magicUrl: process.env.MOLTEN_MAGIC_URL,
-    user: process.env.FOUNDRY_USER || 'MCP-Claude',
-    password: process.env.FOUNDRY_PASSWORD,
-    webdavUrl: process.env.MOLTEN_WEBDAV_URL || 'https://your-server.webdav.moltenhosting.com',
-    fileBrowserUrl:
-      process.env.MOLTEN_FILEBROWSER_URL || 'https://your-server.files.moltenhosting.com',
-    webdavUser: process.env.MOLTEN_WEBDAV_USER || 'foundry-ftp',
-    webdavPassword: process.env.MOLTEN_WEBDAV_PASSWORD,
-    adminKey: process.env.MOLTEN_ADMIN_KEY,
-  },
+  molten:
+    profile === 'local'
+      ? {
+          serverUrl: process.env.LOCAL_SERVER_URL || 'http://localhost:30000',
+          worldId: process.env.LOCAL_WORLD_ID || process.env.MOLTEN_WORLD_ID,
+          magicUrl: undefined, // no sleep/wake locally
+          user: process.env.LOCAL_FOUNDRY_USER || process.env.FOUNDRY_USER || 'MCP-Claude',
+          password: process.env.LOCAL_FOUNDRY_PASSWORD ?? process.env.FOUNDRY_PASSWORD,
+          webdavUrl: 'https://your-server.webdav.moltenhosting.com', // placeholder = file plane OFF
+          fileBrowserUrl: 'https://your-server.files.moltenhosting.com',
+          webdavUser: 'foundry-ftp',
+          webdavPassword: undefined, // asset tools report "not configured" in the local profile
+          adminKey: process.env.LOCAL_ADMIN_KEY, // unset -> manual world launch (click Play locally)
+        }
+      : {
+          serverUrl: process.env.MOLTEN_SERVER_URL || 'https://your-server.moltenhosting.com',
+          worldId: process.env.MOLTEN_WORLD_ID, // unset -> manual-launch path (no placeholder)
+          magicUrl: process.env.MOLTEN_MAGIC_URL,
+          user: process.env.FOUNDRY_USER || 'MCP-Claude',
+          password: process.env.FOUNDRY_PASSWORD,
+          webdavUrl:
+            process.env.MOLTEN_WEBDAV_URL || 'https://your-server.webdav.moltenhosting.com',
+          fileBrowserUrl:
+            process.env.MOLTEN_FILEBROWSER_URL || 'https://your-server.files.moltenhosting.com',
+          webdavUser: process.env.MOLTEN_WEBDAV_USER || 'foundry-ftp',
+          webdavPassword: process.env.MOLTEN_WEBDAV_PASSWORD,
+          adminKey: process.env.MOLTEN_ADMIN_KEY,
+        },
 };
 
 export const config = ConfigSchema.parse(rawConfig);
