@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 146 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 147 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -82,11 +82,14 @@ describe('tool registry', () => {
     // + set-landing-scene (where a user comes up at LOGIN — core has no per-user landing scene
     //   at all, so this writes a durable User flag the house module fvtt-mod-openserver acts
     //   on at ready; the OFFLINE counterpart to pull-users-to-scene)
+    // + configure-soundscape (per-scene sound sets for house module fvtt-mod-soundscape: a POOL of
+    //   files played at randomized intervals with silence between, or crossfaded into a seamless
+    //   bed — the shape neither AmbientSound placeables nor Playlists can express)
     // (parse-ddb-character was built and REMOVED 2026-08-17: DDB exports strip the embedded
     //  ActiveEffects the premium items carry, so imported PCs pass review and silently lose their
     //  automation at the table — the Divine Favor incident. Standing policy: refuse DDB imports
     //  and build the PC natively from the premium compendia instead — see design.md §7.)
-    expect(names.length).toBe(146);
+    expect(names.length).toBe(147);
   });
 
   it('registers read-pack (the Node-only scene-pack module reader, tom-cartos-import M1)', () => {

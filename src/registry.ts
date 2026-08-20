@@ -37,6 +37,7 @@ import { buildAddFeatureTool } from './tools/dnd5e/grant-to-actor.js';
 import { MoltenTools } from './tools/molten/index.js';
 import { AssetBridgeTools } from './tools/asset-bridge.js';
 import { PlaylistTools } from './tools/playlist.js';
+import { SoundscapeTools } from './tools/soundscape.js';
 import { TableTools } from './tools/tables.js';
 import { CardsTools } from './tools/cards.js';
 import { ChatTools } from './tools/chat.js';
@@ -102,6 +103,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const moltenTools = new MoltenTools({ logger, foundry });
   const assetBridgeTools = new AssetBridgeTools({ foundry, logger });
   const playlistTools = new PlaylistTools({ foundry, logger });
+  // House module #6 (fvtt-mod-soundscape): per-scene sound sets, authored as scene flags.
+  const soundscapeTools = new SoundscapeTools({ foundry, logger });
   const tableTools = new TableTools({ foundry, logger });
   const cardsTools = new CardsTools({ foundry, logger });
   const chatTools = new ChatTools({ foundry, logger });
@@ -150,6 +153,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...moltenTools.getToolDefinitions(),
     ...assetBridgeTools.getToolDefinitions(),
     ...playlistTools.getToolDefinitions(),
+    ...soundscapeTools.getToolDefinitions(),
     ...tableTools.getToolDefinitions(),
     ...cardsTools.getToolDefinitions(),
     ...chatTools.getToolDefinitions(),
@@ -347,6 +351,11 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     'list-playlists': args => playlistTools.handleListPlaylists(args),
     'update-playlist': args => playlistTools.handleUpdatePlaylist(args),
     'delete-playlist': args => playlistTools.handleDeletePlaylist(args),
+
+    // configure-soundscape: the per-scene sound sets of house module fvtt-mod-soundscape —
+    // randomized one-shots with silence between, and crossfaded ambient beds. Playlists stay
+    // the music system; this is the layer neither Playlists nor AmbientSound placeables cover.
+    'configure-soundscape': args => soundscapeTools.handleConfigureSoundscape(args),
 
     // Roll tables
     'create-rolltable': args => tableTools.handleCreateRollTable(args),
