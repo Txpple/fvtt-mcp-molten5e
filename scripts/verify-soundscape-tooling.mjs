@@ -164,6 +164,46 @@ try {
     'an Interval Sounds template survived an Ambient Loops filter'
   );
 
+  // A handful of library names exist in BOTH sections (Crow Caws, Owl Hoots, Rain Light, Sea Surf
+  // Large/Small). The pure resolver is unit-tested; what this proves is the WIRING — that the
+  // caller's `section` actually reaches it instead of being read only by the library browse.
+  const collision = await f.evaluate(async () => {
+    const res = await fetch(foundry.utils.getRoute('soundscape-sfx/library.json'));
+    const seen = new Map();
+    for (const s of (await res.json()).sets) {
+      const key = s.name.trim().toLowerCase();
+      if (seen.has(key) && seen.get(key) !== s.section) return s.name;
+      seen.set(key, s.section);
+    }
+    return null;
+  });
+  if (collision) {
+    await rejects(
+      'an ambiguous template name is an error, not a coin flip',
+      () => call({ action: 'add', sceneIdentifier: scene, template: collision }),
+      /matches 2 templates/
+    );
+    const narrowed = await call({
+      action: 'add',
+      sceneIdentifier: scene,
+      template: collision,
+      section: 'Ambient Loops',
+    });
+    contains(
+      'section narrows which template an add resolves',
+      narrowed,
+      `from library template "${collision}"`,
+      'loop ·'
+    );
+    const narrowedId = /\(([a-z0-9]{4,12})\)/.exec(narrowed)?.[1];
+    if (narrowedId)
+      await call({ action: 'remove', sceneIdentifier: scene, setIdentifier: narrowedId });
+  } else {
+    console.log(
+      '  ⏭  no cross-section name collision in this library — section narrowing untested'
+    );
+  }
+
   /* --- 3. add from a template whose audio resolves ------------------------------------------- */
   console.log('\n— add (from library) —');
   const addLoop = await call({

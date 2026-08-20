@@ -198,6 +198,52 @@ export function matchTemplates(
   return hits.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
+/**
+ * Resolve the ONE library template an `add` call means.
+ *
+ * Name matching is EXACT — a half-remembered name is an error, not a coin flip — but the caller's
+ * `section`/`category` narrowing is applied FIRST. That narrowing is load-bearing, not cosmetic:
+ * five names in the shipped library exist in BOTH sections (Crow Caws, Owl Hoots, Rain Light, Sea
+ * Surf Large, Sea Surf Small are each an interval pool *and* an ambient bed), and the ambiguity
+ * error below tells the caller to narrow — so narrowing has to actually work.
+ */
+export function resolveTemplate(
+  templates: SoundscapeTemplate[],
+  template: string,
+  filters: { section?: string; category?: string } = {}
+): SoundscapeTemplate {
+  const scoped = matchTemplates(templates, filters);
+  const narrowed = scoped.length !== templates.length;
+  const wanted = template.trim().toLowerCase();
+  const found = scoped.filter(t => t.name.trim().toLowerCase() === wanted);
+
+  if (found.length === 1) return found[0];
+
+  if (!found.length) {
+    // Suggest from the WHOLE library rather than the narrowed slice: "it exists, but in the other
+    // section" is the most useful thing to tell someone who just narrowed past their own hit.
+    const near = matchTemplates(templates, { query: template })
+      .slice(0, 8)
+      .map(t => `"${t.name}" (${t.section} / ${t.category})`);
+    throw new Error(
+      `No library template named "${template}"` +
+        (narrowed ? ' in the requested section/category' : '') +
+        '.' +
+        (near.length
+          ? ` Closest: ${near.join(', ')}`
+          : ' Browse with action "library" to see what exists.')
+    );
+  }
+
+  throw new Error(
+    `"${template}" matches ${found.length} templates: ` +
+      found.map(t => `${t.section} / ${t.category}`).join(', ') +
+      (narrowed
+        ? '. Pass explicit `files` instead.'
+        : '. Narrow it with `section` or `category`, or pass explicit `files`.')
+  );
+}
+
 /** section → category → count, for orienting a caller who has not named a filter yet. */
 export function summarizeLibrary(templates: SoundscapeTemplate[]): Array<{
   section: string;
@@ -522,31 +568,12 @@ export async function configureSoundscape(args: ConfigureSoundscapeArgs): Promis
             '`files` instead, or publish a library (scripts/upload-soundscape-library.mjs).'
         );
       }
-      const wanted = args.template.trim().toLowerCase();
-      const found = templates.filter(t => t.name.trim().toLowerCase() === wanted);
-      if (!found.length) {
-        const near = matchTemplates(templates, { query: args.template })
-          .slice(0, 8)
-          .map(t => `"${t.name}" (${t.section} / ${t.category})`);
-        throw new Error(
-          `No library template named "${args.template}".` +
-            (near.length
-              ? ` Closest: ${near.join(', ')}`
-              : ' Browse with action "library" to see what exists.')
-        );
-      }
-      if (found.length > 1) {
-        throw new Error(
-          `"${args.template}" matches ${found.length} templates across sections: ` +
-            found.map(t => `${t.section} / ${t.category}`).join(', ') +
-            '. Narrow it with `section`, or pass explicit `files`.'
-        );
-      }
+      const match = resolveTemplate(templates, args.template, args);
       // The taxonomy fields are picker metadata, not part of a scene's set; drop them, and drop the
       // template's id so every copy is its own set (the module's own library picker does the same).
-      const { section: _s, category: _c, id: _i, ...template } = found[0] as any;
+      const { section: _s, category: _c, id: _i, ...template } = match as any;
       base = template;
-      fromTemplate = found[0].name;
+      fromTemplate = match.name;
     } else {
       if (!args.name || !Array.isArray(args.files) || !args.files.length) {
         throw new Error(

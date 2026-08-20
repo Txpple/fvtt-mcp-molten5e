@@ -56,7 +56,8 @@ const ConfigureSoundscapeSchema = z.object({
     .describe(
       'action "add": copy this LIBRARY template (its exact name, from action "library") — files, ' +
         'play style, and timing all come along. Any other field passed alongside overrides the ' +
-        "template's value. Omit to author a set from explicit `files` instead."
+        "template's value. A handful of names exist in BOTH sections, so pair this with `section` " +
+        'when the name is ambiguous. Omit to author a set from explicit `files` instead.'
     ),
   query: z
     .string()
@@ -66,13 +67,17 @@ const ConfigureSoundscapeSchema = z.object({
     .enum(['Interval Sounds', 'Ambient Loops'])
     .optional()
     .describe(
-      'action "library": restrict to one section. Interval Sounds = randomized one-shots; ' +
-        'Ambient Loops = continuous beds.'
+      'Restrict to one section. Interval Sounds = randomized one-shots; Ambient Loops = ' +
+        'continuous beds. Filters action "library", and narrows which `template` action "add" ' +
+        'resolves when one name exists in both sections.'
     ),
   category: z
     .string()
     .optional()
-    .describe('action "library": restrict to a category (substring match, e.g. "Forest").'),
+    .describe(
+      'Restrict to a category (substring match, e.g. "Forest"). Filters action "library", and ' +
+        'narrows `template` resolution on action "add".'
+    ),
   limit: z
     .number()
     .int()
@@ -239,9 +244,7 @@ function formatLibrary(result: any): string {
     ? `\n  …and ${result.truncated} more — narrow with query/section/category, or raise limit.`
     : '';
 
-  return (
-    head + sections + matches + more + '\n\n  Add one with action "add" + template "<exact name>".'
-  );
+  return `${head}${sections}${matches}${more}\n\n  Add one with action "add" + template "<exact name>".`;
 }
 
 function formatList(result: any): string {

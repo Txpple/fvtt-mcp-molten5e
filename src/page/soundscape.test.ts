@@ -16,6 +16,7 @@ import {
   describeTiming,
   resolveSet,
   matchTemplates,
+  resolveTemplate,
   summarizeLibrary,
   NIGHT_DARKNESS,
   type SoundscapeSet,
@@ -226,6 +227,67 @@ describe('matchTemplates', () => {
     expect(matchTemplates(templates, { query: 'tavern', section: 'Ambient Loops' })).toHaveLength(
       1
     );
+  });
+});
+
+describe('resolveTemplate', () => {
+  // Mirrors the shipped library's real collision shape: five names (Crow Caws, Owl Hoots, Rain
+  // Light, Sea Surf Large/Small) name BOTH an Interval Sounds pool and an Ambient Loops bed.
+  const templates: SoundscapeTemplate[] = [
+    { name: 'Crow Caws', section: 'Interval Sounds', category: 'Beasts & Birds' },
+    { name: 'Crow Caws', section: 'Ambient Loops', category: 'Forests & Wilds' },
+    { name: 'Crypt Small', section: 'Ambient Loops', category: 'Dungeons, Crypts & Ruins' },
+    { name: 'Wolf Howls', section: 'Interval Sounds', category: 'Beasts & Birds' },
+  ];
+
+  it('resolves a unique name with no narrowing', () => {
+    expect(resolveTemplate(templates, 'Crypt Small').category).toBe('Dungeons, Crypts & Ruins');
+  });
+
+  it('matches the name exactly but tolerates case and surrounding space', () => {
+    expect(resolveTemplate(templates, '  wolf howls ').name).toBe('Wolf Howls');
+  });
+
+  it('uses `section` to pick between two templates sharing a name', () => {
+    expect(resolveTemplate(templates, 'Crow Caws', { section: 'Ambient Loops' })).toEqual(
+      templates[1]
+    );
+    expect(resolveTemplate(templates, 'Crow Caws', { section: 'Interval Sounds' })).toEqual(
+      templates[0]
+    );
+  });
+
+  it('uses `category` to disambiguate too', () => {
+    expect(resolveTemplate(templates, 'Crow Caws', { category: 'forests' })).toEqual(templates[1]);
+  });
+
+  it('throws on an ambiguous name and names both sections', () => {
+    expect(() => resolveTemplate(templates, 'Crow Caws')).toThrow(
+      /matches 2 templates.*Interval Sounds.*Ambient Loops/s
+    );
+  });
+
+  it('tells an un-narrowed caller to narrow, and a narrowed one to pass files', () => {
+    expect(() => resolveTemplate(templates, 'Crow Caws')).toThrow(/Narrow it with/);
+    expect(() =>
+      resolveTemplate(templates, 'Crow Caws', { category: 'Beasts & Birds' })
+    ).not.toThrow();
+  });
+
+  it('suggests near misses from the WHOLE library when nothing matches', () => {
+    expect(() => resolveTemplate(templates, 'Crow')).toThrow(
+      /No library template named "Crow"\. Closest: "Crow Caws"/
+    );
+  });
+
+  it('says so when the narrowing is what excluded the hit', () => {
+    expect(() => resolveTemplate(templates, 'Crypt Small', { section: 'Interval Sounds' })).toThrow(
+      /in the requested section\/category.*Closest: "Crypt Small"/s
+    );
+  });
+
+  it('points at the library browse when there is nothing close at all', () => {
+    expect(() => resolveTemplate(templates, 'Zzzz')).toThrow(/Browse with action "library"/);
   });
 });
 
