@@ -1,14 +1,17 @@
 ---
 name: playlist-builder
 description: >-
-  Author D&D 5e audio playlists in Foundry — scene ambiences (tavern, forest, dungeon, storm),
-  combat/boss music, exploration music sets, and SFX soundboards. Use when the user wants to "make a
-  playlist", "add background music / ambience", "a tavern soundscape", "battle music", "a soundboard
-  of effects", "atmosphere for this scene", or to attach audio to a scene. YOU decide the tracks, the
-  playback mode, and the mix; the tools only STRUCTURE it (the Playlist/PlaylistSound shape). Audio has
-  no premium-book compendium — playlists are asset-driven (like scenes): the sound files are uploaded.
-  Composes create-playlist / update-playlist / list-playlists / delete-playlist (+ upload-asset for the
-  audio); to attach a playlist to a scene, hand off to scene-builder.
+  Author D&D 5e audio playlists in Foundry — MUSIC and whole-track ambience: scene ambience beds
+  (tavern, forest, dungeon, storm), combat/boss music, exploration music sets, and SFX soundboards.
+  Use when the user wants to "make a playlist", "add background music", "battle music", "a theme for
+  this place", "exploration music", "a soundboard of effects", or to attach audio to a scene. YOU
+  decide the tracks, the playback mode, and the mix; the tools only STRUCTURE it (the
+  Playlist/PlaylistSound shape). Audio has no premium-book compendium — playlists are asset-driven
+  (like scenes): the sound files are uploaded. Composes create-playlist / update-playlist /
+  list-playlists / delete-playlist (+ upload-asset for the audio); to attach a playlist to a scene,
+  hand off to scene-builder. For randomized atmospheric ONE-SHOTS with silence between them (a crow,
+  quiet, a distant dog) or a crossfaded ambient bed layered on a scene, hand off to
+  soundscape-builder — that is the house Soundscape module, not a Playlist.
 ---
 
 # Playlist builder
@@ -16,6 +19,22 @@ description: >-
 The judgment + curation layer for **audio** (design.md §5) — the ambience and music that set a scene's
 mood: a crackling tavern, a howling blizzard, a boss fight, a soundboard of one-shot effects. As with
 every authoring skill: **you decide; the tool does.**
+
+## First: Playlist, Soundscape, or a placeable?
+
+Three audio systems live side by side. Playlists own **music and whole tracks**; the other two are
+someone else's job:
+
+- **Randomized one-shots with silence between them** (a crow, quiet, a distant dog), or a crossfaded
+  **ambient bed** layered on one scene → **`soundscape-builder`** (house module `fvtt-mod-soundscape`).
+  Playlists have no concept of silence-with-variation, so a "soundscape" in that sense is not a
+  playlist. Soundscape's design.md makes playlist integration an explicit **non-goal** — the two
+  systems never touch, and a scene happily runs both.
+- **A sound coming from one SPOT on the map** (that waterfall, this hearth) → an AmbientSound
+  placeable via **`create-sounds`**.
+
+A long looping ambience *track* (a 10-minute Tabletop Audio bed) is still a playlist — that's this
+skill.
 
 ## The line that matters — yours vs the tool's
 
