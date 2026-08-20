@@ -102,7 +102,9 @@ try {
       scene: game.scenes.active?.name ?? null,
       module: (() => {
         const m = game.modules.get('fvtt-mod-soundscape');
-        return m ? { installed: true, active: !!m.active, version: m.version } : { installed: false };
+        return m
+          ? { installed: true, active: !!m.active, version: m.version }
+          : { installed: false };
       })(),
     }),
     null
@@ -121,7 +123,9 @@ try {
     },
     { name: scene, moduleId: MODULE_ID }
   );
-  console.log(`[verify-soundscape] snapshot: ${snapshot ? `${snapshot.length} set(s)` : 'no flag'}\n`);
+  console.log(
+    `[verify-soundscape] snapshot: ${snapshot ? `${snapshot.length} set(s)` : 'no flag'}\n`
+  );
 
   /* --- 1. list ------------------------------------------------------------------------------ */
   console.log('— list —');
@@ -141,7 +145,11 @@ try {
     'Add one with action "add"'
   );
   const total = Number(/(\d+) template\(s\)/.exec(lib)?.[1] ?? 0);
-  check(`library found ${total} templates`, total > 100, `only ${total} — is the Data-root manifest present?`);
+  check(
+    `library found ${total} templates`,
+    total > 100,
+    `only ${total} — is the Data-root manifest present?`
+  );
 
   const libQ = await call({ action: 'library', query: 'tavern' });
   contains('library reports a filtered count', libQ, 'matching');
@@ -179,12 +187,15 @@ try {
   check('add reports the new set id', !!loopId, addLoop);
 
   /* --- 4. KEEP+WARN: a template whose audio is absent ---------------------------------------- */
-  const absent = await f.evaluate(async ({ resolving }) => {
-    const res = await fetch(foundry.utils.getRoute('soundscape-sfx/library.json'));
-    const sets = (await res.json()).sets;
-    // Any template other than the seeded one — the sandbox only carries audio for that one.
-    return sets.find(s => s.name !== resolving && s.files?.length === 1)?.name ?? null;
-  }, { resolving: RESOLVING_TEMPLATE });
+  const absent = await f.evaluate(
+    async ({ resolving }) => {
+      const res = await fetch(foundry.utils.getRoute('soundscape-sfx/library.json'));
+      const sets = (await res.json()).sets;
+      // Any template other than the seeded one — the sandbox only carries audio for that one.
+      return sets.find(s => s.name !== resolving && s.files?.length === 1)?.name ?? null;
+    },
+    { resolving: RESOLVING_TEMPLATE }
+  );
 
   if (absent) {
     const addMissing = await call({ action: 'add', sceneIdentifier: scene, template: absent });
@@ -195,7 +206,11 @@ try {
       `from library template "${absent}"`
     );
   } else {
-    check('KEEP+WARN probe found a template to test with', false, 'no single-file template available');
+    check(
+      'KEEP+WARN probe found a template to test with',
+      false,
+      'no single-file template available'
+    );
   }
 
   /* --- 5. add from explicit files ------------------------------------------------------------ */
@@ -239,7 +254,13 @@ try {
     volume: 0.3,
     whenToPlay: 'always',
   });
-  contains('update lists the fields that actually changed', upd, 'changed:', 'volume', 'whenToPlay');
+  contains(
+    'update lists the fields that actually changed',
+    upd,
+    'changed:',
+    'volume',
+    'whenToPlay'
+  );
 
   const noop = await call({
     action: 'update',
@@ -255,7 +276,12 @@ try {
     setIdentifier: 'VERIFY Crows',
     interval: 9000,
   });
-  contains('an out-of-range value is clamped AND reported', clampOut, 'clamped', 'interval 9000 → 3600');
+  contains(
+    'an out-of-range value is clamped AND reported',
+    clampOut,
+    'clamped',
+    'interval 9000 → 3600'
+  );
 
   // Lowering the interval must drag an oversized variation down with it — the negative-gap trap.
   const clampVar = await call({
@@ -287,7 +313,13 @@ try {
   });
   await rejects(
     'a name matching two sets throws and names both ids',
-    () => call({ action: 'update', sceneIdentifier: scene, setIdentifier: 'VERIFY Crows', volume: 0.9 }),
+    () =>
+      call({
+        action: 'update',
+        sceneIdentifier: scene,
+        setIdentifier: 'VERIFY Crows',
+        volume: 0.9,
+      }),
     /matches 2 sound sets/
   );
 
@@ -344,13 +376,23 @@ try {
   console.log('\n— remove —');
   if (loopId) {
     const rm = await call({ action: 'remove', sceneIdentifier: scene, setIdentifier: loopId });
-    contains('remove by id names what went and what remains', rm, 'Removed 1 sound set(s)', 'remain');
+    contains(
+      'remove by id names what went and what remains',
+      rm,
+      'Removed 1 sound set(s)',
+      'remain'
+    );
   }
   const rmAll = await call({ action: 'remove', sceneIdentifier: scene, setIdentifier: 'all' });
   contains('remove "all" clears the scene', rmAll, 'Removed', '0 set(s) remain');
 
   const empty = await call({ action: 'list', sceneIdentifier: scene });
-  contains('an emptied scene points the caller at the library', empty, 'No sound sets', 'action "library"');
+  contains(
+    'an emptied scene points the caller at the library',
+    empty,
+    'No sound sets',
+    'action "library"'
+  );
 
   const rmEmpty = await call({ action: 'remove', sceneIdentifier: scene, setIdentifier: 'all' });
   contains('removing from an empty scene is an honest no-op', rmEmpty, 'Nothing to remove');
