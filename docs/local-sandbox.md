@@ -16,6 +16,35 @@ Content authored in the sandbox is **throwaway by definition** — the next refr
 If something built locally turns out to be keeper content, rebuild it against prod with the tools;
 never hand-copy world DB files upward. Prod's world DB stays pure.
 
+## Running the sandbox headless (no desktop window)
+
+`scripts/local-foundry.mjs` runs the same server the desktop app wraps — the install's
+`resources/app/main.js` under plain Node — with no Electron window (the app pays for a Chromium
+instance nobody looks at; the bridge talks HTTP/WebSocket, and a human who wants eyes on the
+world opens a browser tab). Same dataPath, same port, same worlds; the desktop app still works
+whenever the headless server isn't running (they can't run together — the dataPath lock).
+
+```bash
+node scripts/local-foundry.mjs start      # boot server + launch the world (idempotent)
+node scripts/local-foundry.mjs stop       # deactivate the world (the DB flush), end the process
+node scripts/local-foundry.mjs status
+node scripts/local-foundry.mjs restart
+```
+
+`start --no-world` boots to Setup only; `stop` refuses while users are connected
+(`disconnect-bridge` first) and `--force` overrides. Server console output appends to
+`<dataPath>/Logs/headless-console.log`; the pid rides `Logs/headless.pid`. Requires
+`LOCAL_ADMIN_KEY` — world launch and world stop are admin-gated — and passes `--adminPassword`
+at boot so Foundry rewrites `Config/admin.txt` itself: the installed hash can never drift from
+`.env`.
+
+The v14 admin API the launcher rides (read from the app dist 2026-08-21; details in the script
+header): admin posts carry `adminPassword` in the JSON body — no `/auth` login, no session
+cookie. `launchWorld` is a `/setup` action and the `/setup` action switch only exists while NO
+world is active; stopping a world is the `/join` `{action: "shutdown"}` route and exists only
+WHILE one is active; and there is no process-exit route at all, so `stop` deactivates the world
+(that runs `db.disconnect` + `world.save`) and then ends the Setup-idle process.
+
 ## Refreshing the sandbox
 
 ```bash
@@ -57,25 +86,24 @@ requirement. The sequence that works:
 1. `curl -s http://localhost:30000/api/status` — is a world active, and how many users?
 2. If the MCP bridge is one of them, `disconnect-bridge` first so no Playwright session is
    dangling. (`list-users` shows who is really connected — check no human is mid-session.)
-3. Close the app **gracefully** — `CloseMainWindow()` on the process, never `Stop-Process`. It
-   shuts the world down and releases the LevelDB cleanly; a hard kill risks the local DB and the
-   file locks may outlive the process.
+3. Stop the server **gracefully**. Headless: `node scripts/local-foundry.mjs stop`. Desktop
+   app: close it with `CloseMainWindow()` on the process, never `Stop-Process` — it shuts the
+   world down and releases the LevelDB cleanly; a hard kill risks the local DB and the file
+   locks may outlive the process.
 4. Confirm the port is free, then run the refresh.
-5. Relaunch Foundry and launch the world.
+5. Relaunch Foundry and launch the world — headless, that's `node scripts/local-foundry.mjs
+   start` again.
 
-The desktop app holds an exclusive **lock on the whole data directory** — any second Foundry
-process against the same `dataPath` dies with "cannot start in this directory which is already
-locked by another process". That is also why CLI flags like `--adminPassword` can't be applied
-while the app is up.
+Foundry holds an exclusive **lock on the whole data directory** — any second Foundry process
+against the same `dataPath` dies with "cannot start in this directory which is already locked by
+another process". That is also why CLI flags like `--adminPassword` can't be applied while the
+app is up. (A *killed* process leaves `Config/options.json.lock` behind; Foundry treats it as
+stale after ~10s, and the launcher's `start` waits that window out automatically.)
 
-With `LOCAL_ADMIN_KEY` set, steps 4–5 are scriptable end to end:
-
-```
-POST /auth   {action: "adminAuth", adminPassword: <LOCAL_ADMIN_KEY>}
-POST /setup  {action: "launchWorld", world: <world id>}   # carry the cookie from the auth response
-```
-
-Both return 200; poll `/api/status` until `active` is true (~25s for a heavy dnd5e world).
+With `LOCAL_ADMIN_KEY` set the whole stop→refresh→start loop is scriptable; raw HTTP, if you
+need it without the launcher, is `POST /setup {action: "launchWorld", world: <id>, adminPassword:
+<LOCAL_ADMIN_KEY>}` (the key rides the JSON body — the old `/auth` cookie dance predates v14's
+gates), then poll `/api/status` until `active` is true (~25s for a heavy dnd5e world).
 
 ## What is deliberately NOT pulled
 
