@@ -38,7 +38,8 @@ powershell -ExecutionPolicy Bypass -File .claude\skills\session-scribe\scripts\s
 new GPU generation this usually means ctranslate2 needs a version bump for the new compute
 capability (`uv pip install --python ~\.session-scribe\venv\Scripts\python.exe -U ctranslate2`),
 then re-run the smoke test. Machines verified: RTX 4070 laptop ✅ (2026-07-06), DESKTOP-NY ✅
-(2026-08-25, cuda/float16 — ~2.9h × 5 tracks in <5 min, on signed Python 3.13).
+(2026-08-25, cuda/float16 — ~2.9h × 5 tracks in <5 min, on signed Python 3.13; hardened
+setup.ps1 re-verified end-to-end there 2026-08-26, incl. the signed-pick venv-creation path).
 
 **Known failure — Windows Application Control blocks the uv-managed Python** (hit on DESKTOP-NY
 2026-08-25): `ImportError: DLL load failed while importing _ctypes: An Application Control
