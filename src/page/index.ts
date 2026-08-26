@@ -78,6 +78,7 @@ import {
 import {
   listActors,
   getCharacterInfo,
+  exportActorData,
   getCharacterEntity,
   searchCharacterItems,
   findActor,
@@ -232,6 +233,7 @@ const api = {
   // actors / characters
   listActors,
   getCharacterInfo,
+  exportActorData,
   getCharacterEntity,
   searchCharacterItems,
   findActor,

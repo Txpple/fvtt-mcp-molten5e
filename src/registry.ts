@@ -170,6 +170,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const handlers: Record<string, (args: any) => Promise<any>> = {
     // Actor reads (ActorTools)
     'get-actor': args => actorTools.handleGetCharacter(args),
+    'export-actor': args => actorTools.handleExportActor(args),
     'list-actors': args => actorTools.handleListCharacters(args),
     'get-actor-entity': args => actorTools.handleGetCharacterEntity(args),
     'search-actor-contents': args => actorTools.handleSearchCharacterItems(args),

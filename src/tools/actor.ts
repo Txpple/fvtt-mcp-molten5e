@@ -1,8 +1,11 @@
 import { z } from 'zod';
+import { access, mkdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute } from 'node:path';
 import type { FoundryBridge } from '../foundry.js';
 import { Logger } from '../logger.js';
 import { FormattedToolError } from '../utils/error-handler.js';
 import { toInputSchema } from '../utils/schema.js';
+import { humanSize } from './molten/dav-access.js';
 import { extractActorStats, extractActorBasicInfo } from './dnd5e/actor-stats.js';
 
 // ActorTools — read/inspect actors (the §5 actor building block, read side). Actor *creation* lives
@@ -32,6 +35,27 @@ const GetActorEntitySchema = z.object({
     .string()
     .min(1, 'Entity identifier cannot be empty')
     .describe('Entity name or ID (can be item ID, action name, spell name, or effect name)'),
+});
+
+const ExportActorSchema = z.object({
+  identifier: z
+    .string()
+    .min(1, 'Character identifier cannot be empty')
+    .describe(
+      'Actor name or ID to export. Also accepts a placed TOKEN id (from list-tokens) to export that ' +
+        "token INSTANCE's live state — an unlinked token can differ from its base actor."
+    ),
+  localPath: z
+    .string()
+    .min(1, 'localPath cannot be empty')
+    .describe(
+      'Absolute local destination path for the JSON file (parent dirs created), e.g. ' +
+        '"D:\\\\campaign\\\\party-snapshots\\\\2026-08-25\\\\Gren.json".'
+    ),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe('Allow overwriting an existing file at localPath.'),
 });
 
 const ListActorsSchema = z.object({
@@ -100,6 +124,17 @@ export class ActorTools {
         inputSchema: toInputSchema(GetActorEntitySchema),
       },
       {
+        name: 'export-actor',
+        description:
+          'Write ONE actor to a LOCAL file as a full-fidelity native Foundry JSON export — the ' +
+          'complete document source (system, every embedded item with its uses/charges and flags, ' +
+          'effects, prototype token, ownership), stamped with the exportSource envelope so the file ' +
+          "round-trips through the sheet's Import Data button. THE character backup/restore path " +
+          '(get-actor is a lossy summary view). Accepts a placed token id to capture an unlinked ' +
+          'token instance. Refuses to overwrite an existing file unless overwrite:true.',
+        inputSchema: toInputSchema(ExportActorSchema),
+      },
+      {
         name: 'list-actors',
         description: 'List all available characters with basic information',
         inputSchema: toInputSchema(ListActorsSchema),
@@ -129,6 +164,36 @@ export class ActorTools {
 
     // Format the response for Claude
     return await this.formatCharacterResponse(characterData);
+  }
+
+  /**
+   * Tool: export-actor
+   * Full-fidelity native JSON export of one actor to a local file (the backup path).
+   */
+  async handleExportActor(args: any): Promise<string> {
+    const parsed = ExportActorSchema.parse(args ?? {});
+    if (!isAbsolute(parsed.localPath)) {
+      return `Refused: localPath must be an absolute path (got "${parsed.localPath}").`;
+    }
+    if (!parsed.overwrite && (await fileExists(parsed.localPath))) {
+      return `Refused: local file "${parsed.localPath}" already exists. Pass overwrite:true to replace it.`;
+    }
+
+    this.logger.info('Exporting actor', { identifier: parsed.identifier });
+    const res = await this.foundry.call('exportActorData', { identifier: parsed.identifier });
+
+    const bytes = Buffer.from(JSON.stringify(res.data, null, 2), 'utf8');
+    try {
+      await mkdir(dirname(parsed.localPath), { recursive: true });
+      await writeFile(parsed.localPath, bytes);
+    } catch (err) {
+      return `export-actor failed writing "${parsed.localPath}": ${(err as Error).message}`;
+    }
+
+    return (
+      `Exported "${res.name}" (${res.type}, ${res.itemCount} items, ${res.effectCount} effects) → ` +
+      `${parsed.localPath} (${humanSize(bytes.length)})`
+    );
   }
 
   async handleGetCharacterEntity(args: any): Promise<any> {
@@ -443,5 +508,15 @@ export class ActorTools {
         : null,
       hasIcon: !!effect.icon,
     }));
+  }
+}
+
+/** True if a local file exists (same helper chat.ts uses for its export). */
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
   }
 }

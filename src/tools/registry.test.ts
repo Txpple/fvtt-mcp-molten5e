@@ -45,7 +45,7 @@ function draft2020Violations(node: unknown, path: string): string[] {
 }
 
 describe('tool registry', () => {
-  it('advertises 147 uniquely-named tools (matches the documented surface)', () => {
+  it('advertises 148 uniquely-named tools (matches the documented surface)', () => {
     const { tools } = build();
     const names = tools.map(t => t.name);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
@@ -89,7 +89,7 @@ describe('tool registry', () => {
     //  ActiveEffects the premium items carry, so imported PCs pass review and silently lose their
     //  automation at the table — the Divine Favor incident. Standing policy: refuse DDB imports
     //  and build the PC natively from the premium compendia instead — see design.md §7.)
-    expect(names.length).toBe(147);
+    expect(names.length).toBe(148);
   });
 
   it('registers read-pack (the Node-only scene-pack module reader, tom-cartos-import M1)', () => {

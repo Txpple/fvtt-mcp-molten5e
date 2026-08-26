@@ -15,7 +15,10 @@
  * bridge calls by method name rather than by position.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ActorTools } from './actor.js';
 import { makeLogger, makeFoundry } from './test-helpers.js';
 
@@ -44,6 +47,7 @@ describe('ActorTools.getToolDefinitions', () => {
       .map(t => t.name)
       .sort();
     expect(names).toEqual([
+      'export-actor',
       'get-actor',
       'get-actor-entity',
       'list-actors',
@@ -62,6 +66,104 @@ describe('ActorTools.getToolDefinitions', () => {
     const { tools } = build();
     const byName = Object.fromEntries(tools.getToolDefinitions().map(d => [d.name, d]));
     expect(byName['get-actor'].inputSchema.required).toEqual(['identifier']);
+  });
+});
+
+// --- export-actor tmp-file plumbing (same pattern as chat.test.ts) ---------
+const tmpFiles: string[] = [];
+function tmpFile(name: string): string {
+  const p = join(tmpdir(), `mcp-actor-test-${name}`);
+  tmpFiles.push(p);
+  return p;
+}
+afterEach(async () => {
+  await Promise.all(tmpFiles.splice(0).map(p => rm(p, { force: true })));
+});
+
+/** A minimal exportActorData bridge response (full-doc `data` + summary fields). */
+function exportResponse(overrides: Record<string, any> = {}) {
+  return {
+    id: 'abc123',
+    name: 'Gren',
+    type: 'character',
+    itemCount: 2,
+    effectCount: 1,
+    data: {
+      _id: 'abc123',
+      name: 'Gren',
+      type: 'character',
+      system: { attributes: { hp: { value: 21, max: 27 } } },
+      items: [
+        { _id: 'i1', name: 'Wand of Magic Missiles', system: { uses: { value: 4, max: 7 } } },
+        { _id: 'i2', name: 'Dagger', system: {} },
+      ],
+      effects: [{ _id: 'e1', name: 'Bless' }],
+      ownership: { default: 0, u1: 3 },
+      flags: {
+        exportSource: {
+          world: 'greenrest',
+          system: 'dnd5e',
+          coreVersion: '14',
+          systemVersion: '5.3.3',
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
+describe('handleExportActor', () => {
+  it('rejects missing localPath and empty identifier (zod)', async () => {
+    const { tools } = build();
+    await expect(tools.handleExportActor({ identifier: 'Gren' })).rejects.toThrow();
+    await expect(
+      tools.handleExportActor({ identifier: '', localPath: 'C:\\x.json' })
+    ).rejects.toThrow();
+  });
+
+  it('refuses a relative localPath before calling the bridge', async () => {
+    const { tools, calls } = build();
+    const res = await tools.handleExportActor({ identifier: 'Gren', localPath: 'party/gren.json' });
+    expect(res).toMatch(/^Refused: localPath must be an absolute path/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses to overwrite an existing file unless overwrite:true', async () => {
+    const path = tmpFile('exists.json');
+    await writeFile(path, 'sentinel');
+    const { tools, calls } = build({ exportActorData: exportResponse() });
+
+    const refused = await tools.handleExportActor({ identifier: 'Gren', localPath: path });
+    expect(refused).toMatch(/already exists/);
+    expect(calls).toHaveLength(0);
+    expect(await readFile(path, 'utf8')).toBe('sentinel');
+
+    const replaced = await tools.handleExportActor({
+      identifier: 'Gren',
+      localPath: path,
+      overwrite: true,
+    });
+    expect(replaced).toMatch(/^Exported "Gren"/);
+    expect(JSON.parse(await readFile(path, 'utf8'))._id).toBe('abc123');
+  });
+
+  it('writes the FULL document JSON and summarizes name/type/counts', async () => {
+    const path = tmpFile('gren.json');
+    const { tools, calls } = build({ exportActorData: exportResponse() });
+
+    const res = await tools.handleExportActor({ identifier: 'Gren', localPath: path });
+
+    const call = callFor(calls, 'exportActorData');
+    expect(call?.[1]).toEqual({ identifier: 'Gren' });
+
+    expect(res).toContain('Exported "Gren" (character, 2 items, 1 effects)');
+    expect(res).toContain(path);
+
+    // The file is the untouched full document — uses/charges and ownership survive.
+    const written = JSON.parse(await readFile(path, 'utf8'));
+    expect(written.items[0].system.uses).toEqual({ value: 4, max: 7 });
+    expect(written.ownership).toEqual({ default: 0, u1: 3 });
+    expect(written.flags.exportSource.system).toBe('dnd5e');
   });
 });
 

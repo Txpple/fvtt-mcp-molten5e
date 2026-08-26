@@ -461,6 +461,45 @@ export function getCharacterInfo(args: { characterName?: string; characterId?: s
 }
 
 /**
+ * Full-fidelity actor export — the native "Export Data" payload, headless.
+ * toObject() is the COMPLETE source document (system, embedded items with their
+ * uses/charges and flags, effects, prototypeToken, ownership, folder, _stats) —
+ * no sanitizer, no projection: this is the backup/restore path, so nothing may
+ * be dropped. The exportSource flag matches ClientDocument#exportToJSON, so the
+ * file round-trips through the sheet's Import Data button. Resolves placed-token
+ * ids to the token-instance actor (ActorDelta truth), same as the other reads.
+ */
+export function exportActorData(args: { identifier?: string }): unknown {
+  const identifier = args?.identifier;
+  if (!identifier) {
+    throw new Error('identifier is required');
+  }
+
+  const actor: any = resolveActor(identifier);
+  if (!actor) {
+    throw new Error(`Character not found: ${identifier}`);
+  }
+
+  const data: any = actor.toObject();
+  data.flags = data.flags ?? {};
+  data.flags.exportSource = {
+    world: (game as any).world?.id,
+    system: game.system?.id,
+    coreVersion: (game as any).version,
+    systemVersion: game.system?.version,
+  };
+
+  return {
+    id: actor.id,
+    name: actor.name,
+    type: actor.type,
+    itemCount: Array.isArray(data.items) ? data.items.length : 0,
+    effectCount: Array.isArray(data.effects) ? data.effects.length : 0,
+    data,
+  };
+}
+
+/**
  * Fetch a single entity (item, action, or effect) from a character.
  * Payload: { characterIdentifier, entityIdentifier }. Returns a tagged result
  * { success, entityType, entity } whose entity shape varies by type.

@@ -87,30 +87,25 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
      solely in gm-notes.md or GM whispers may appear here. The user pastes this into an email —
      it must render in Gmail/Outlook (keep the inline-style table structure intact).
      **House style (owner-locked 2026-07-08, session 1):** see "recap.html house style" below.
-6. **Snapshot the party (owner directive 2026-08-06)** — write
-   `<campaign-repo>\party-snapshots\YYYY-MM-DD.md` (session date) from the LIVE sheets
-   (`get-actor` on each party PC — the party roster only, per the campaign repo's PC rules;
-   never DM test PCs like Salyth). Per PC: class/subclass + LEVEL, HP max, AC, the six
-   ability scores, feats/ASIs taken, weapon masteries, spell slots, attuned + equipped magic
-   items, notable consumables. This is the point-in-time record that answers "what did
-   <PC> have before?" after level-ups, deaths, or loot disputes — one file per session
-   date, diffable against the last.
-
-   > **TODO (owner directive 2026-08-16) — the snapshot must also be a NATIVE JSON EXPORT.**
-   > The hand-written `.md` above is a *summary* and silently drops state nobody thought to
-   > transcribe. **Lesson learned:** after session 3, "how many charges are left on Gren's
-   > Wand of Magic Missiles?" could not be answered from `party-snapshots/2026-08-11.md` —
-   > it recorded the wand as owned but not its remaining charges; the answer had to be
-   > reconstructed from the transcript (Tom said "four left" at 03:18:34). **A native
-   > Foundry actor JSON export would have carried it** (every item's `system.uses.value`),
-   > along with everything else nobody listed. So: **export each party PC to JSON via
-   > Foundry's own actor export** and commit it beside the summary — e.g.
-   > `party-snapshots/YYYY-MM-DD/<PC>.json` — keeping the `.md` as the human-readable
-   > digest. The JSON is the durable backup and the restore path; the `.md` is the story.
-   > Build note: this is a native Foundry capability (Actor → Export Data); check whether a
-   > tool wraps it before hand-rolling one, and remember an unlinked/live sheet's truth is
-   > the token instance. Also add charges/uses to the `.md` digest for the things that
-   > matter at the table (wand charges, ointment doses, potion counts).
+6. **Snapshot the party (owner directives 2026-08-06 + 2026-08-16)** — two artifacts per
+   session date, both committed:
+   - **Full JSON backup (the durable record):** for EACH party PC, call the `export-actor`
+     MCP tool → `<campaign-repo>\party-snapshots\YYYY-MM-DD\<PC>.json` (`overwrite: true`
+     when re-running the same date). This is the complete native Foundry export — every
+     item's `system.uses.value` (wand charges, potion counts), effects, attunement,
+     ownership — and it restores via the actor sheet's **Import Data** button. The party
+     roster only, per the campaign repo's PC rules; never DM test PCs like Salyth.
+     (Origin lesson, session 3: "how many charges on Gren's Wand of Magic Missiles?" was
+     unanswerable from the `.md` summary and had to be dug out of the transcript. The JSON
+     carries what nobody thought to transcribe. If `export-actor` is missing from the tool
+     list, the MCP server predates it — restart Claude Code on server ≥ 2026-08-26.)
+   - **Human digest (the story):** `party-snapshots\YYYY-MM-DD.md` from the LIVE sheets
+     (`get-actor`). Per PC: class/subclass + LEVEL, HP max, AC, the six ability scores,
+     feats/ASIs taken, weapon masteries, spell slots, attuned + equipped magic items, and
+     notable consumables **with their remaining charges/doses/counts** (the table-critical
+     numbers belong in the digest too). One file per session date, diffable against the
+     last — this answers "what did <PC> have before?" after level-ups, deaths, or loot
+     disputes.
 7. **Commit** — in the campaign repo: `git add sessions/<date> party-snapshots` → commit
    (`session: <date> — <short title>`) → push. `audio/` is gitignored (bulky, and the
    transcript is the durable artifact); tell the user audio stays local and can be deleted

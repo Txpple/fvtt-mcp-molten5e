@@ -174,7 +174,7 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**147 tools total: 137 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
+**148 tools total: 138 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes **and their placeables** (walls, lights, tokens, regions/teleporters,
