@@ -481,12 +481,17 @@ export function exportActorData(args: { identifier?: string }): unknown {
   }
 
   const data: any = actor.toObject();
-  data.flags = data.flags ?? {};
-  data.flags.exportSource = {
-    world: (game as any).world?.id,
-    system: game.system?.id,
-    coreVersion: (game as any).version,
-    systemVersion: game.system?.version,
+  // v14 pre-defines toObject().flags.exportSource as a getter-only NON-ENUMERABLE accessor, so
+  // plain assignment throws in strict mode (proven live on 14.364). Rebuild flags as plain data
+  // — spread skips the non-enumerable getter — and stamp the same envelope exportToJSON writes.
+  data.flags = {
+    ...(data.flags ?? {}),
+    exportSource: {
+      world: (game as any).world?.id,
+      system: game.system?.id,
+      coreVersion: (game as any).version,
+      systemVersion: game.system?.version,
+    },
   };
 
   return {
