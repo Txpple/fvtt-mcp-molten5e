@@ -37,7 +37,16 @@ powershell -ExecutionPolicy Bypass -File .claude\skills\session-scribe\scripts\s
 `SMOKE TEST OK` = CUDA works. `OK (CPU ONLY)` = transcription still works, just slower — on a
 new GPU generation this usually means ctranslate2 needs a version bump for the new compute
 capability (`uv pip install --python ~\.session-scribe\venv\Scripts\python.exe -U ctranslate2`),
-then re-run the smoke test. Machines verified: RTX 4070 laptop ✅ (2026-07-06).
+then re-run the smoke test. Machines verified: RTX 4070 laptop ✅ (2026-07-06), DESKTOP-NY ✅
+(2026-08-25, cuda/float16 — ~2.9h × 5 tracks in <5 min, on signed Python 3.13).
+
+**Known failure — Windows Application Control blocks the uv-managed Python** (hit on DESKTOP-NY
+2026-08-25): `ImportError: DLL load failed while importing _ctypes: An Application Control
+policy has blocked this file.` The uv/python-build-standalone interpreter's DLLs trip the
+policy; a venv on a SIGNED python.org install passes. Fix: `winget install Python.Python.3.13`
+→ delete `~\.session-scribe\venv` → re-run setup.ps1 (it now prefers a signed install when one
+exists and probes for this block before the big installs). faster-whisper + CUDA wheels work
+fine on 3.13. Never work around this by touching the App Control policy itself.
 
 ## The pipeline (per session)
 
