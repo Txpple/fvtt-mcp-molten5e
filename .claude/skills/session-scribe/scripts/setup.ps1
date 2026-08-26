@@ -35,11 +35,16 @@ if (-not (Test-Path $py)) {
     # Prefer a SIGNED python.org install if one exists: Windows Application Control policies
     # can block uv-managed (python-build-standalone) interpreters' DLLs (_ctypes) outright —
     # seen on DESKTOP-NY 2026-08-25. Signed CPython passes; uv's build is the fallback.
+    # Version-aware pick: numeric sort so Python313 beats Python39; skips 32-bit "-32" dirs;
+    # floors at 3.12 (the old pin) so an ancient signed install never silently downgrades us.
     $signed = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending | Select-Object -First 1
+        ForEach-Object { if ($_.Directory.Name -match '^Python3(\d+)$') {
+            [pscustomobject]@{ Exe = $_.FullName; Minor = [int]$Matches[1] } } } |
+        Where-Object { $_.Minor -ge 12 } |
+        Sort-Object Minor -Descending | Select-Object -First 1
     if ($signed) {
-        Write-Host "Using signed system Python: $($signed.FullName)"
-        uv venv $venv --python $signed.FullName
+        Write-Host "Using signed system Python: $($signed.Exe)"
+        uv venv $venv --python $signed.Exe
     } else {
         # uv occasionally errors linking a fresh interpreter download; a second attempt succeeds.
         try { uv python install 3.12 } catch { Write-Host 'retrying python install...'; try { uv python install 3.12 } catch {} }
@@ -47,14 +52,24 @@ if (-not (Test-Path $py)) {
     }
 } else { Write-Host "venv: OK ($venv)" }
 
-# Application Control probe: a blocked interpreter fails right here, before the big installs.
-& $py -c "import ctypes" 2>$null
-if ($LASTEXITCODE -ne 0) {
+# Application Control probe: a blocked interpreter fails right here, before the ~1.3 GB wheel
+# install (the smoke test would also catch it via faster_whisper, but only after the download).
+# No stderr redirect: under EAP=Stop, PS 5.1 turns redirected native stderr into a terminating
+# NativeCommandError, which would mask the message below — let the traceback print instead.
+if (-not (Test-Path $py)) { throw "venv creation failed - $py not found; see uv output above." }
+$probe = & $py -c "import ctypes; print('ctypes-ok')"
+if ($LASTEXITCODE -ne 0 -or "$probe" -notmatch 'ctypes-ok') {
     throw @'
-The venv Python cannot load _ctypes — a Windows Application Control policy is likely blocking
+The venv Python cannot load _ctypes - a Windows Application Control policy is likely blocking
 this interpreter's DLLs. Install signed Python from python.org (winget install Python.Python.3.13),
 delete ~\.session-scribe\venv, and re-run this script; it will pick up the signed install.
 '@
+}
+
+$staleBackups = Get-ChildItem "$home_\.session-scribe" -Directory -Filter 'venv-blocked-*' -ErrorAction SilentlyContinue
+if ($staleBackups) {
+    Write-Host "note: stale blocked-venv backup(s), ~1.3 GB each, safe to delete once this run passes:"
+    $staleBackups | ForEach-Object { Write-Host "      $($_.FullName)" }
 }
 
 Write-Host '== Installing faster-whisper + CUDA wheels (idempotent; ~1.3 GB first time) =='
@@ -72,7 +87,7 @@ if (-not (Test-Path $clip)) {
 
 Write-Host '== Smoke test (loads tiny model; verifies CUDA stack) =='
 & $py "$PSScriptRoot\session_scribe.py" smoke $clip
-if ($LASTEXITCODE -ne 0) { throw 'Smoke test failed — see output above.' }
+if ($LASTEXITCODE -ne 0) { throw 'Smoke test failed - see output above.' }
 
 if ($PrefetchModel) {
     Write-Host '== Prefetching large-v3-turbo (~1.6 GB) =='

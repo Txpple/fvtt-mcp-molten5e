@@ -44,9 +44,12 @@ then re-run the smoke test. Machines verified: RTX 4070 laptop ✅ (2026-07-06),
 2026-08-25): `ImportError: DLL load failed while importing _ctypes: An Application Control
 policy has blocked this file.` The uv/python-build-standalone interpreter's DLLs trip the
 policy; a venv on a SIGNED python.org install passes. Fix: `winget install Python.Python.3.13`
-→ delete `~\.session-scribe\venv` → re-run setup.ps1 (it now prefers a signed install when one
-exists and probes for this block before the big installs). faster-whisper + CUDA wheels work
-fine on 3.13. Never work around this by touching the App Control policy itself.
+→ delete `~\.session-scribe\venv` → re-run setup.ps1 (it prefers the newest signed 3.12+ install
+when one exists, and its ctypes probe fails fast with these instructions BEFORE the ~1.3 GB wheel
+download — the smoke test would also catch the block, but only after it). faster-whisper + CUDA
+wheels work fine on 3.13. Never work around this by touching the App Control policy itself.
+If a broken venv was renamed aside as `~\.session-scribe\venv-blocked-*` (~1.3 GB each), delete
+those backups once the rebuilt venv passes the smoke test — setup.ps1 lists any it finds.
 
 ## The pipeline (per session)
 
