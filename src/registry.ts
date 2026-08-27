@@ -44,6 +44,7 @@ import { ChatTools } from './tools/chat.js';
 import { UserTools } from './tools/users.js';
 import { MacroTools } from './tools/macros.js';
 import { CombatTrackerTools } from './tools/combat-tracker.js';
+import { CombatStatsTools } from './tools/combat-stats.js';
 import { OrganizationTools } from './tools/organization.js';
 import { PackReaderTools } from './tools/pack-reader.js';
 import { BridgeTools } from './tools/bridge.js';
@@ -111,6 +112,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   const userTools = new UserTools({ foundry, logger });
   const macroTools = new MacroTools({ foundry, logger });
   const combatTrackerTools = new CombatTrackerTools({ foundry, logger });
+  // Combat analytics over Battle Flow's stat stamps (read-only; docs: the module's ARCH §4)
+  const combatStatsTools = new CombatStatsTools({ foundry, logger });
   const organizationTools = new OrganizationTools({ foundry, logger });
 
   // read-pack: a Node-only tool (no Foundry) — it reads a scene-pack MODULE off disk via the
@@ -160,6 +163,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     ...userTools.getToolDefinitions(),
     ...macroTools.getToolDefinitions(),
     ...combatTrackerTools.getToolDefinitions(),
+    ...combatStatsTools.getToolDefinitions(),
     ...organizationTools.getToolDefinitions(),
     ...packReaderTools.getToolDefinitions(),
     ...bridgeTools.getToolDefinitions(),
@@ -393,6 +397,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 
     // Combat tracker (the core.combatTrackerConfig world setting — custom turn marker etc.)
     'configure-combat-tracker': args => combatTrackerTools.handleConfigureCombatTracker(args),
+
+    // Combat analytics (read-only scan of Battle Flow's stat stamps)
+    'get-combat-stats': args => combatStatsTools.handleGetCombatStats(args),
 
     // Bridge session lifecycle (courtesy logout — the next tool call reconnects)
     'disconnect-bridge': args => bridgeTools.handleDisconnectBridge(args),

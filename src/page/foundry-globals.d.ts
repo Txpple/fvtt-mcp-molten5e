@@ -9,6 +9,7 @@ declare const ui: any;
 declare const Hooks: any;
 declare const foundry: any;
 declare const fromUuid: (uuid: string) => Promise<any>;
+declare const fromUuidSync: (uuid: string) => any;
 declare const Roll: any;
 declare const dnd5e: any;
 
