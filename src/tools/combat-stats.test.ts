@@ -23,7 +23,16 @@ function fixtureScan() {
     scannedAt: 1756300000000,
     totalMessages: 20,
     combats: { C1: 'Temple Fight' },
-    rosters: {},
+    rosters: {
+      C1: {
+        combatId: 'C1',
+        sceneName: 'Temple Fight',
+        endedRound: 3,
+        combatants: [
+          { actorUuid: 'Actor.A', tokenId: 'tokA', name: 'Gren', initiative: 18, isPC: true },
+        ],
+      },
+    },
     names: {
       'Actor.A': 'Gren',
       'Actor.B': 'Jetten',
@@ -236,6 +245,66 @@ function fixtureScan() {
           },
         },
       },
+      {
+        id: 'm10',
+        ts: 10,
+        // second-pass fields: parts vs the message's own pre-mitigation rolls. The entry's
+        // multiplier annotates the SAME halving the parts carry (measured live) — the meter
+        // must not apply it twice: resist necrotic roll 9 → part 4.5 → denied 4.5, and the
+        // fire part (no matching trait) contributes only to by-type, never the trait meter.
+        rolls: [
+          { total: 9, type: 'necrotic' },
+          { total: 3, type: 'fire' },
+        ],
+        flags: {
+          receipt: {
+            targets: [
+              {
+                uuid: 'Actor.A',
+                name: 'Gren',
+                prior: { value: 20, temp: 0 },
+                delta: { value: -7, temp: 0 },
+                taken: 7,
+                multiplier: 0.5,
+                traits: [{ type: 'necrotic', outcome: 'resistant' }],
+                parts: [
+                  { type: 'necrotic', amount: 4.5 },
+                  { type: 'fire', amount: 3 },
+                ],
+                reverted: false,
+                combat: 'C1:3:3',
+                sourceUuid: SYNTH('t1', 'g1'),
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: 'm11',
+        ts: 11,
+        // holdSkipped: the futile-skip record — a moment tally, source = the attacker
+        flags: {
+          holdSkipped: {
+            targets: [{ uuid: 'Actor.A', name: 'Gren', reaction: 'Shield' }],
+            combat: 'C1:3:4',
+            sourceUuid: SYNTH('t1', 'g1'),
+          },
+        },
+      },
+      {
+        id: 'm12',
+        ts: 12,
+        // answeredAt + deadline/window → decision latency (clock started deadline − window·1000)
+        flags: {
+          bashOffer: {
+            combat: 'C1:3:5',
+            sourceUuid: 'Actor.B',
+            window: 24,
+            deadline: 1000_000 + 24_000,
+            answeredAt: 1000_000 + 6_000,
+          },
+        },
+      },
     ],
     d20s: [
       // conc save: 14 total with +5 of bonus dice vs DC 10 → EXACT join by rollMessageId, flip
@@ -272,6 +341,7 @@ function fixtureScan() {
         id: 'r-atk',
         ts: 8,
         rollType: 'attack',
+        ctx: { combat: 'C1:2:3', sourceUuid: 'Actor.A' },
         total: 17,
         actorUuid: 'Actor.A',
         speakerAlias: 'Gren',
@@ -388,6 +458,34 @@ describe('foldCombatLedger', () => {
     expect(atk).toMatchObject({ who: 'Gren', threshold: 16, bonus: 3 });
   });
 
+  it('folds accuracy and AC pressure from rollCtx-stamped attack rolls', () => {
+    expect(actors['Actor.A'].attacksMade).toBe(1);
+    expect(actors['Actor.A'].attacksHit).toBe(1);
+    expect(actors['archetype:Goblin'].targeted).toBe(1);
+  });
+
+  it('measures the trait meter type-matched and WITHOUT double-applying multiplier', () => {
+    // resist necrotic: roll 9 → part 4.5 (multiplier 0.5 annotates the same halving)
+    expect(actors['Actor.A'].mitigated).toBe(4.5);
+    expect(actors['Actor.A'].amplified).toBe(0);
+    // fire has no matching trait — by-type only, never the trait meter
+    const goblin = actors['archetype:Goblin'];
+    expect(goblin.damageByType).toEqual({ necrotic: 4.5, fire: 3 });
+  });
+
+  it('counts save outcomes roller-side from saves targets and concentration outcomes', () => {
+    expect(actors['archetype:Goblin'].savesMade).toBe(1); // Hold Person target saved
+    expect(actors['Actor.A'].savesMade).toBe(1); // concentration outcome.success
+  });
+
+  it('tallies holdSkipped as a moment on the attacker', () => {
+    expect(actors['archetype:Goblin'].moments['holdSkipped']).toBe(1);
+  });
+
+  it('computes decision latency from answeredAt vs deadline/window', () => {
+    expect(ledger.latency).toEqual([{ who: 'Jetten', kind: 'bashOffer', ms: 6000 }]);
+  });
+
   it('tallies session flavor: nat 20/1, advantage economy, death saves', () => {
     expect(ledger.flavor.nat20.Jetten).toBe(1);
     expect(ledger.flavor.adv.Gren).toBe(1);
@@ -402,7 +500,10 @@ describe('renderCombatReport', () => {
 
   it('renders every section by default, with the combat name and legacy note', () => {
     const out = renderCombatReport(scan, ledger);
-    expect(out).toContain('COMBAT Temple Fight — 3 rounds');
+    expect(out).toContain('COMBAT Temple Fight — 3 rounds (ended round 3)');
+    expect(out).toContain('accuracy 1/1');
+    expect(out).toContain('folds spent: bardic (attack)');
+    expect(out).toContain('avg decision 6.0s');
     expect(out).toContain('pre-plane legacy');
     expect(out).toContain('BUFF-DIE FLIPS');
     expect(out).toContain('SESSION FLAVOR');

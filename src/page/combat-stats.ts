@@ -15,6 +15,8 @@
 // The scan returns raw JSON; all folding happens Node-side so it is unit-testable.
 
 const BF_MOD = 'fvtt-mod-battleflow';
+// Families folded from `stamped`. rollCtx and combatRoster are deliberately NOT here:
+// rollCtx rides the d20 entries (its message IS the roll), combatRoster feeds `rosters`.
 const BF_KEYS = [
   'receipt',
   'effectReceipt',
@@ -26,6 +28,7 @@ const BF_KEYS = [
   'topple',
   'saves',
   'hold',
+  'holdSkipped',
   'volley',
   'concentration',
   'spend',
@@ -48,10 +51,13 @@ export async function scanCombatStats(args: ScanCombatStatsArgs = {}): Promise<u
   const uuids = new Set<string>();
   const stamped: any[] = [];
   const d20s: any[] = [];
+  const rosterFlags: any[] = [];
 
   for (const m of game.messages.contents) {
     if (m.timestamp < since) continue;
     const bf = m.flags?.[BF_MOD];
+    // combatRoster: the GM-whispered marker card — the turn→actor map that outlives deletion
+    if (bf?.combatRoster) rosterFlags.push(JSON.parse(JSON.stringify(bf.combatRoster)));
     if (bf && BF_KEYS.some(k => bf[k])) {
       stamped.push({
         id: m.id,
@@ -84,6 +90,8 @@ export async function scanCombatStats(args: ScanCombatStatsArgs = {}): Promise<u
         actorUuid: m.speaker?.actor ? `Actor.${m.speaker.actor}` : null,
         speakerAlias: m.speaker?.alias ?? null,
         itemUuid: itemOf(m),
+        // rollCtx: battleflow's at-roll-time context stamp — {combat, sourceUuid}
+        ctx: bf?.rollCtx ? JSON.parse(JSON.stringify(bf.rollCtx)) : null,
         // advantageMode: dnd5e's own -1 | 0 | 1; `all` keeps both dice for adv/dis outcomes
         adv: r.options?.advantageMode ?? null,
         d20: d20
@@ -130,17 +138,28 @@ export async function scanCombatStats(args: ScanCombatStatsArgs = {}): Promise<u
     }
   }
 
-  // Archive encounters while they still exist — the turn→actor map dies with deletion.
+  // Rosters: the combatRoster marker flags are the durable source (they outlive deletion);
+  // live encounters are archived too as belt-and-braces, without overwriting a flag's snapshot.
   const combats: Record<string, string> = {};
   const rosters: Record<string, unknown> = {};
+  for (const rf of rosterFlags) {
+    if (!rf.combatId) continue;
+    rosters[rf.combatId] = rf;
+    combats[rf.combatId] ??= rf.sceneName ?? rf.combatId;
+  }
   for (const c of game.combats.contents) {
-    combats[c.id] = c.getName?.() ?? c.name ?? c.id;
-    rosters[c.id] = c.turns.map((t: any, i: number) => ({
-      turn: i,
-      actorUuid: t.actor?.uuid ?? null,
-      name: t.name,
-      initiative: t.initiative,
-    }));
+    // A roster flag's sceneName wins; a live encounter's own name fills in only when real —
+    // an unnamed encounter returns '' and must not blank a better label.
+    combats[c.id] = combats[c.id] || c.getName?.() || c.name || c.id;
+    rosters[c.id] ??= {
+      combatId: c.id,
+      combatants: c.turns.map((t: any, i: number) => ({
+        turn: i,
+        actorUuid: t.actor?.uuid ?? null,
+        name: t.name,
+        initiative: t.initiative,
+      })),
+    };
   }
 
   return {

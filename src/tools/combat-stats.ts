@@ -75,6 +75,19 @@ export interface ActorAgg {
   pools: Record<string, { spent: number; max: number }>;
   slots: Record<string, { level: number | null; spent: number; max: number }>;
   slotLevels: number;
+  /** accuracy, from rollCtx-stamped attack rolls: swings made / swings that met an AC */
+  attacksMade: number;
+  attacksHit: number;
+  /** how many attack rolls chose this actor as a target (AC pressure) */
+  targeted: number;
+  /** save outcomes where this actor was the roller (demanded saves + concentration) */
+  savesMade: number;
+  savesFailed: number;
+  /** damage DEALT by type, post-trait (from receipt parts) */
+  damageByType: Record<string, number>;
+  /** damage this actor's traits denied (resist/immune) or invited (vulnerable), vs the roll */
+  mitigated: number;
+  amplified: number;
 }
 
 export interface CombatLedger {
@@ -97,6 +110,8 @@ export interface CombatLedger {
     dis: Record<string, number>;
     death: Record<string, { made: number; failed: number }>;
   };
+  /** decision latency under the clock: answeredAt vs the moment's own deadline/window */
+  latency: Array<{ who: string; kind: string; ms: number }>;
 }
 
 /** What this target actually TOOK — `taken` when recorded, else the pool's own movement. */
@@ -146,6 +161,14 @@ export function foldCombatLedger(scan: any): CombatLedger {
         pools: {},
         slots: {},
         slotLevels: 0,
+        attacksMade: 0,
+        attacksHit: 0,
+        targeted: 0,
+        savesMade: 0,
+        savesFailed: 0,
+        damageByType: {},
+        mitigated: 0,
+        amplified: 0,
       };
       tokenSets.set(a, new Set());
     }
@@ -163,6 +186,13 @@ export function foldCombatLedger(scan: any): CombatLedger {
   for (const m of scan.stamped ?? []) {
     const F = m.flags ?? {};
 
+    // Pre-mitigation side of the traits meter: the receipt message's own damage rolls, by type.
+    const rollsByType: Record<string, number> = {};
+    if (F.receipt) {
+      for (const r of m.rolls ?? []) {
+        if (r?.type) rollsByType[r.type] = (rollsByType[r.type] ?? 0) + (r.total ?? 0);
+      }
+    }
     for (const t of F.receipt?.targets ?? []) {
       const b = bucketOf(t);
       if (b.legacy) {
@@ -179,6 +209,24 @@ export function foldCombatLedger(scan: any): CombatLedger {
         const tgt = at(b.key!, t.uuid);
         tgt.taken += taken;
         tgt.timesHit++;
+        // parts: [{type, amount}] POST-trait (second-pass field). Positive parts feed the
+        // dealt-by-type meter; against the message rolls (pre-mitigation) they yield what the
+        // target's traits denied (resist/immune) or invited (vulnerable). Compared ONLY for
+        // part types named in the entry's own traits[] — and WITHOUT the entry's `multiplier`,
+        // which annotates the same halving the part amounts already carry (measured live
+        // 2026-08-27: resist necrotic, roll 9 → part 4.5, multiplier 0.5 — applying both
+        // double-counts). Sub-point rounding noise is ignored.
+        for (const p of t.parts ?? []) {
+          if (p.amount > 0) src.damageByType[p.type] = (src.damageByType[p.type] ?? 0) + p.amount;
+        }
+        for (const p of t.parts ?? []) {
+          if (!t.traits?.some((tr: any) => tr.type === p.type)) continue;
+          const pre = rollsByType[p.type];
+          if (pre === undefined || p.amount < 0) continue;
+          const diff = pre - p.amount;
+          if (diff >= 1) tgt.mitigated += diff;
+          else if (diff <= -1) tgt.amplified += -diff;
+        }
       } else if (taken < 0) {
         const rolled = -taken;
         const applied = Math.max(0, (t.delta?.value ?? 0) + (t.delta?.temp ?? 0));
@@ -249,6 +297,7 @@ export function foldCombatLedger(scan: any): CombatLedger {
       'topple',
       'saves',
       'hold',
+      'holdSkipped',
       'volley',
       'concentration',
     ]) {
@@ -262,9 +311,63 @@ export function foldCombatLedger(scan: any): CombatLedger {
       const a = at(b.key!, F[k].sourceUuid);
       a.moments[k] = (a.moments[k] ?? 0) + 1;
     }
+
+    // Save outcomes, roller-side: the saves flag's per-target outcomes and the concentration
+    // flag's own outcome — exact records, no roll parsing needed.
+    if (F.saves) {
+      const b = bucketOf(F.saves);
+      if (!b.legacy) {
+        for (const t of F.saves.targets ?? []) {
+          if (t.outcome !== 'saved' && t.outcome !== 'failed') continue;
+          const a = at(b.key!, t.uuid);
+          if (t.outcome === 'saved') a.savesMade++;
+          else a.savesFailed++;
+        }
+      }
+    }
+    if (F.concentration?.outcome && typeof F.concentration.outcome.success === 'boolean') {
+      const b = bucketOf(F.concentration);
+      if (!b.legacy) {
+        const a = at(b.key!, F.concentration.actorUuid ?? F.concentration.sourceUuid);
+        if (F.concentration.outcome.success) a.savesMade++;
+        else a.savesFailed++;
+      }
+    }
   }
 
   const flavor: CombatLedger['flavor'] = { nat20: {}, nat1: {}, adv: {}, dis: {}, death: {} };
+
+  // Decision latency: every moment answer carries `answeredAt` (second-pass field), and timed
+  // moments carry `deadline` (epoch-ms) + `window` (seconds) — the clock started at
+  // deadline − window·1000, so the latency is arithmetic. Locations vary by family (the flag,
+  // its outcome, its per-target entries); discovered defensively, clamped to sane values.
+  const latency: CombatLedger['latency'] = [];
+  const nameOfUuid = (u: string | null | undefined) =>
+    scan.names?.[u ?? ''] ?? u ?? '(unattributed)';
+  for (const m of scan.stamped ?? []) {
+    for (const [kind, f] of Object.entries<any>(m.flags ?? {})) {
+      if (!f || typeof f !== 'object') continue;
+      const window = Number(f.window);
+      const deadline = Number(f.deadline);
+      if (!Number.isFinite(window) || !Number.isFinite(deadline) || window <= 0) continue;
+      const start = deadline - window * 1000;
+      const answers: Array<{ at: number; who: string }> = [];
+      const flagWho = nameOfUuid(f.actorUuid ?? f.sourceUuid);
+      if (Number.isFinite(f.answeredAt)) answers.push({ at: f.answeredAt, who: flagWho });
+      if (Number.isFinite(f.outcome?.answeredAt))
+        answers.push({ at: f.outcome.answeredAt, who: flagWho });
+      if (Number.isFinite(f.answer?.answeredAt))
+        answers.push({ at: f.answer.answeredAt, who: flagWho });
+      for (const t of f.targets ?? []) {
+        if (Number.isFinite(t?.answeredAt))
+          answers.push({ at: t.answeredAt, who: nameOfUuid(t.uuid) });
+      }
+      for (const { at: answeredAt, who } of answers) {
+        const ms = answeredAt - start;
+        if (ms >= 0 && ms <= 10 * 60_000) latency.push({ who, kind, ms });
+      }
+    }
+  }
 
   // Buff-die (Bless-style) margins. Bonus-die attribution is exact where the roll's own terms
   // parse; a same-size overlap (two 1d4 buffs) is labeled heuristic — never silent. Save-side
@@ -313,6 +416,19 @@ export function foldCombatLedger(scan: any): CombatLedger {
     if (r.d20?.result === 1) flavor.nat1[who] = (flavor.nat1[who] ?? 0) + 1;
     if (r.adv === 1) flavor.adv[who] = (flavor.adv[who] ?? 0) + 1;
     if (r.adv === -1) flavor.dis[who] = (flavor.dis[who] ?? 0) + 1;
+    // Accuracy + AC pressure, from rollCtx-stamped attack rolls: the stamp gives the honest
+    // combat bucket; a roll with no stamp (pre-plane) stays out rather than being inferred.
+    if (r.rollType === 'attack' && r.ctx) {
+      const b = bucketOf(r.ctx);
+      if (!b.legacy) {
+        bump(b.key!, b.round);
+        const src = at(b.key!, r.ctx.sourceUuid ?? r.actorUuid);
+        const judged = (r.targets ?? []).filter((t: any) => t.ac != null);
+        src.attacksMade++;
+        if (judged.some((t: any) => r.total >= t.ac)) src.attacksHit++;
+        for (const t of r.targets ?? []) at(b.key!, t.uuid).targeted++;
+      }
+    }
     if (!r.bonusDice?.length) continue;
     const bonus = r.bonusDice.reduce((s: number, d: any) => s + d.total, 0);
     const dice = r.bonusDice.map((d: any) => `d${d.faces}=${d.total}`).join('+');
@@ -364,7 +480,7 @@ export function foldCombatLedger(scan: any): CombatLedger {
       a.tokens = n; // Sets don't serialize; the count does
     }
   }
-  return { combats, legacy, bless, flavor };
+  return { combats, legacy, bless, flavor, latency };
 }
 
 /* --- the report (pure) ---------------------------------------------------------------------- */
@@ -394,11 +510,13 @@ export function renderCombatReport(
 
   for (const [key, c] of Object.entries(ledger.combats)) {
     if (opts.combat && key !== opts.combat) continue;
+    const roster = scan.rosters?.[key];
     const title =
       key === 'out-of-combat'
         ? 'OUT OF COMBAT'
         : `COMBAT ${scan.combats?.[key] ?? `${key} (encounter since deleted)`}` +
-          `${c.rounds ? ` — ${c.rounds} round${c.rounds > 1 ? 's' : ''}` : ''}`;
+          `${c.rounds ? ` — ${c.rounds} round${c.rounds > 1 ? 's' : ''}` : ''}` +
+          `${roster?.endedRound ? ` (ended round ${roster.endedRound})` : ''}`;
     P(`\n## ${title}`);
     const rows = Object.values(c.actors)
       .filter(a => nameOk(a.name))
@@ -409,13 +527,35 @@ export function renderCombatReport(
         bits.push(
           `dealt ${a.dealt}${c.rounds ? ` (${(a.dealt / c.rounds).toFixed(1)}/rd)` : ''} in ${a.hits} hit${a.hits > 1 ? 's' : ''}`
         );
+      if (on('damage') && a.attacksMade)
+        bits.push(
+          `accuracy ${a.attacksHit}/${a.attacksMade} (${Math.round((100 * a.attacksHit) / a.attacksMade)}%)`
+        );
+      if (on('damage')) {
+        const types = Object.entries(a.damageByType)
+          .sort((x, y) => y[1] - x[1])
+          .map(([t, n]) => `${t} ${Math.round(n)}`)
+          .join(', ');
+        if (types) bits.push(`by type: ${types}`);
+      }
       if (on('damage') && a.taken) bits.push(`took ${a.taken} over ${a.timesHit}`);
+      if (on('damage') && a.targeted) bits.push(`targeted ${a.targeted}×`);
+      if (on('damage') && (a.mitigated || a.amplified)) {
+        const tr: string[] = [];
+        if (a.mitigated) tr.push(`traits denied ${Math.round(a.mitigated)}`);
+        if (a.amplified) tr.push(`vulnerability invited ${Math.round(a.amplified)}`);
+        bits.push(tr.join(', '));
+      }
+      if (on('moments') && (a.savesMade || a.savesFailed))
+        bits.push(`saves ${a.savesMade}/${a.savesMade + a.savesFailed}`);
       if (on('healing') && a.healed)
         bits.push(`healed ${a.healed}${a.overheal ? ` (${a.overheal} overheal)` : ''}`);
       if (on('healing') && a.healReceived) bits.push(`received ${a.healReceived} healing`);
       if (on('moments') && a.effectsApplied)
         bits.push(`applied ${a.effectsApplied} effect${a.effectsApplied > 1 ? 's' : ''}`);
       if (on('flips') && a.flips) bits.push(`FLIPPED ${a.flips} verdict${a.flips > 1 ? 's' : ''}`);
+      if (on('flips') && a.folds.length)
+        bits.push(`folds spent: ${a.folds.map(f => `${f.kind} (${f.testKind})`).join(', ')}`);
       if (on('moments')) {
         const moments = Object.entries(a.moments)
           .map(([k, n]) => `${k}×${n}`)
@@ -466,6 +606,24 @@ export function renderCombatReport(
       .join(', ');
     if (adv) rows.push(`- advantage rolled: ${adv}`);
     if (dis) rows.push(`- disadvantage rolled: ${dis}`);
+    // decision latency under the clock (answeredAt vs the moment's deadline/window)
+    const byWho = new Map<string, { total: number; n: number; worst: number; worstKind: string }>();
+    for (const l of ledger.latency) {
+      if (!nameOk(l.who)) continue;
+      let e = byWho.get(l.who);
+      if (!e) byWho.set(l.who, (e = { total: 0, n: 0, worst: 0, worstKind: '' }));
+      e.total += l.ms;
+      e.n++;
+      if (l.ms > e.worst) {
+        e.worst = l.ms;
+        e.worstKind = l.kind;
+      }
+    }
+    for (const [who, e] of byWho)
+      rows.push(
+        `- ${who}: avg decision ${(e.total / e.n / 1000).toFixed(1)}s over ${e.n} timed moment${e.n > 1 ? 's' : ''}` +
+          ` (slowest ${(e.worst / 1000).toFixed(1)}s on ${e.worstKind})`
+      );
     if (rows.length) {
       P(`\n## SESSION FLAVOR`);
       lines.push(...rows);
