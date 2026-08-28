@@ -174,7 +174,7 @@ Copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your inst
 
 ## Tools
 
-**148 tools total: 138 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
+**149 tools total: 139 over the headless bridge (Plane A) + 10 Molten WebDAV file tools (Plane B).**
 
 Plane A (bridge) covers world introspection and editing — actors, items, compendium search,
 journals & quests, scenes **and their placeables** (walls, lights, tokens, regions/teleporters,
@@ -189,7 +189,10 @@ one-shots with silence between them, or crossfaded ambient beds, which neither A
 placeables nor Playlists can express), ownership,
 folders/organization, macros, combat-tracker config, and 5e-specific helpers (NPC creation,
 **PC building & leveling**, feature/spell granting, structured inventory/loot
-authoring), **plus the asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the
+authoring), **full-fidelity actor JSON export** (`export-actor`), and **per-combat session
+analytics** (`get-combat-stats`, folded from the companion
+[`fvtt-mod-battleflow`](https://github.com/Txpple/fvtt-mod-battleflow) module's stat stamps),
+**plus the asset-composition + reference-integrity tools**. Plane B (Molten WebDAV) is the
 asset file library.
 
 **Plane B — Molten file tools (WebDAV):**
