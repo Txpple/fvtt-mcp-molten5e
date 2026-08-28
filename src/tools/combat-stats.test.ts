@@ -479,7 +479,7 @@ describe('foldCombatLedger', () => {
   });
 
   it('tallies holdSkipped as a moment on the attacker', () => {
-    expect(actors['archetype:Goblin'].moments['holdSkipped']).toBe(1);
+    expect(actors['archetype:Goblin'].moments.holdSkipped).toBe(1);
   });
 
   it('computes decision latency from answeredAt vs deadline/window', () => {

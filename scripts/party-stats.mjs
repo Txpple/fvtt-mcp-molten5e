@@ -32,7 +32,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const flagArg = name => {
   const i = argv.indexOf(`--${name}`);
-  return (i >= 0) ? (argv[i + 1] ?? null) : null;
+  return i >= 0 ? (argv[i + 1] ?? null) : null;
 };
 const PROD = argv.includes('--prod');
 const FORCE = argv.includes('--force');
@@ -43,7 +43,10 @@ const SINCE = (() => {
   const raw = flagArg('since');
   if (!raw) return 0;
   const n = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw);
-  if (!Number.isFinite(n)) { console.error(`--since "${raw}" is not a date or epoch-ms`); process.exit(1); }
+  if (!Number.isFinite(n)) {
+    console.error(`--since "${raw}" is not a date or epoch-ms`);
+    process.exit(1);
+  }
   return n;
 })();
 
@@ -60,29 +63,49 @@ function loadEnv() {
 async function scanLive() {
   const env = loadEnv();
   const cfg = PROD
-    ? { serverUrl: env.MOLTEN_SERVER_URL, magicUrl: env.MOLTEN_MAGIC_URL,
-        user: env.FOUNDRY_USER, password: env.FOUNDRY_PASSWORD }
-    : { serverUrl: env.LOCAL_SERVER_URL || 'http://localhost:30000',
-        user: env.FOUNDRY_USER, password: env.FOUNDRY_PASSWORD };
+    ? {
+        serverUrl: env.MOLTEN_SERVER_URL,
+        magicUrl: env.MOLTEN_MAGIC_URL,
+        user: env.FOUNDRY_USER,
+        password: env.FOUNDRY_PASSWORD,
+      }
+    : {
+        serverUrl: env.LOCAL_SERVER_URL || 'http://localhost:30000',
+        user: env.FOUNDRY_USER,
+        password: env.FOUNDRY_PASSWORD,
+      };
   console.log(`[stats] target: ${PROD ? 'PROD (Molten)' : `local sandbox (${cfg.serverUrl})`}`);
 
   if (!PROD) {
     // Occupancy guard: a suite or another session may be driving the shared sandbox.
     try {
-      const s = await (await fetch(`${cfg.serverUrl}/api/status`, { signal: AbortSignal.timeout(5000) })).json();
-      if (!s?.active) { console.error('[stats] no world active on the sandbox — start it first (scripts/local-foundry.mjs start)'); process.exit(1); }
+      const s = await (
+        await fetch(`${cfg.serverUrl}/api/status`, { signal: AbortSignal.timeout(5000) })
+      ).json();
+      if (!s?.active) {
+        console.error(
+          '[stats] no world active on the sandbox — start it first (scripts/local-foundry.mjs start)'
+        );
+        process.exit(1);
+      }
       if ((s.users ?? 0) > 0 && !FORCE) {
-        console.error(`[stats] REFUSING: ${s.users} client(s) already connected to the sandbox — a suite may be mid-run.`);
+        console.error(
+          `[stats] REFUSING: ${s.users} client(s) already connected to the sandbox — a suite may be mid-run.`
+        );
         console.error('[stats] Re-run with --force only when you know the world is idle.');
         process.exit(2);
       }
     } catch (e) {
-      console.error(`[stats] sandbox unreachable at ${cfg.serverUrl}: ${e?.message || e}`); process.exit(1);
+      console.error(`[stats] sandbox unreachable at ${cfg.serverUrl}: ${e?.message || e}`);
+      process.exit(1);
     }
   }
 
   const f = new Foundry(cfg);
-  setTimeout(() => { console.error('[stats] WATCHDOG 180s'); process.exit(3); }, 180_000).unref?.();
+  setTimeout(() => {
+    console.error('[stats] WATCHDOG 180s');
+    process.exit(3);
+  }, 180_000).unref?.();
   await f.connect();
   try {
     return await f.call('scanCombatStats', { since: SINCE });
@@ -92,8 +115,25 @@ async function scanLive() {
 }
 
 const scan = FROM ? JSON.parse(readFileSync(FROM, 'utf8')) : await scanLive();
-if (DUMP) { writeFileSync(DUMP, JSON.stringify(scan, null, 2)); console.log(`[stats] raw scan → ${DUMP}`); }
+if (DUMP) {
+  writeFileSync(DUMP, JSON.stringify(scan, null, 2));
+  console.log(`[stats] raw scan → ${DUMP}`);
+}
 const ledger = foldCombatLedger(scan);
 console.log(renderCombatReport(scan, ledger));
-if (OUT) { writeFileSync(OUT, JSON.stringify({ scan: { world: scan.world, scannedAt: scan.scannedAt }, ledger, rosters: scan.rosters ?? {} }, null, 2)); console.log(`\n[stats] ledger → ${OUT}`); }
+if (OUT) {
+  writeFileSync(
+    OUT,
+    JSON.stringify(
+      {
+        scan: { world: scan.world, scannedAt: scan.scannedAt },
+        ledger,
+        rosters: scan.rosters ?? {},
+      },
+      null,
+      2
+    )
+  );
+  console.log(`\n[stats] ledger → ${OUT}`);
+}
 process.exit(0);

@@ -611,7 +611,10 @@ export function renderCombatReport(
     for (const l of ledger.latency) {
       if (!nameOk(l.who)) continue;
       let e = byWho.get(l.who);
-      if (!e) byWho.set(l.who, (e = { total: 0, n: 0, worst: 0, worstKind: '' }));
+      if (!e) {
+        e = { total: 0, n: 0, worst: 0, worstKind: '' };
+        byWho.set(l.who, e);
+      }
       e.total += l.ms;
       e.n++;
       if (l.ms > e.worst) {
