@@ -128,13 +128,29 @@ export async function scanCombatStats(args: ScanCombatStatsArgs = {}): Promise<u
     for (const k of BF_KEYS) if (F[k]?.sourceUuid) uuids.add(F[k].sourceUuid);
   }
   for (const r of d20s) if (r.actorUuid) uuids.add(r.actorUuid);
+
+  // Names come from TWO sources, wire first, live second. The wire records carry `name`
+  // beside every target/combatant uuid, and those outlive deletion — an unlinked monster's
+  // synthetic uuid (Scene…Token…Actor…) resolves via fromUuidSync only while its token still
+  // exists, and defeated monsters get their tokens deleted (session-6 bug: the report printed
+  // raw uuids). A live doc overwrites a wire name where it still resolves (renames win).
   const names: Record<string, string> = {};
+  const learn = (u: unknown, n: unknown) => {
+    if (typeof u === 'string' && u && typeof n === 'string' && n && !names[u]) names[u] = n;
+  };
+  for (const s of stamped) {
+    const F = s.flags;
+    for (const k of BF_KEYS) for (const t of F[k]?.targets ?? []) learn(t?.uuid, t?.name);
+  }
+  for (const r of d20s) for (const t of r.targets ?? []) learn(t.uuid, t.name);
+  for (const rf of rosterFlags) for (const c of rf.combatants ?? []) learn(c?.actorUuid, c?.name);
+  for (const c of game.combats.contents) for (const t of c.turns) learn(t.actor?.uuid, t.name);
   for (const u of uuids) {
     try {
       const doc = fromUuidSync(u);
       if (doc?.name) names[u] = doc.name;
     } catch {
-      /* stale uuid — the name map just stays sparse */
+      /* stale uuid — the wire name (if any) stands */
     }
   }
 

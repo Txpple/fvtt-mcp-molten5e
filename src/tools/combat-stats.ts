@@ -127,7 +127,22 @@ export function bucketOf(rec: any): { key: string | null; round?: number; legacy
 }
 
 export function foldCombatLedger(scan: any): CombatLedger {
-  const name = (u: string | null | undefined) => scan.names?.[u ?? ''] ?? u ?? '(unattributed)';
+  // Wire-carried names as the fallback layer: roster combatants and stamped targets record
+  // `name` beside the uuid, and those outlive token deletion — a synthetic actor uuid
+  // (Scene…Token…Actor…) stops resolving live once its token is gone, which left the scan's
+  // names map sparse and the report printing raw uuids (session-6 bug). Without a name the
+  // archetype KEY degrades to the uuid too, so ×N aggregation silently never merged.
+  const wireNames: Record<string, string> = {};
+  const learn = (u: unknown, n: unknown) => {
+    if (typeof u === 'string' && u && typeof n === 'string' && n && !wireNames[u]) wireNames[u] = n;
+  };
+  for (const r of Object.values<any>(scan.rosters ?? {}))
+    for (const c of r?.combatants ?? []) learn(c?.actorUuid, c?.name);
+  for (const m of scan.stamped ?? [])
+    for (const f of Object.values<any>(m.flags ?? {}))
+      for (const t of f?.targets ?? []) learn(t?.uuid, t?.name);
+  const name = (u: string | null | undefined) =>
+    scan.names?.[u ?? ''] ?? wireNames[u ?? ''] ?? u ?? '(unattributed)';
   // Synthetic token actors (Scene…Token…Actor…) aggregate by NAME — the contract's own
   // guidance: THAT skeleton's uuid is deliberate in the stamp; the report wants the archetype.
   const keyOf = (uuid: string | null | undefined) => {
@@ -342,8 +357,7 @@ export function foldCombatLedger(scan: any): CombatLedger {
   // deadline − window·1000, so the latency is arithmetic. Locations vary by family (the flag,
   // its outcome, its per-target entries); discovered defensively, clamped to sane values.
   const latency: CombatLedger['latency'] = [];
-  const nameOfUuid = (u: string | null | undefined) =>
-    scan.names?.[u ?? ''] ?? u ?? '(unattributed)';
+  const nameOfUuid = name;
   for (const m of scan.stamped ?? []) {
     for (const [kind, f] of Object.entries<any>(m.flags ?? {})) {
       if (!f || typeof f !== 'object') continue;
@@ -402,9 +416,10 @@ export function foldCombatLedger(scan: any): CombatLedger {
   const bless: CombatLedger['bless'] = [];
   for (const r of scan.d20s ?? []) {
     const who =
-      r.actorUuid && scan.names?.[r.actorUuid]
-        ? scan.names[r.actorUuid]
-        : (r.speakerAlias ?? r.actorUuid);
+      scan.names?.[r.actorUuid ?? ''] ??
+      wireNames[r.actorUuid ?? ''] ??
+      r.speakerAlias ??
+      r.actorUuid;
     if (r.rollType === 'death') {
       flavor.death[who] ??= { made: 0, failed: 0 };
       const t = flavor.death[who];

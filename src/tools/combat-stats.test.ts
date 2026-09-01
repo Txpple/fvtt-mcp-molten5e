@@ -494,6 +494,92 @@ describe('foldCombatLedger', () => {
   });
 });
 
+describe('foldCombatLedger with a SPARSE names map (deleted unlinked tokens)', () => {
+  // Session-6 regression: a defeated monster's token is deleted, its synthetic uuid stops
+  // resolving live, and the scan's names map goes sparse. The fold must fall back to the
+  // wire-carried names (roster combatants, stamped targets) — BOTH for the printed label
+  // and for the archetype KEY, or ×N aggregation silently never merges.
+  function sparseScan() {
+    return {
+      world: 'test',
+      scannedAt: 1756300000000,
+      totalMessages: 5,
+      names: { 'Actor.A': 'Gren' }, // no entries for either synthetic uuid
+      combats: { C1: 'Bog Fight' },
+      rosters: {
+        C1: {
+          combatId: 'C1',
+          combatants: [
+            { actorUuid: SYNTH('t1', 'b1'), name: 'Bullywug Bog Sage', initiative: 12 },
+            { actorUuid: SYNTH('t2', 'b2'), name: 'Bullywug Bog Sage', initiative: 9 },
+          ],
+        },
+      },
+      d20s: [],
+      stamped: [
+        {
+          id: 'm1',
+          ts: 1,
+          rolls: [],
+          flags: {
+            receipt: {
+              targets: [
+                {
+                  uuid: SYNTH('t1', 'b1'),
+                  name: 'Bullywug Bog Sage',
+                  prior: { value: 20, temp: 0 },
+                  delta: { value: -7, temp: 0 },
+                  taken: 7,
+                  traits: [],
+                  reverted: false,
+                  combat: 'C1:1:0',
+                  sourceUuid: 'Actor.A',
+                },
+                {
+                  uuid: SYNTH('t2', 'b2'),
+                  name: 'Bullywug Bog Sage',
+                  prior: { value: 20, temp: 0 },
+                  delta: { value: -5, temp: 0 },
+                  taken: 5,
+                  traits: [],
+                  reverted: false,
+                  combat: 'C1:1:0',
+                  sourceUuid: 'Actor.A',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  it('aggregates both tokens into ONE archetype bucket keyed by the wire name', () => {
+    const ledger = foldCombatLedger(sparseScan());
+    const actors = ledger.combats.C1.actors;
+    const keys = Object.keys(actors).filter(k => k.startsWith('archetype:'));
+    expect(keys).toEqual(['archetype:Bullywug Bog Sage']);
+    const sage = actors['archetype:Bullywug Bog Sage'];
+    expect(sage.name).toBe('Bullywug Bog Sage (×2)');
+    expect(sage.tokens).toBe(2);
+    expect(sage.taken).toBe(12);
+  });
+
+  it('never prints a raw synthetic uuid in the rendered report', () => {
+    const scan = sparseScan();
+    const report = renderCombatReport(scan, foldCombatLedger(scan)); // all sections default
+    expect(report).not.toContain('.Token.');
+    expect(report).toContain('Bullywug Bog Sage');
+  });
+
+  it('falls back roster-only when a stamped target predates the name field', () => {
+    const scan = sparseScan();
+    for (const t of scan.stamped[0].flags.receipt.targets) delete (t as any).name;
+    const ledger = foldCombatLedger(scan);
+    expect(Object.keys(ledger.combats.C1.actors)).toContain('archetype:Bullywug Bog Sage');
+  });
+});
+
 describe('renderCombatReport', () => {
   const scan = fixtureScan();
   const ledger = foldCombatLedger(scan);
