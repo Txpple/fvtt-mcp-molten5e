@@ -7,7 +7,8 @@ description: >-
   "knock out the green screen / white background", "chroma-key this", "this token has no transparency",
   or hands over a token render on a solid green/blue/white/colored plate (or a busy background). Runs a
   bundled local script (rembg AI matte, or an offline chroma-key fallback), verifies the cut against a
-  magenta preview, and can upload the result into the world and assign it as an actor's token art.
+  magenta preview, delivers a square 512x512 canvas so the token sits at scale 1.0, and can upload the
+  result into the world and assign it as an actor's token art.
   Image prep only — no new mechanics; the script owns the pixels, this skill owns the judgment.
 ---
 
@@ -60,7 +61,7 @@ If the source is a *portrait/art* piece rather than a token, the shadow may be w
 ## Step 3 — Run it
 
 ```
-python .claude/skills/token-cutout/token_cutout.py INPUT [OUTPUT] [--method ...] [--color RRGGBB] [--keep-shadow] [--erode N]
+python .claude/skills/token-cutout/token_cutout.py INPUT [OUTPUT] [--method ...] [--color RRGGBB] [--keep-shadow] [--erode N] [--size N] [--pad PCT] [--no-trim]
 ```
 
 - Output defaults to `INPUT.png`, and it **never overwrites the source** (a same-path collision is
@@ -69,6 +70,35 @@ python .claude/skills/token-cutout/token_cutout.py INPUT [OUTPUT] [--method ...]
   afterward; JPG has no alpha and will re-bake a background.)
 - `--erode N` shrinks the matte N px inward to eat a stubborn fringe (needs scipy; skipped with a note
   if absent). Reach for it only if the preview shows a thin ring.
+- Output is **512x512 square by default** — see Step 3b. The printed size line says which canvas you
+  got.
+
+## Step 3b — The square canvas (why every cutout comes out 512x512)
+
+**Every converted token is delivered as a 512x512 square, subject centered, so it drops in at
+`scale 1.0` with no per-token fiddling.** Foundry stretches a token image onto the token's grid
+footprint, so a non-square canvas (or a subject adrift in the corner of a wide plate) is exactly what
+forces someone to hand-tune scale afterwards. The script does the fit itself:
+
+- **aspect is preserved** — never squashed; the subject is scaled to fit and the rest is transparent
+  padding,
+- **trimmed to the subject's alpha bounding box first**, so a small figure on a big plate still fills
+  the square,
+- **4% transparent margin** on the edge, so the art doesn't butt against the token ring.
+
+Overrides, for the cases that earn them:
+- `--size N` — a different square edge. 512 is the house default (crisp on a 100-200px grid without
+  being wasteful); use 256 for a bulk swarm of mooks, 1024 only for a large/huge centerpiece whose
+  source is genuinely that big. **`--size 0` keeps the source canvas** — reach for it when the image
+  is a *portrait* rather than a token, or when the user says they'll frame it themselves.
+- `--pad PCT` — a wider margin (a winged or weapon-flourishing silhouette can want 8) or none (`0`).
+- `--no-trim` — letterbox the whole source instead of tightening to the subject. Use when the framing
+  is deliberate (a token whose art is *meant* to sit off-center).
+
+⚠ **Don't upscale a tiny source into 512 and call it sharp.** If the source's subject is much smaller
+than 512px, the fit enlarges it and the result is soft — say so rather than shipping it quietly, and
+offer `--size 256` or a better source. This skill still does not *upscale as a feature*; the fit is a
+canvas operation, and a low-res subject stays low-res.
 
 ## Step 4 — Verify against the preview (do not skip)
 
@@ -98,10 +128,11 @@ If the user wants it in the world (not just a clean file on disk):
 ## Batch prep
 
 For a folder of same-plate sprites, loop the script over each file (chroma is the predictable choice
-here). Report anything with a suspicious coverage % for a manual look rather than silently shipping a
-bad cut. Don't upload a batch to Foundry unless asked — usually the user just wants clean files.
+here). The square fit applies per file, so a mixed-aspect folder still comes out uniform — which is
+the point for a bulk drop. Report anything with a suspicious coverage % for a manual look rather than
+silently shipping a bad cut. Don't upload a batch to Foundry unless asked — usually the user just wants clean files.
 
 ## What this skill does NOT do
 
-Retouch/redraw art, upscale, recolor, or crop/recenter the canvas. It removes a background to alpha,
-nothing more. (A recenter/trim pass could be added later if it comes up.)
+Retouch/redraw art, upscale (as a quality pass), or recolor. It removes a background to alpha and
+normalizes the canvas to a scale-1.0 square (Step 3b) — nothing more.

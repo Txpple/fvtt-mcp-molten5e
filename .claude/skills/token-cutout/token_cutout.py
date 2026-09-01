@@ -11,10 +11,20 @@ RGBA PNG ready to drop on a VTT.
         [--keep-shadow]                # chroma only: keep a cast shadow instead of keying it out
         [--no-preview]                 # skip the magenta fringe-check preview
         [--erode N]                    # shrink the matte N px inward to eat a residual fringe (default 0)
+        [--size N]                     # square output edge in px (default 512); 0 = keep source canvas
+        [--pad PCT]                    # transparent margin around the subject, % of the edge (default 4)
+        [--no-trim]                    # letterbox the whole source into the square instead of
+                                       #   tightening to the subject's alpha bounding box
 
-Always writes an RGBA PNG (default: INPUT with a .png extension, never overwriting
-the source) plus INPUT_preview.png — the cutout composited over magenta so any
+Always writes a SQUARE 512x512 RGBA PNG (default: INPUT with a .png extension, never
+overwriting the source) plus INPUT_preview.png — the cutout composited over magenta so any
 leftover fringe or over-eaten edge is obvious. Read that preview before trusting it.
+
+Why 512x512: a Foundry token image is stretched to the token's grid footprint, so a
+square canvas with the subject centered and filling it is what makes `scale 1.0` the
+correct setting -- no per-token fiddling. The fit is aspect-preserving (never squashed):
+the subject is tightened to its alpha bounding box, scaled to fit inside the square less
+a small transparent margin, and centered. Pass --size 0 to leave the canvas alone.
 
 Method guide:
   rembg  — AI matte (U^2-Net). Best for characters with soft edges / hair / a cast
@@ -99,6 +109,31 @@ def via_rembg(src):
     return a[..., :3], a[..., 3] / 255.0
 
 
+def fit_square(img, edge, pad_pct=4.0, trim=True):
+    """Center the cutout on a transparent square canvas of `edge` px, aspect preserved.
+
+    A Foundry token image is stretched to the token's grid footprint, so a square canvas
+    with the subject centered and filling it is what makes `scale 1.0` correct. `trim`
+    tightens to the subject's alpha bounding box first, so a subject adrift on a big plate
+    still fills the square; an all-transparent matte has no bbox and is passed through
+    untrimmed rather than erroring.
+    """
+    box = img.getbbox() if trim else None      # getbbox() on RGBA is the ALPHA bbox
+    if box:
+        img = img.crop(box)
+    w, h = img.size
+    inner = max(1, int(round(edge * (1.0 - 2.0 * pad_pct / 100.0))))
+    scale = min(inner / w, inner / h)
+    new = (max(1, round(w * scale)), max(1, round(h * scale)))
+    # LANCZOS on straight (non-premultiplied) alpha pulls the neutralized transparent
+    # pixels into the edge; RGB is already zeroed there, so the fringe stays black rather
+    # than smearing a halo — the same reason the cut zeroes them above.
+    img = img.resize(new, Image.LANCZOS)
+    canvas = Image.new("RGBA", (edge, edge), (0, 0, 0, 0))
+    canvas.paste(img, ((edge - new[0]) // 2, (edge - new[1]) // 2))
+    return canvas
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("input")
@@ -108,6 +143,13 @@ def main():
     ap.add_argument("--keep-shadow", action="store_true")
     ap.add_argument("--no-preview", action="store_true")
     ap.add_argument("--erode", type=int, default=0)
+    ap.add_argument("--size", type=int, default=512,
+                    help="square output edge in px (default 512, the VTT scale-1.0 default); "
+                         "0 keeps the source canvas")
+    ap.add_argument("--pad", type=float, default=4.0,
+                    help="transparent margin around the subject, %% of the edge (default 4)")
+    ap.add_argument("--no-trim", action="store_true",
+                    help="letterbox the whole source instead of tightening to the alpha bbox")
     args = ap.parse_args()
 
     src = Image.open(args.input).convert("RGB")
@@ -144,12 +186,17 @@ def main():
     rgb[alpha <= 0.004] = 0.0            # neutralize fully-keyed pixels (no bleed on scale)
     rgba = np.dstack([rgb, alpha * 255.0]).astype(np.uint8)
     out = Image.fromarray(rgba, "RGBA")
+    if args.size > 0:
+        out = fit_square(out, args.size, pad_pct=args.pad, trim=not args.no_trim)
     out.save(out_path)
 
     print(f"method: {method}")
-    print(f"saved:  {out_path}  ({out.size[0]}x{out.size[1]} RGBA)")
+    print(f"saved:  {out_path}  ({out.size[0]}x{out.size[1]} RGBA)"
+          + ("  -> VTT scale 1.0" if args.size > 0 else "  (source canvas kept)"))
+    # Both figures read the SOURCE frame — the square fit reframes afterwards, so they
+    # measure the cut, not the delivered canvas.
     print(f"subject coverage: {(alpha > 0.5).mean() * 100:.1f}%  "
-          f"background removed: {(alpha <= 0.5).mean() * 100:.1f}%")
+          f"background removed: {(alpha <= 0.5).mean() * 100:.1f}%  (of the source frame)")
 
     if not args.no_preview:
         prev = os.path.splitext(out_path)[0] + "_preview.png"
