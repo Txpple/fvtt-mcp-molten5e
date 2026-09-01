@@ -27,11 +27,19 @@ link onto the scene; those skills author the content.
 **Regions & teleporters (on an existing scene).** To connect two maps — stairs, a cave mouth, a
 portal — use **`create-teleporter`**: give a center point (canvas px, via `get-scene-dimensions` for
 the padding math) on each scene and it drops a grid-snapped trigger at each end and cross-links them
-two-way (or `twoWay:false` for one-directional). For arbitrary regions/behaviors use **`create-region`**
-(raw v14 shapes + behaviors), and **`list-regions`** / **`update-region`** (rename, recolor, or the
-`rect` reshape/resize) / **`delete-region`** to tune them. (`remap-teleporters` is import-only — it
-relinks a scene-pack's own teleporters after a Tom Cartos import; the `create-*` tools are for
-authoring new ones.)
+two-way (or `twoWay:false` for one-directional). **Transitions ask before moving (DM-approved house
+pattern):** the default `confirm:true` sets core v14's `choice` flag so the player gets a
+"Teleport / Do Not Teleport" popup instead of being yanked between maps — pass `confirm:false` ONLY
+for traps/plot teleports that should fire silently. The same default applies when wiring a
+`teleportToken` via **`add-region-behavior`** (`system.choice` defaults to true; set it false
+explicitly to opt out). Name the pads (`fromName`/`toName`) — never ship default "Region" labels.
+NOTE: `list-regions` cannot read `choice` back and no tool edits a behavior after creation — a
+wrong teleporter is fixed by `delete-region` + rebuild. For arbitrary regions/behaviors use
+**`create-region`** (raw v14 shapes + behaviors), and **`list-regions`** / **`update-region`**
+(rename, recolor, or the `rect` reshape/resize) / **`delete-region`** to tune them.
+(`remap-teleporters` is import-only — it relinks a scene-pack's own teleporters after a Tom Cartos
+import; those keep whatever `choice` the pack authored. The `create-*` tools are for authoring new
+ones.)
 
 ## Step 0 — Get a map (don't proceed without one)
 

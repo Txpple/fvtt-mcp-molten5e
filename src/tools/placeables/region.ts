@@ -146,6 +146,14 @@ const CreateTeleporterSchema = z.object({
     .boolean()
     .default(true)
     .describe('Snap each trigger rectangle to the grid cell(s) under its center (default true).'),
+  confirm: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Ask before moving (default true — the house pattern for transitions): the moving player ' +
+        'gets core v14\'s "Teleport / Do Not Teleport" confirmation dialog (`choice` flag). Pass ' +
+        'false ONLY for trap/plot teleports that should fire silently.'
+    ),
   fromName: z.string().optional().describe('Name for the from-side region.'),
   toName: z.string().optional().describe('Name for the to-side region.'),
   color: z.string().optional().describe('Region tint hex (default "#3fb0ff").'),
@@ -192,7 +200,9 @@ const AddRegionBehaviorSchema = z.object({
     .optional()
     .describe(
       'teleportToken convenience: resolve this scene+region to the destination UUID and append it ' +
-        'to system.destinations — no hand-built "Scene.<id>.Region.<id>" needed.'
+        'to system.destinations — no hand-built "Scene.<id>.Region.<id>" needed. A teleportToken ' +
+        'with system.choice unset defaults to choice:true (the confirm-before-moving house ' +
+        'pattern); pass system.choice:false explicitly for silent trap/plot teleports.'
     ),
 });
 
@@ -252,6 +262,8 @@ export const regionToolModule: PlaceableModuleFactory = foundry => ({
         'grid cells, grid-snapped by default) and a teleportToken behavior on each points at the OTHER ' +
         '— so a token that walks onto one is sent to the other. Both regions are created before either ' +
         'link is wired (the destination-UUID chicken-and-egg). twoWay:false makes it one-directional. ' +
+        'By default the player is ASKED before moving (confirmation dialog — the house pattern for ' +
+        'map transitions); confirm:false makes it fire silently (traps/plot teleports only). ' +
         'Regions default to GM/Regions-layer visibility (no player-visible overlay). GM-only.',
       inputSchema: toInputSchema(CreateTeleporterSchema),
     },

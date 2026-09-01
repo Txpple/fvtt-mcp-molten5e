@@ -295,7 +295,10 @@ export async function deleteSceneRegions(args: { sceneIdentifier: string; ids: s
  * `teleportToken` behavior on each pointing at the OTHER region. Both regions are created BEFORE
  * either behavior so the cross-linked destination UUIDs resolve. `from`/`to` give a CENTER point in
  * canvas px on each scene (may be the same scene). Returns both created region ids + their final
- * shapes/destinations for verification.
+ * shapes/destinations for verification. `confirm` (default TRUE — the table-approved house
+ * pattern) sets the behavior's `choice` flag, so the moving player gets core v14's
+ * "Teleport / Do Not Teleport" dialog instead of being yanked silently; pass false only for
+ * trap/plot teleports that SHOULD fire without asking.
  */
 export async function createSceneTeleporter(args: {
   from: { sceneIdentifier: string; x: number; y: number };
@@ -304,6 +307,7 @@ export async function createSceneTeleporter(args: {
   heightCells?: number;
   twoWay?: boolean;
   snapToGrid?: boolean;
+  confirm?: boolean;
   fromName?: string;
   toName?: string;
   color?: string;
@@ -326,6 +330,7 @@ export async function createSceneTeleporter(args: {
   const hc = args.heightCells ?? 1;
   const snap = args.snapToGrid !== false;
   const twoWay = args.twoWay !== false;
+  const confirm = args.confirm !== false;
   const color = typeof args.color === 'string' && args.color.trim() !== '' ? args.color : '#3fb0ff';
   const fromShape = gridRectShape(sceneGrid(fromScene), args.from.x, args.from.y, wc, hc, snap);
   const toShape = gridRectShape(sceneGrid(toScene), args.to.x, args.to.y, wc, hc, snap);
@@ -339,13 +344,14 @@ export async function createSceneTeleporter(args: {
   ]);
 
   // 2) Wire the teleportToken behavior(s), each pointing at the OTHER region. v14.364 stores the
-  // destination in a `destinations` ARRAY (not a singular `destination`) — a single-element array is
-  // the 1:1 teleporter; the field is plural because `choice:true` teleporters offer several exits.
+  // destination in a `destinations` ARRAY (not a singular `destination`); with a single destination
+  // `choice:true` means "show the teleportation confirmation dialog" (teleport-token.mjs) — the
+  // house default, so players are asked before changing maps.
   await regA.createEmbeddedDocuments('RegionBehavior', [
     {
       name: `Teleport to ${toScene.name}`,
       type: 'teleportToken',
-      system: { destinations: [teleportDestUuid(toScene.id, regB.id)], choice: false },
+      system: { destinations: [teleportDestUuid(toScene.id, regB.id)], choice: confirm },
     },
   ]);
   if (twoWay) {
@@ -353,7 +359,7 @@ export async function createSceneTeleporter(args: {
       {
         name: `Teleport to ${fromScene.name}`,
         type: 'teleportToken',
-        system: { destinations: [teleportDestUuid(fromScene.id, regA.id)], choice: false },
+        system: { destinations: [teleportDestUuid(fromScene.id, regA.id)], choice: confirm },
       },
     ]);
   }
@@ -428,6 +434,10 @@ export async function addRegionBehavior(args: {
   ) {
     throw new Error('a teleportToken needs a destination — pass teleportTo or system.destinations');
   }
+  // House default for transitions: ask before moving maps. Core's `choice` field ("show
+  // teleportation confirmation dialog?", teleport-token.mjs) initials to false, so an unset
+  // choice here is defaulted to true; pass system.choice:false explicitly for silent teleports.
+  if (args.type === 'teleportToken' && system.choice === undefined) system.choice = true;
 
   const doc: Record<string, unknown> = { type: args.type };
   if (Object.keys(system).length > 0) doc.system = system;
