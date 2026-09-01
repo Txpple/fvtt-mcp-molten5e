@@ -78,6 +78,9 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
    timestamp to the roll's; if they differ by more than ~5s, re-run with `--skew-seconds` and
    record the value in the pipeline memory.
 5. **Write the artifacts** (your judgment — read transcript.md fully first):
+   - `combat-stats.md` + `combat-log.html` — the combat-flow report, from the
+     `get-combat-stats` MCP tool. **Standard artifact since 2026-09-01** — see "combat log
+     house style" below; template at `templates/combat-log.html`.
    - `recap.md` — the canonical session record: what happened, in order, with names. GM voice,
      complete, spoiler-tolerant.
    - `gm-notes.md` — loose threads, unresolved hooks, NPC promises made, loot/XP to apply to
@@ -179,6 +182,34 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
   - Reference implementations: campaign repo `sessions/2026-07-14/recap.html` (the approved
     register, after the tone-down) and `sessions/2026-07-07/recap.html` (structure/endmatter;
     its prose runs a notch more florid than the approved register).
+- **Combat log house style (owner-locked 2026-09-01, session 6 — "that stats is perfect,
+  record it so that format is used going forward").** Reference implementation: campaign repo
+  `sessions/2026-08-31/combat-stats.md` + the Desktop HTML built from
+  `templates/combat-log.html`. It is **GM-facing**, so exact numerals are wanted here — the
+  no-numerals rule belongs to recap.html only. What makes the format work:
+  - **Open on the one headline fact, in numbers.** Session 6's was "one creature did 90% of the
+    damage to the party." Find that sentence first; the rest of the report supports it.
+  - **A required "what the buffs and features actually bought" section.** For every spell,
+    maneuver, mastery and feat that touched a number: what did it *produce*? Damage added,
+    damage prevented, misses converted, saves flipped, outcomes changed. Compute the
+    counterfactual where it exists — *Careful Spell prevented 71 damage for one sorcery point*
+    is the model line, arrived at by summing what each ally would have taken. **Name the duds
+    as plainly as the winners** — "Innate Sorcery raised the DC 15→16 and changed no outcome"
+    is exactly as useful to the DM as a win.
+  - **When the party gets wrecked, work the probability back off the sheets BEFORE calling it a
+    balance problem.** Session 6's near-TPK was a ~1-in-90 run of saves, not a broken statblock,
+    and the DM wanted it framed that way. Quote the odds.
+  - **Charts:** single-series magnitude bars only, one accent hue, direct-labeled with the
+    value, no legend. Never a two-hue categorical set — validate any new accent with the
+    dataviz skill's `validate_palette.js` (two similar browns FAILED CVD separation on the
+    first attempt and read as one colour). `.track`/`.fill` must be `display:block` or the bars
+    silently do not render — **render the page and look at it before shipping.**
+  - **Traceability:** every number comes from the ledger or the transcript, and monster token
+    UUIDs get resolved to names by hand (`get-combat-stats` prints raw UUIDs — known bug).
+  - **No table/tech/meta talk.** Prompt timeouts, module bugs and player names stay in
+    gm-notes.md and the bug list.
+  - Deliver as HTML; render to PDF alongside it when asked (Edge headless
+    `--print-to-pdf --no-pdf-header-footer` honours the print CSS in the template).
 - **The Foundry session journal is a standard artifact (established session 2):** after
   recap.html, append ONE player-visible text page to the world's single **`Session Diary`**
   journal (folder *Adventure Log*) — **never a new journal per session** (revised 2026-08-08:

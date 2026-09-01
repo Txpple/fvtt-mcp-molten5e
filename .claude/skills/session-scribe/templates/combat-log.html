@@ -1,0 +1,257 @@
+<!-- session-scribe COMBAT LOG template — standalone, self-contained, print-clean.
+     APPROVED FORMAT (owner-locked 2026-09-01, first instance: campaign repo
+     sessions/2026-08-31/ "Session 6 — Combat Log"). Reproduce this structure every session.
+
+     GM-FACING, unlike recap.html: exact numerals are wanted here, not narrative.
+
+     RULES THAT MAKE THIS FORMAT WORK — do not drop them:
+     1. Open with a `.callout.flag` stating THE ONE HEADLINE FACT of the night in numbers.
+     2. Bars are SINGLE-SERIES magnitude only, one accent hue (--accent), direct-labeled with
+        the value. No legend (the figcaption names the series). Never a categorical palette
+        here — two similar accent hues FAIL the dataviz validator (CVD deltaE) and read as one.
+        Validate any new accent: node scripts/validate_palette.js "#hex" --mode light
+     3. .track and .fill MUST be display:block — as inline spans the bars silently do not render.
+     4. Every per-fight table: Combatant / Dealt / Per round / Accuracy / Taken.
+     5. A "what the buffs and features actually bought" section is REQUIRED — measure what each
+        spell, maneuver and mastery PRODUCED (damage added, damage prevented, misses converted,
+        outcomes changed). Call out the ones that changed NOTHING as plainly as the winners.
+     6. When the party gets wrecked, work the probability back off the sheets before calling it
+        a balance problem — say whether it was luck, with the number.
+     7. Numbers must be traceable to the get-combat-stats ledger or the transcript. Resolve
+        monster token UUIDs to names by hand (get-combat-stats prints raw UUIDs).
+     8. No table/tech/meta talk — that belongs in gm-notes.md and the bug list.
+
+     Fill every {{PLACEHOLDER}}. Repeat the marked blocks per PC / per fight / per effect. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session {{SESSION_NO}} — Combat Log · {{SESSION_TITLE}}</title>
+<style>
+  :root{
+    --bg:#f4f1ea; --surface:#fffdf8; --rule:#e2d9c8; --edge:#d8cfc0;
+    --ink:#3d3225; --ink2:#4a3f30; --muted:#8a7a5c; --head:#6b5535;
+    --accent:#9c5442; --accent-soft:#f2ead9; --band:#b3a284;
+    --serif:Georgia,'Times New Roman',serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--serif);color:var(--ink2);
+       -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 8px}
+  .sheet{background:var(--surface);border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+  header{padding:28px 32px 18px;border-bottom:3px double var(--band)}
+  .eyebrow{margin:0;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+  h1{margin:6px 0 4px;font-size:27px;line-height:1.2;color:var(--ink)}
+  .sub{margin:0;font-size:13px;color:var(--muted)}
+  section{padding:6px 32px}
+  h2{margin:22px 0 8px;font-size:18px;color:var(--head);
+     border-bottom:1px solid var(--rule);padding-bottom:5px}
+  h3{margin:18px 0 6px;font-size:15px;color:var(--head);letter-spacing:.3px}
+  p{margin:0 0 12px;font-size:15px;line-height:1.65}
+  .lead{font-style:italic}
+  strong{color:var(--ink)}
+
+  /* ---- figure: single-series magnitude bars (see rule 2 + 3 above) ---- */
+  figure{margin:0 0 20px}
+  figcaption{font-size:14px;color:var(--head);margin:0 0 10px;font-weight:bold}
+  .bars{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;align-items:center}
+  .bars .name{font-size:14px;color:var(--ink2);white-space:nowrap;padding:3px 0}
+  .bars .track{display:block;position:relative;height:16px;background:var(--accent-soft);
+               border-radius:3px;overflow:hidden}
+  .bars .fill{display:block;height:16px;background:var(--accent);border-radius:0 4px 4px 0;
+              transition:filter .15s ease}
+  .bars .row:hover .fill{filter:brightness(1.12)}
+  .bars .val{font-size:14px;color:var(--ink2);font-variant-numeric:tabular-nums;
+             white-space:nowrap;padding:3px 0}
+  .bars .row{display:contents}
+  .figure-note{font-size:13px;color:var(--muted);margin:8px 0 0}
+
+  /* ---- tables ---- */
+  .scroll{overflow-x:auto;margin:0 0 16px}
+  table.data{border-collapse:collapse;width:100%;font-size:14px;min-width:460px}
+  table.data th{text-align:left;color:var(--head);font-size:12px;letter-spacing:.6px;
+    text-transform:uppercase;border-bottom:1.5px solid var(--rule);padding:7px 10px 6px;
+    white-space:nowrap}
+  table.data td{padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top;
+    line-height:1.5}
+  table.data td.num,table.data th.num{text-align:right;font-variant-numeric:tabular-nums;
+    white-space:nowrap}
+  table.data tr:last-child td{border-bottom:none}
+  table.data tbody tr:hover{background:#faf6ec}
+  .lead-row td{font-weight:bold;color:var(--ink)}
+
+  /* ---- callout ---- */
+  .callout{background:var(--accent-soft);border-left:4px solid var(--band);border-radius:4px;
+    padding:13px 17px;margin:0 0 16px}
+  .callout p{margin:0;font-size:14px;line-height:1.6;color:#5d4e38}
+  .callout p + p{margin-top:9px}
+  .flag{border-left-color:var(--accent)}
+
+  ul{margin:0 0 14px;padding-left:22px;font-size:15px;line-height:1.65}
+  li{margin-bottom:5px}
+  footer{padding:14px 32px 22px;border-top:1px solid var(--rule);
+    font-size:12px;color:#9c8f78}
+  @media print{
+    body{background:#fff}
+    .wrap{padding:0}
+    .sheet{border:none;border-radius:0}
+    section,header{padding-left:0;padding-right:0}
+    h2,h3,figure{page-break-after:avoid}
+    tr,figure,.callout{page-break-inside:avoid}
+  }
+  @media (max-width:560px){
+    section,header,footer{padding-left:18px;padding-right:18px}
+    h1{font-size:23px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="sheet">
+
+<header>
+  <p class="eyebrow">{{CAMPAIGN_NAME}} &mdash; Session {{SESSION_NO}}</p>
+  <h1>Combat Log &mdash; {{SESSION_TITLE}}</h1>
+  <p class="sub">{{SESSION_DATE}} &middot; {{N}} combats &middot; folded from {{N_STAMPED}} Battle&nbsp;Flow stamped messages of {{N_TOTAL}}</p>
+</header>
+
+<section>
+  <p class="lead">{{ONE_PARAGRAPH_SHAPE_OF_THE_NIGHT}}</p>
+
+  <!-- Rule 1: the single headline fact, in numbers. -->
+  <div class="callout flag">
+    <p><strong>{{HEADLINE_CLAIM}}</strong> {{HEADLINE_EVIDENCE}}</p>
+  </div>
+</section>
+
+<section>
+  <h2>1 &middot; Headline numbers</h2>
+
+  <!-- Repeat per magnitude comparison. Widest bar = 100%; others scale off it. -->
+  <figure>
+    <figcaption>{{FIGURE_TITLE}}</figcaption>
+    <div class="bars">
+      <div class="row"><span class="name">{{PC}}</span><span class="track"><span class="fill" style="width:{{PCT}}%"></span></span><span class="val">{{VALUE}}</span></div>
+    </div>
+    <p class="figure-note">{{WHAT_THE_SHAPE_MEANS}}</p>
+  </figure>
+
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Character</th><th class="num">Dealt</th><th class="num">Taken</th>
+      <th class="num">Healed others</th><th class="num">Nat 20s</th><th class="num">Nat 1s</th>
+    </tr></thead>
+    <tbody>
+      <tr class="lead-row"><td>{{TOP_PC}}</td><td class="num">{{N}}</td><td class="num">{{N}}</td><td class="num">{{N}}</td><td class="num">{{N}}</td><td class="num">{{N}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- Repeat one section per combat / per scene. Rule 4 column set. -->
+<section>
+  <h2>{{N}} &middot; {{FIGHT_NAME}} &mdash; {{SCENE}}, {{ROUNDS}} rounds</h2>
+  <p>{{WHAT_DECIDED_THIS_FIGHT}}</p>
+
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Combatant</th><th class="num">Dealt</th><th class="num">Per round</th>
+      <th>Accuracy</th><th class="num">Taken</th>
+    </tr></thead>
+    <tbody>
+      <tr class="lead-row"><td>{{COMBATANT}}</td><td class="num">{{N}}</td><td class="num">{{N}}</td><td>{{HITS}}/{{ATTACKS}} &middot; {{PCT}}%</td><td class="num">{{N}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- Rule 6: if the party got wrecked, do the probability before blaming the statblock. -->
+  <div class="callout flag">
+    <p><strong>{{LUCK_OR_BALANCE_VERDICT}}</strong> {{THE_ODDS_WORKED_BACK_FROM_THE_SHEETS}}</p>
+  </div>
+</section>
+
+<!-- Rule 5: REQUIRED SECTION. -->
+<section>
+  <h2>{{N}} &middot; What the buffs and features actually bought</h2>
+  <p>Every spell, maneuver and mastery that touched a number this session, and what it produced.
+  Ranked by how much it moved the fight.</p>
+
+  <h3>The big three</h3>
+  <figure>
+    <figcaption>Damage prevented or added, by effect</figcaption>
+    <div class="bars">
+      <div class="row"><span class="name">{{EFFECT}}</span><span class="track"><span class="fill" style="width:{{PCT}}%"></span></span><span class="val">{{N}} {{prevented|added}}</span></div>
+    </div>
+  </figure>
+  <ul>
+    <li><strong>{{EFFECT_AND_ITS_VERDICT}}</strong> {{THE_ARITHMETIC_BEHIND_IT}}</li>
+  </ul>
+
+  <h3>Maneuvers and masteries</h3>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Effect</th><th class="num">Uses</th><th>What it produced</th></tr></thead>
+    <tbody>
+      <tr class="lead-row"><td>{{EFFECT}}</td><td class="num">{{N}}</td><td>{{OUTCOME_IN_NUMBERS}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Buffs, and what they were worth</h3>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Buff</th><th>Cost</th><th>Return</th></tr></thead>
+    <tbody>
+      <!-- Include the duds. "Changed no outcome" is as useful to the DM as a win. -->
+      <tr><td><strong>{{BUFF}}</strong></td><td>{{COST}}</td><td>{{RETURN_OR_WHY_IT_DID_NOTHING}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Healing that mattered</h3>
+  <p>{{RAISES_FROM_ZERO_AND_WHAT_THE_REST_RECOVERED}}</p>
+</section>
+
+<section>
+  <h2>{{N}} &middot; Combat flow &mdash; decision speed</h2>
+  <p>The timing stamps, averaged per player across timed decision moments.</p>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Character</th><th class="num">Avg decision</th><th class="num">Timed moments</th><th>Slowest call</th>
+    </tr></thead>
+    <tbody>
+      <tr class="lead-row"><td>{{PC}}</td><td class="num">{{N}}s</td><td class="num">{{N}}</td><td>{{N}}s &mdash; {{WHAT}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>{{WHAT_THE_TIMINGS_SAY_ABOUT_ENGAGEMENT}}</p>
+</section>
+
+<section>
+  <h2>{{N}} &middot; Economy and flavour</h2>
+  <h3>Resources spent</h3>
+  <ul><li><strong>{{PC}}</strong> &mdash; {{POOLS_AND_SLOTS_LEFT}}</li></ul>
+  <h3>The night's dice</h3>
+  <ul>
+    <li><strong>Buff-die flips:</strong> {{BLESS_FLIPS}}</li>
+    <li><strong>Natural 20s:</strong> {{LIST}}</li>
+    <li><strong>Natural 1s:</strong> {{LIST}}</li>
+    <li><strong>Advantage rolled:</strong> {{LIST}} &mdash; disadvantage: {{LIST}}</li>
+    <li><strong>Death saves:</strong> {{LIST}}</li>
+  </ul>
+</section>
+
+<footer>
+  Generated from the Battle Flow ledger via <code>get-combat-stats</code> &mdash; read-only scan,
+  reverted applications subtracted. Monster token identifiers resolved to names by hand.
+</footer>
+
+</div>
+</div>
+</body>
+</html>
