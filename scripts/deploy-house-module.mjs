@@ -50,8 +50,8 @@ if (!existsSync(join(REPO, 'module.json'))) {
   process.exit(2);
 }
 
-/** Directories whose contents the module serves at runtime. */
-const SERVED_DIRS = ['scripts', 'styles', 'templates', 'lang'];
+/** Directories whose contents the module serves at runtime (recipes/: fxstudio's corpus, fetched at boot). */
+const SERVED_DIRS = ['scripts', 'styles', 'templates', 'lang', 'recipes'];
 const CONTENT_TYPES = {
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
