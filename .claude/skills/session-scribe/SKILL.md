@@ -2,8 +2,9 @@
 name: session-scribe
 description: >-
   Turn a Craig (Discord) session recording into a speaker-labeled transcript aligned with the
-  Foundry chat log, then write the session artifacts: recap.md, gm-notes.md, and an email-ready
-  player-safe recap.html — committed to the campaign repo under sessions/YYYY-MM-DD/. Use when the
+  Foundry chat log, then write the session artifacts — four documents as HTML + PDF (player
+  recap, combat stats, GM notes · story, GM notes · mechanics) plus recap.md — committed to the
+  campaign repo under sessions/YYYY-MM-DD/. Use when the
   user pastes a Craig download link (craig.chat/rec/... or craig.horse), or wants to "process the
   session", "process last night's recording", "transcribe the session", "write the session recap",
   "make the session log", or "run session scribe". The bundled script owns the deterministic work
@@ -83,13 +84,34 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
      house style" below; template at `templates/combat-log.html`.
    - `recap.md` — the canonical session record: what happened, in order, with names. GM voice,
      complete, spoiler-tolerant.
-   - `gm-notes.md` — loose threads, unresolved hooks, NPC promises made, loot/XP to apply to
-     the live world, rules questions to settle, quotes of the night.
+   - `gm-notes-story.md` + `gm-notes-story.html` — **plot only**: what changed in the world,
+     what is now canon (said out loud, on tape), promises made and their status, threads left
+     open, loot with story weight, quotes of the night. Nothing about the system or the table.
+   - `gm-notes-mechanics.md` + `gm-notes-mechanics.html` — **system and table only**:
+     bookkeeping checklist to apply to the live world (levels, items, coin, renames), automation
+     that cost time ranked by minutes lost (e.g. Battle Flow rolling saves for Careful-Spell-
+     excluded allies), rulings made so they stay consistent, player/table observations, and a
+     pointer to the combat report. Both GM-notes HTMLs come from `templates/gm-notes.html`.
+     (Owner directive 2026-09-09, session 7: the single `gm-notes.md` was split into these two —
+     "story notes are plot-related things I should know; mechanics are your observations like
+     we need to fix Battle Flow for Fireball/Careful Spell taking lots of time.")
    - `recap.html` — from `templates/recap.html`, filling every placeholder. **Player-safe by
      construction**: written ONLY from what the players saw at the table; nothing that appears
-     solely in gm-notes.md or GM whispers may appear here. The user pastes this into an email —
-     it must render in Gmail/Outlook (keep the inline-style table structure intact).
+     solely in the gm-notes files or GM whispers may appear here. The user pastes this into an
+     email — it must render in Gmail/Outlook (keep the inline-style table structure intact).
      **House style (owner-locked 2026-07-08, session 1):** see "recap.html house style" below.
+   - **Four documents, HTML + PDF, every session (owner directive 2026-09-09).** The output set
+     is exactly: **1 player recap · 2 combat stats · 3 GM notes — story · 4 GM notes —
+     mechanics.** Each exists as `.html` AND `.pdf` in the session dir (`recap`, `combat-log`,
+     `gm-notes-story`, `gm-notes-mechanics`). Render the PDFs with Edge headless — it honours
+     the print CSS in the templates (one call per document, `-Wait`):
+     ```powershell
+     Start-Process "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -Wait -NoNewWindow `
+       -ArgumentList @("--headless=new","--disable-gpu","--no-pdf-header-footer",
+                       "--print-to-pdf=`"<SDIR>\recap.pdf`"","`"file:///<SDIR as forward slashes>/recap.html`"")
+     ```
+     Check each PDF is >20 KB — a ~1 KB file means the page didn't load. When the user asks for
+     "the docs", copy the eight files to a `Desktop\<Campaign> Session N` folder.
 6. **Snapshot the party (owner directives 2026-08-06 + 2026-08-16)** — two artifacts per
    session date, both committed:
    - **Full JSON backup (the durable record):** for EACH party PC, call the `export-actor`
@@ -119,6 +141,16 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
 - **Recap voice:** in-world chronicle, not minutes. Lead with the arc, keep table-talk out,
   name PCs and NPCs. The TL;DR paragraph is one breath; section headings are story beats.
 - **recap.html house style (owner-locked 2026-07-08, iterated live on session 1):**
+  - **Third person, always (owner feedback 2026-09-09, session 7).** The recap is a chronicle
+    about the party, never addressed to them: "all four of them dreamed", "the priest came up to
+    meet them", "the mayor bought them eggs", "level six, all four of them". The session-7 first
+    draft slid into second person in six places ("all four of you dreamed", "bought you eggs",
+    "your power does not come down from Lathander") and the owner sent it back. The only
+    permitted "you/your/we/our" is inside quoted or italicised dialogue. **Before shipping, grep
+    the HTML for `\b(you|your|yours|we|our|us)\b` and check every hit is inside a quote** —
+    reported speech ("the priest argued that your power…") counts as a slip; rewrite it as
+    third-person reported speech ("that Thomas's power…"). The Session Diary page follows the
+    same rule.
   - **Dice as narrative, never numerals.** Weave the blow-by-blow of checks, crits, failed
     saves, and big hits into the prose at FULL detail — but the WORDS carry the magnitude, not
     the numbers. Crit → "his blade found the perfect seam"; nat-20 lore check → "his temple
@@ -157,7 +189,7 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
     — in-character/in-world only) and **Deeds of the Day** (in-world superlative awards, one
     per PC or so, e.g. "Arrow of the Day", "Finest Masonry in Faerûn"). NO meta, NO player
     names, NO technical-issues talk anywhere in recap.html — UI/audio/browser troubles belong
-    in gm-notes.md only.
+    in gm-notes-mechanics.md only.
   - **Register: toned DOWN a notch (owner feedback 2026-07-15, session 2).** Narrative, not
     purple: plain direct sentences, one flourish per paragraph is plenty. The first session-2
     draft was rejected as "a bit too flowery" — cut phrases like "on the lair's own dark
@@ -207,9 +239,8 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
   - **Traceability:** every number comes from the ledger or the transcript, and monster token
     UUIDs get resolved to names by hand (`get-combat-stats` prints raw UUIDs — known bug).
   - **No table/tech/meta talk.** Prompt timeouts, module bugs and player names stay in
-    gm-notes.md and the bug list.
-  - Deliver as HTML; render to PDF alongside it when asked (Edge headless
-    `--print-to-pdf --no-pdf-header-footer` honours the print CSS in the template).
+    gm-notes-mechanics.md and the bug list.
+  - Deliver as HTML **and** PDF, always (see step 5 — the four-document rule).
 - **The Foundry session journal is a standard artifact (established session 2):** after
   recap.html, append ONE player-visible text page to the world's single **`Session Diary`**
   journal (folder *Adventure Log*) — **never a new journal per session** (revised 2026-08-08:
@@ -218,16 +249,16 @@ campaign-repos memory — active: `fvtt-campaign-greenrest`). **Pull the campaig
   `newPageName` + `playerVisible: true`, then keep the pages in order (they sort by name, so the
   `Session N` prefix does the work). Content is the `mcp-journal` format (p.lead TL;DR →
   h2.spaced story beats → readaloud blocks for item/lore quotes → "Where Things Stand" ul), the
-  same player-safe boundary and the SAME toned-down register as recap.html — it's the in-game
+  same player-safe boundary, the same third-person rule, and the SAME toned-down register as recap.html — it's the in-game
   handout twin of the email recap, minus Quotable Quotes / Deeds of the Day. Match the existing
   Session 1/2 pages.
 - **Monsters the party fought go in the Bestiary** — after the recap, hand off to the
   `bestiary-builder` skill for anything newly killed; it files a page (MM art + narrative) in the
   single `Bestiary` journal.
 - **Attribution is per-speaker-track and trustworthy** — quote players verbatim when it's good
-  ("quotes of the night" in gm-notes). Whisper text is GM-only by definition: usable in
-  recap.md/gm-notes.md, NEVER in recap.html.
-- **Bookkeeping handoff:** loot awarded and levels gained belong in gm-notes.md as a checklist;
+  ("quotes of the night" in gm-notes-story). Whisper text is GM-only by definition: usable in
+  recap.md and the gm-notes files, NEVER in recap.html.
+- **Bookkeeping handoff:** loot awarded and levels gained belong in gm-notes-mechanics.md as a checklist;
   offer to apply them to the live world (physical-item-builder / level-up-pc) as a follow-up.
 - **Craig facts:** recordings expire in 7 days; `/recordings` in Discord re-fetches a lost
   link; `craig-info.json.craigNotes` carries any `/note` markers; the API is mapped in the

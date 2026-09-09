@@ -1,0 +1,117 @@
+<!-- session-scribe GM NOTES template — standalone, self-contained, print-clean.
+     Used TWICE per session (owner directive 2026-09-09, session 7): once as
+     gm-notes-story.html (plot: what changed, what is now canon, promises, open threads, loot with
+     story weight, quotes) and once as gm-notes-mechanics.html (bookkeeping checklist, automation
+     that cost time, rulings to keep consistent, player/table observations). Each is ALSO written
+     as its .md twin and rendered to .pdf — see SKILL.md "Four documents, HTML + PDF".
+
+     GM-FACING: exact numbers, player names, tech talk are all fine here. Nothing from these two
+     files may appear in recap.html.
+
+     Same CSS family as combat-log.html so the four PDFs read as one set. Fill every
+     {{PLACEHOLDER}}; repeat the marked blocks per section / per row. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session {{SESSION_NO}} — GM Notes · {{STORY_OR_MECHANICS}} · {{SESSION_TITLE}}</title>
+<style>
+  :root{
+    --bg:#f4f1ea; --surface:#fffdf8; --rule:#e2d9c8; --edge:#d8cfc0;
+    --ink:#3d3225; --ink2:#4a3f30; --muted:#8a7a5c; --head:#6b5535;
+    --accent:#9c5442; --accent-soft:#f2ead9; --band:#b3a284;
+    --serif:Georgia,'Times New Roman',serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--serif);color:var(--ink2);
+       -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 8px}
+  .sheet{background:var(--surface);border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+  header{padding:28px 32px 18px;border-bottom:3px double var(--band)}
+  .eyebrow{margin:0;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+  h1{margin:6px 0 4px;font-size:27px;line-height:1.2;color:var(--ink)}
+  .sub{margin:0;font-size:13px;color:var(--muted)}
+  section{padding:6px 32px}
+  h2{margin:22px 0 8px;font-size:18px;color:var(--head);
+     border-bottom:1px solid var(--rule);padding-bottom:5px}
+  h3{margin:18px 0 6px;font-size:15px;color:var(--head);letter-spacing:.3px}
+  p{margin:0 0 12px;font-size:15px;line-height:1.65}
+  .lead{font-style:italic}
+  strong{color:var(--ink)}
+  ul,ol{margin:0 0 14px;padding-left:22px;font-size:15px;line-height:1.65}
+  li{margin-bottom:6px}
+  .check{list-style:none;padding-left:4px}
+  .check li{padding-left:26px;position:relative}
+  .check li::before{content:"\2610";position:absolute;left:0;top:0;color:var(--muted)}
+  .check li.done::before{content:"\2611";color:var(--accent)}
+  .scroll{overflow-x:auto;margin:0 0 16px}
+  table.data{border-collapse:collapse;width:100%;font-size:14px;min-width:460px}
+  table.data th{text-align:left;color:var(--head);font-size:12px;letter-spacing:.6px;
+    text-transform:uppercase;border-bottom:1.5px solid var(--rule);padding:7px 10px 6px;white-space:nowrap}
+  table.data td{padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.5}
+  table.data tr:last-child td{border-bottom:none}
+  .callout{background:var(--accent-soft);border-left:4px solid var(--band);border-radius:4px;
+    padding:13px 17px;margin:0 0 16px}
+  .callout p{margin:0;font-size:14px;line-height:1.6;color:#5d4e38}
+  .callout p + p{margin-top:9px}
+  .flag{border-left-color:var(--accent)}
+  blockquote{margin:0 0 14px;padding:8px 16px;border-left:3px solid var(--rule);font-size:15px;line-height:1.6}
+  blockquote p{margin:0}
+  blockquote .who{display:block;margin-top:4px;font-size:13px;color:var(--muted)}
+  footer{padding:14px 32px 22px;border-top:1px solid var(--rule);font-size:12px;color:#9c8f78}
+  @media print{
+    body{background:#fff}
+    .wrap{padding:0}
+    .sheet{border:none;border-radius:0}
+    section,header{padding-left:0;padding-right:0}
+    h2,h3{page-break-after:avoid}
+    tr,.callout,blockquote,li{page-break-inside:avoid}
+  }
+  @media (max-width:560px){
+    section,header,footer{padding-left:18px;padding-right:18px}
+    h1{font-size:23px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="sheet">
+
+<header>
+  <p class="eyebrow">{{CAMPAIGN_NAME}} &mdash; Session {{SESSION_NO}} &mdash; GM Notes &middot; {{STORY_OR_MECHANICS}}</p>
+  <h1>{{SESSION_TITLE}}</h1>
+  <p class="sub">{{SESSION_DATE}} &middot; {{ONE_LINE_SCOPE_OF_THIS_DOCUMENT}}</p>
+</header>
+
+<section>
+  <p class="lead">{{ONE_PARAGRAPH_WHAT_THIS_DOC_IS_FOR}}</p>
+  <!-- Optional: the single thing to act on first. -->
+  <div class="callout flag"><p><strong>{{ACT_ON_THIS_FIRST}}</strong> {{WHY}}</p></div>
+</section>
+
+<!-- Repeat per section. Use ul.check for checklists (li.done = ticked), table.data for
+     promises/rulings, blockquote for quotes. -->
+<section>
+  <h2>{{N}} &middot; {{SECTION_HEADING}}</h2>
+  <p>{{SECTION_PROSE_OR_OMIT}}</p>
+  <ul class="check">
+    <li class="done">{{DONE_ITEM}}</li>
+    <li>{{OPEN_ITEM}}</li>
+  </ul>
+</section>
+
+<section>
+  <h2>{{N}} &middot; {{QUOTES_OR_OTHER_HEADING}}</h2>
+  <blockquote><p><em>"{{QUOTE}}"</em><span class="who">&mdash; {{WHO_AND_CONTEXT}}</span></blockquote>
+</section>
+
+<footer>
+  GM-only. Compiled from the transcript, the chat log and the live sheets by the session scribe.
+</footer>
+
+</div>
+</div>
+</body>
+</html>
