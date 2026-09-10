@@ -68,9 +68,20 @@
       actual enemies → hostile; party allies → friendly. Pass `disposition` to
       `create-actor-from-compendium` / `author-npc` when you create — never leave background folk on
       the copied-monster hostile default (fix stragglers with `update-actor` `disposition`).
-    - **Auto-rotate ON, dynamic ring OFF, `randomImg` OFF** — the 2024-book prototype tokens ship all
-      three the other way; the creation tools now bake the corrections into every created actor
-      automatically. Flip an existing actor with `update-actor` `tokenAutoRotate` / `tokenRing`.
+    - **Auto-rotate ON, dynamic ring OFF, `randomImg` OFF, art scale 1** — the 2024-book prototype
+      tokens ship all four the other way; the creation tools now bake the corrections into every
+      created actor automatically. Flip an existing actor with `update-actor` `tokenAutoRotate` /
+      `tokenRing` / `tokenScale`.
+    - **Swapping token art onto an EXISTING actor is not "creation" — re-apply all four by hand.**
+      This rule reads as a create-time checklist, so it gets skipped on an art swap; that is the bug.
+      A module/compendium actor (`dnd-monster-manual` especially) keeps its own prototype config when
+      you replace only the texture, so `set-actor-art` leaves the dynamic ring on and `texture.scaleX`
+      at 2 — their art is a small subject on a big canvas, ours is trimmed and centred, so 2 overflows
+      the footprint and the ring draws a dark disc under it. After ANY art swap, run `update-actor`
+      with `tokenScale: 1`, `tokenRing: false`, `tokenAutoRotate: true`.
+    - **Then fix the copies already on a scene.** Prototype edits never reach placed tokens. Re-check
+      with `list-tokens` and patch each with `update-token` (`scale`, `ring`, `lockRotation: false`),
+      or have the user delete and re-drop.
 
 11. **Run `content-audit` as the finishing check.** Before declaring a build done, scan what you made
     (`actorIdentifiers` for NPCs + their gear, `itemFolders` / `worldItemIds` for loot) with the
